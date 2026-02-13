@@ -1,9 +1,9 @@
 #!/bin/bash
-# Compile a C program with ACK, wrap with Z8001 reset vector, and run in emulator.
+# Compile a C program with ACK, wrap with reset vector, and run in emulator.
 #
-# Usage: ./run_test.sh <source.c> [emulator flags...]
-# Example: ./run_test.sh test_add.c -t       # with instruction trace
-#          ./run_test.sh test_add.c -t -r     # with register trace
+# Usage: ./run_test.sh <source.c> [-p z8001|z8002] [emulator flags...]
+# Example: ./run_test.sh test_add.c -t           # Z8001 (default), instruction trace
+#          ./run_test.sh test_add.c -p z8002 -t   # Z8002 non-segmented
 
 set -e
 
@@ -14,12 +14,21 @@ EMU="$ROOT/z8000_emu/build/z8000emu"
 ACKBIN="$ACK/.obj/staging/bin/ack"
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <source.c> [emulator flags...]"
+    echo "Usage: $0 <source.c> [-p z8001|z8002] [emulator flags...]"
     exit 1
 fi
 
 SRC="$1"
 shift
+
+# Parse -p flag
+PLATFORM="z8001"
+if [ "$1" = "-p" ]; then
+    shift
+    PLATFORM="$1"
+    shift
+fi
+
 EMU_FLAGS="$@"
 
 # Resolve source path
@@ -45,33 +54,59 @@ if [ ! -x "$EMU" ]; then
     exit 1
 fi
 
+# Set platform-specific options
+case "$PLATFORM" in
+    z8001)
+        ACK_FLAGS="-mz8000"
+        EMU_MODE="-s"
+        ;;
+    z8002)
+        ACK_FLAGS="-mz8000 -z8002"
+        EMU_MODE=""
+        ;;
+    *)
+        echo "Error: unknown platform '$PLATFORM' (use z8001 or z8002)"
+        exit 1
+        ;;
+esac
+
 # Compile with ACK
-echo "Compiling $SRC..."
-ACKDIR="$ACK/.obj/staging" "$ACKBIN" -mz8000 -o "$OUTDIR/$BASENAME.out" "$SRC"
+echo "Compiling $SRC ($PLATFORM)..."
+ACKDIR="$ACK/.obj/staging" "$ACKBIN" $ACK_FLAGS -o "$OUTDIR/$BASENAME.out" "$SRC"
 
 # Extract flat binary
 echo "Extracting flat binary..."
 "$ACK/.obj/staging/bin/aslod" "$OUTDIR/$BASENAME.out" "$OUTDIR/$BASENAME.flat"
 
-# Prepend Z8001 reset vector
-echo "Creating Z8001 binary..."
+# Prepend reset vector
+echo "Creating $PLATFORM binary..."
 python3 -c "
 import struct, sys
-# Z8001 reset vector (8 bytes):
-#   0x0000: Reserved
-#   0x0002: FCW = 0xC000 (segmented + system mode)
-#   0x0004: Segment word = 0x8000 (segment 0, long format)
-#   0x0006: Offset = 0x0008 (entry point, right after reset vector)
-reset_vector = struct.pack('>HHHH', 0x0000, 0xC000, 0x8000, 0x0008)
 with open('$OUTDIR/$BASENAME.flat', 'rb') as f:
     code = f.read()
+if '$PLATFORM' == 'z8001':
+    # Z8001 reset vector (8 bytes):
+    #   0x0000: Reserved
+    #   0x0002: FCW = 0xC000 (segmented + system mode)
+    #   0x0004: Segment word = 0x8000 (segment 0, long format)
+    #   0x0006: Offset = 0x0008 (entry point)
+    reset_vector = struct.pack('>HHHH', 0x0000, 0xC000, 0x8000, 0x0008)
+    entry = '0x0008'
+else:
+    # Z8002 reset vector (8 bytes, padded to match -b0:0x0008):
+    #   0x0000: Reserved
+    #   0x0002: FCW = 0x4000 (non-segmented + system mode)
+    #   0x0004: PC = 0x0008 (entry point)
+    #   0x0006: Padding
+    reset_vector = struct.pack('>HHHH', 0x0000, 0x4000, 0x0008, 0x0000)
+    entry = '0x0008'
 with open('$OUTDIR/$BASENAME.bin', 'wb') as f:
     f.write(reset_vector)
     f.write(code)
-print(f'Binary: {len(reset_vector) + len(code)} bytes (code at 0x0008)')
+print(f'Binary: {len(reset_vector) + len(code)} bytes (code at {entry})')
 "
 
 # Run in emulator
-echo "Running on Z8001..."
+echo "Running on $PLATFORM..."
 echo "---"
-"$EMU" -s $EMU_FLAGS "$OUTDIR/$BASENAME.bin"
+"$EMU" $EMU_MODE $EMU_FLAGS "$OUTDIR/$BASENAME.bin"
