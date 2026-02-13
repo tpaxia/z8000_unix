@@ -2,3 +2,6 @@
 	path = ack
 	url = https://github.com/tpaxia/ack.git
 	branch = z8000unix
+[submodule "z8000_emu"]
+	path = z8000_emu
+	url = https://github.com/tpaxia/z8000_emu.git
