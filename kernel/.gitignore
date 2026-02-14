@@ -2,4 +2,5 @@
 *.coff
 *.bin
 *.lst
+*.out
 test_driver

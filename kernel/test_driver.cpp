@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <getopt.h>
 #include "z8000.h"
 #include "memory.h"
@@ -88,6 +89,10 @@ int main(int argc, char* argv[]) {
     if (!load_file(memory, "kernel.bin", 0x010000))
         return 1;
 
+    // Load C handler at segment 1, offset 0x0200
+    if (!load_file(memory, "handler.bin", 0x010200))
+        return 1;
+
     // Create Z8001 CPU
     z8001_device cpu;
     cpu.set_memory(&memory);
@@ -115,15 +120,16 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify result: R0 should be 7 (set by syscall handler)
+    // Verify result: R0 should be 7, console output should be "Hi\n"
     uint16_t r0 = cpu.get_reg(0);
+    std::string expected_output = "Hi\n";
     printf("\n");
-    if (r0 == 7 && cpu.is_halted()) {
-        printf("PASS: R0 = %d (syscall handler executed correctly)\n", r0);
+    if (r0 == 7 && cpu.is_halted() && io.console_output() == expected_output) {
+        printf("PASS: R0 = %d, console output correct\n", r0);
         return 0;
     } else {
-        printf("FAIL: R0 = %d (expected 7), halted = %s\n",
-               r0, cpu.is_halted() ? "yes" : "no");
+        printf("FAIL: R0 = %d (expected 7), halted = %s, console = \"%s\" (expected \"Hi\\n\")\n",
+               r0, cpu.is_halted() ? "yes" : "no", io.console_output().c_str());
         return 1;
     }
 }

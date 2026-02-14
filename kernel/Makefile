@@ -11,6 +11,13 @@ Z8K_AS = $(Z8K_PREFIX)as
 Z8K_LD = $(Z8K_PREFIX)ld
 Z8K_OBJCOPY = $(Z8K_PREFIX)objcopy
 
+# ACK toolchain
+ACK_ROOT = ../ack/.obj/staging
+ACK = ACKDIR=$(ACK_ROOT) $(ACK_ROOT)/bin/ack
+ACK_LED = $(ACK_ROOT)/lib/ack/em_led
+ASLOD = $(ACK_ROOT)/bin/aslod
+ACK_PLATFORM = $(ACK_ROOT)/share/ack/z8000
+
 # Emulator library
 EMU_DIR = ../z8000_emu
 EMU_LIB = $(EMU_DIR)/build/libz8000.a
@@ -19,7 +26,7 @@ EMU_TOOLS = $(EMU_DIR)/tools
 
 .PHONY: all clean test emu_lib
 
-all: rom.bin kernel.bin test_driver
+all: rom.bin kernel.bin handler.bin test_driver
 
 # =============================================================================
 # Ensure emulator library is built
@@ -58,6 +65,24 @@ kernel.bin: trap.coff
 	@echo "Kernel: $$(wc -c < $@) bytes"
 
 # =============================================================================
+# C handler binary (ACK toolchain) - loaded at segment 1, offset 0x0200
+# =============================================================================
+syscall.o: syscall.c
+	$(ACK) -mz8000 -z8002 -c -o $@ $<
+
+krt.o: krt.s
+	$(ACK) -mz8000 -z8002 -c -o $@ $<
+
+handler.out: krt.o syscall.o
+	$(ACK_LED) -a0:2 -a1:2 -a2:2 -a3:2 -b0:0x0200 \
+		$^ $(ACK_PLATFORM)/libem.a $(ACK_PLATFORM)/libend.a \
+		-o $@
+
+handler.bin: handler.out
+	$(ASLOD) $< $@
+	@echo "Handler: $$(wc -c < $@) bytes"
+
+# =============================================================================
 # Test driver - links against emulator library
 # =============================================================================
 test_driver: test_driver.cpp $(EMU_LIB)
@@ -73,4 +98,4 @@ test: all
 	./test_driver -t
 
 clean:
-	rm -f *.o *.coff *.bin *.lst test_driver
+	rm -f *.o *.coff *.bin *.lst *.out test_driver

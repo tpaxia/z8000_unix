@@ -142,9 +142,9 @@ syscall_entry:
 	! --- Now in NONSEG+SYS mode, segment 1 (inherited from PC) ---
 	! R15 = system stack offset, all addresses resolve to the PC's segment.
 
-	! For this initial test, just set R0 = 7 as proof that the
-	! syscall handler executed successfully
-	ld	r0, #7
+	! Call C handler at fixed address 0x0200 (handler.bin load offset)
+	ld	r2, #0x0200	! C handler entry address in segment 1
+	call	@rr2		! CPU uses R2 in NONSEG mode; pushes 2-byte ret addr
 
 	! Switch back to SEG+SYS mode for register restore and IRET.
 	! The CPU swaps R14 with the saved stack segment again, restoring
