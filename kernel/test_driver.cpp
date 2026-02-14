@@ -120,15 +120,15 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify result: R0 should be 7, console output should be "Hi\n"
+    // Verify: R0 = byte count (23), console output = test message
     uint16_t r0 = cpu.get_reg(0);
-    std::string expected_output = "Hi\n";
+    std::string expected_output = "Hello from Z8000 Unix!\n";
     printf("\n");
-    if (r0 == 7 && cpu.is_halted() && io.console_output() == expected_output) {
+    if (r0 == 23 && cpu.is_halted() && io.console_output() == expected_output) {
         printf("PASS: R0 = %d, console output correct\n", r0);
         return 0;
     } else {
-        printf("FAIL: R0 = %d (expected 7), halted = %s, console = \"%s\" (expected \"Hi\\n\")\n",
+        printf("FAIL: R0 = %d (expected 23), halted = %s, console = \"%s\"\n",
                r0, cpu.is_halted() ? "yes" : "no", io.console_output().c_str());
         return 1;
     }

@@ -109,10 +109,11 @@ default_trap:
 ! Strategy:
 !   1. Save registers R0-R12 onto the system stack
 !   2. Switch to NONSEG+SYS to call C handler
-!   3. (For now: just set R0 = 7 as proof of concept)
-!   4. Switch back to SEG+SYS
-!   5. Restore registers (skip R0 - it holds return value)
-!   6. IRET to return to caller
+!   3. Extract syscall number from tag word, pass args to C handler
+!   4. Store C handler return value into saved-R0 slot
+!   5. Switch back to SEG+SYS
+!   6. Restore registers (R0 gets return value from saved slot)
+!   7. IRET to return to caller
 ! =============================================================================
 syscall_entry:
 	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
@@ -140,11 +141,37 @@ syscall_entry:
 	ldctl	fcw, r1
 
 	! --- Now in NONSEG+SYS mode, segment 1 (inherited from PC) ---
-	! R15 = system stack offset, all addresses resolve to the PC's segment.
+	! R15 = system stack offset. Saved registers at R15+0..R15+24,
+	! tag word at R15+26.
+	!
+	! NOTE: Instructions using base-address (BA) mode must be encoded
+	! manually as .word directives. The assembler runs in z8001 mode
+	! and emits 6-byte segmented X-mode encodings for n(r15) syntax,
+	! but the CPU executes this section in NONSEG mode, expecting
+	! 4-byte z8002-style BA encodings.
 
-	! Call C handler at fixed address 0x0200 (handler.bin load offset)
-	ld	r2, #0x0200	! C handler entry address in segment 1
-	call	@rr2		! CPU uses R2 in NONSEG mode; pushes 2-byte ret addr
+	! Extract syscall number from SC instruction tag word
+	.word	0x61F0, 0x001A	! ld r0, 26(r15) — r0 = tag word
+	and	r0, #0xFF	! r0 = syscall number
+
+	! Set up arguments for C handler:
+	!   arg1 = syscall number (r0)
+	!   arg2 = pointer to saved registers (r15)
+	ld	r1, r15		! r1 = &saved_regs[0] (before SP adjustment)
+	sub	r15, #4		! allocate space for 2 arguments
+	.word	0x6FF1, 0x0002	! ld 2(r15), r1 — [SP+2] = arg2 (regs pointer)
+	.word	0x6FF0, 0x0000	! ld 0(r15), r0 — [SP+0] = arg1 (syscall number)
+
+	! Call C handler entry point at 0x0200
+	ld	r2, #0x0200
+	call	@rr2		! pushes 2-byte ret addr (NONSEG mode)
+
+	! Clean up pushed arguments (2 words = 4 bytes)
+	add	r15, #4
+
+	! Write C handler return value (R0) into the saved-R0 slot on
+	! the system stack, so it gets restored by pop r0 below.
+	.word	0x6FF0, 0x0000	! ld 0(r15), r0 — saved_regs[0] = return value
 
 	! Switch back to SEG+SYS mode for register restore and IRET.
 	! The CPU swaps R14 with the saved stack segment again, restoring
@@ -152,8 +179,7 @@ syscall_entry:
 	ld	r1, #0xC000	! FCW: SEG + SYS
 	ldctl	fcw, r1
 
-	! Restore saved registers
-	! Pop and discard saved R0 (we'll set R0=7 at the end)
+	! Restore saved registers (R0 now holds return value from C handler)
 	pop	r0, @rr14
 	pop	r1, @rr14
 	pop	r2, @rr14
@@ -168,11 +194,7 @@ syscall_entry:
 	pop	r11, @rr14
 	pop	r12, @rr14
 
-	! Set return value in R0
-	ld	r0, #7
-
-	! Return from interrupt
-	! Pops: tag(2) + FCW(2) + PC(4), then CHANGE_FCW restores caller mode
+	! R0 already has the syscall return value (written to saved slot above)
 	iret
 
 
@@ -184,7 +206,13 @@ syscall_entry:
 
 _start:
 test_start:
-	ld	r0, #0		! R0 = 0 initially
-	sc	#0		! system call - triggers SYSCALL trap handler
-	! After IRET, R0 should be 7 (set by handler)
-	halt			! emulator checks R0 == 7
+	! write(1, msg, 23) — syscall #4
+	ld	r1, #1		! fd = stdout
+	ld	r2, #msg	! buffer pointer
+	ld	r3, #23		! byte count
+	sc	#4		! write() syscall
+	! R0 = bytes written (should be 23)
+	halt
+
+msg:
+	.ascii	"Hello from Z8000 Unix!\n"
