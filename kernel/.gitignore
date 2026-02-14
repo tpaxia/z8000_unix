@@ -1,0 +1,5 @@
+*.o
+*.coff
+*.bin
+*.lst
+test_driver
