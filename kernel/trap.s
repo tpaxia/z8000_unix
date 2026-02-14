@@ -131,28 +131,26 @@ syscall_entry:
 	push	@rr14, r1
 	push	@rr14, r0
 
-	! Switch to NONSEG+SYS mode for C handler call
-	! This changes F_SEG while staying in SYS mode:
-	!   R14 gets swapped with m_nspseg (saving stack segment)
-	!   R15 stays (stack offset, used as SP in non-seg mode)
+	! Switch to NONSEG+SYS mode for C handler call.
+	! Changing F_SEG within system mode causes the CPU to swap R14
+	! with the saved system stack segment register, preserving the
+	! stack segment for later restoration. R15 (stack offset) is
+	! unchanged since F_S_N stays set.
 	ld	r1, #0x4000	! FCW: NONSEG + SYS
 	ldctl	fcw, r1
 
 	! --- Now in NONSEG+SYS mode, segment 1 (inherited from PC) ---
-	! R15 = system stack offset within segment 1
-	! All memory accesses go to segment 1 via adjust_addr_for_nonseg_mode()
+	! R15 = system stack offset, all addresses resolve to the PC's segment.
 
 	! For this initial test, just set R0 = 7 as proof that the
 	! syscall handler executed successfully
 	ld	r0, #7
 
-	! Switch back to SEG+SYS mode for register restore and IRET
-	! This swaps R14 back with m_nspseg (restoring stack segment)
+	! Switch back to SEG+SYS mode for register restore and IRET.
+	! The CPU swaps R14 with the saved stack segment again, restoring
+	! RR14 as a valid segmented stack pointer.
 	ld	r1, #0xC000	! FCW: SEG + SYS
 	ldctl	fcw, r1
-
-	! --- Back in SEG+SYS mode ---
-	! RR14 = system stack pointer again
 
 	! Restore saved registers
 	! Pop and discard saved R0 (we'll set R0=7 at the end)
