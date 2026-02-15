@@ -4,6 +4,7 @@
 ! Layout at 0x0200 (start of handler.bin):
 !   0x0200: jr syscall_dispatch   (2 bytes) - SYSCALL handler calls here
 !   0x0202: jr boot_entry         (2 bytes) - boot path calls here
+!   0x0204: jr nvi_dispatch       (2 bytes) - NVI handler calls here
 
 .define EXIT, WRITE, BRK
 .define ERANGE, ESET, EHEAP, EILLINS, EODDZ, ECASE, EBADMON
@@ -12,6 +13,7 @@
 .define _putc, _putchar, _inb, _inw, _insw, _outb, _outw, _outsw, _idle
 .define _save, _resume, _retu, _set_usp
 .define _fubyte, _subyte, _fuword, _suword, _copyin, _copyout
+.define _spl0, _spl1, _spl4, _spl5, _spl6, _spl7, _splx
 
 .sect .text
 .sect .rom
@@ -32,6 +34,7 @@ EBADMON = 25
 ! --- Jump table at offset 0x0000 (address 0x0200) ---
     jr      syscall_dispatch    ! 0x0200: syscall entry
     jr      boot_entry          ! 0x0202: boot entry
+    jr      nvi_dispatch        ! 0x0204: NVI handler entry
 
 ! --- Syscall dispatch entry ---
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
@@ -50,6 +53,17 @@ syscall_dispatch:
     pop     R13, *SP
     ret
 
+! --- NVI dispatch entry ---
+! Called from trap.s nvi_entry in NONSEG+SYS mode.
+! Calls the C interrupt handler _hdintr().
+nvi_dispatch:
+    push    *SP, R13
+    ld      R13, R15
+    calr    _hdintr
+    ld      R15, R13
+    pop     R13, *SP
+    ret
+
 ! --- Boot entry ---
 boot_entry:
     ld      R2, $begbss
@@ -63,6 +77,9 @@ boot_entry:
     ! Kernel stack at top of u-area page (0xF000-0xFFFF).
     ! MMU maps these pages per-process via KDSA6.
     ld      R15, $0xFFFE
+    ! Enable NVI: set FCW to NONSEG+SYS+NVIE (0x4800)
+    ld      R0, $0x4800
+    ldctl   FCW, R0
     calr    _main
     ! After main returns in child process, enter user mode
     calr    _retu
@@ -118,6 +135,7 @@ _outb:
 ! --- void idle(void) ---
 _idle:
     halt
+    ret
 
 ! =============================================================================
 ! save(label) -- Save context, return 0
@@ -462,6 +480,47 @@ _outw:
     out     *RR2, R4
     ld      R15, R13
     pop     R13, *SP
+    ret
+
+! =============================================================================
+! SPL functions -- interrupt priority level control.
+!
+! Z8000 has no priority levels; NVI is simply on or off via NVIE (bit 0x0800).
+! spl0/spl1/spl4/spl5: enable interrupts (set NVIE)
+! spl6/spl7: disable interrupts (clear NVIE)
+! splx(s): restore NVIE from saved FCW value
+! All return the previous FCW value (for splx restoration).
+! =============================================================================
+
+! --- spl0/spl1/spl4/spl5: enable NVI ---
+_spl0:
+_spl1:
+_spl4:
+_spl5:
+    ldctl   R0, FCW         ! R0 = old FCW (return value)
+    ld      R1, R0
+    or      R1, $0x0800     ! set NVIE
+    ldctl   FCW, R1
+    ret
+
+! --- spl6/spl7: disable NVI ---
+_spl6:
+_spl7:
+    ldctl   R0, FCW         ! R0 = old FCW (return value)
+    ld      R1, R0
+    and     R1, $0xF7FF     ! clear NVIE
+    ldctl   FCW, R1
+    ret
+
+! --- splx(s): restore NVIE from argument ---
+_splx:
+    ldctl   R0, FCW         ! R0 = old FCW (return value)
+    ld      R1, R0
+    and     R1, $0xF7FF     ! clear NVIE in current
+    ld      R2, 2(R15)      ! R2 = argument (saved FCW)
+    and     R2, $0x0800     ! isolate NVIE bit
+    or      R1, R2          ! copy NVIE from argument
+    ldctl   FCW, R1
     ret
 
 .sect .bss

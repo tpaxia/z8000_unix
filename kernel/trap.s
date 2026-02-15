@@ -75,9 +75,9 @@
 
 ! --- NVI vector (offset 0x30) ---
 	.word	0x0000		! reserved
-	.word	0xC000		! FCW: SEG + SYS
+	.word	0xC000		! FCW: SEG + SYS (no NVIE — interrupts disabled on entry)
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	nvi_entry	! PC low: offset of NVI handler
 
 ! --- VI vector (offset 0x38) ---
 	.word	0x0000		! reserved
@@ -197,6 +197,77 @@ syscall_entry:
 	pop	r12, @rr14
 
 	! R0 already has the syscall return value (written to saved slot above)
+	iret
+
+
+! =============================================================================
+! NVI (Non-Vectored Interrupt) entry stub
+!
+! Entry state (set up by CPU hardware):
+!   - Mode: SEG + SYS (F_SEG | F_S_N), NVIE cleared (interrupts disabled)
+!   - RR14 = system stack pointer (segment:offset)
+!   - System stack already contains (pushed by CPU):
+!       [SP+4,+5]: saved PC high (segmented format)
+!       [SP+2,+3]: saved PC low
+!       [SP+0,+1]: saved FCW (has NVIE set — will be restored by IRET)
+!       [-2,-1]:   tag (interrupt vector, 0x0000 for NVI)
+!
+! Strategy:
+!   1. Save registers R0-R12 onto the system stack
+!   2. Switch to NONSEG+SYS to call C handler
+!   3. Call nvi_dispatch at 0x0204
+!   4. Switch back to SEG+SYS
+!   5. Restore registers
+!   6. IRET to return (restores FCW with NVIE set)
+! =============================================================================
+nvi_entry:
+	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
+	push	@rr14, r12
+	push	@rr14, r11
+	push	@rr14, r10
+	push	@rr14, r9
+	push	@rr14, r8
+	push	@rr14, r7
+	push	@rr14, r6
+	push	@rr14, r5
+	push	@rr14, r4
+	push	@rr14, r3
+	push	@rr14, r2
+	push	@rr14, r1
+	push	@rr14, r0
+
+	! Switch to NONSEG+SYS mode for C handler call
+	ld	r1, #0x4000	! FCW: NONSEG + SYS (no NVIE)
+	ldctl	fcw, r1
+
+	.unsegm
+
+	! Call NVI dispatch at 0x0204
+	ld	r2, #0x0204
+	call	@r2
+
+	.segm
+
+	! Switch back to SEG+SYS mode for register restore and IRET
+	ld	r1, #0xC000	! FCW: SEG + SYS
+	ldctl	fcw, r1
+
+	! Restore saved registers
+	pop	r0, @rr14
+	pop	r1, @rr14
+	pop	r2, @rr14
+	pop	r3, @rr14
+	pop	r4, @rr14
+	pop	r5, @rr14
+	pop	r6, @rr14
+	pop	r7, @rr14
+	pop	r8, @rr14
+	pop	r9, @rr14
+	pop	r10, @rr14
+	pop	r11, @rr14
+	pop	r12, @rr14
+
+	! IRET restores FCW (which has NVIE set), re-enabling interrupts
 	iret
 
 

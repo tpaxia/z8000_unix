@@ -91,8 +91,8 @@ private:
 // Extended IOPorts with DMA controller for RAM disk
 class KernelIOPorts : public z8000_io_bus {
 public:
-    KernelIOPorts(MemoryRegion *mem, MMU *mmu)
-        : m_trace(false), m_memory(mem), m_mmu(mmu),
+    KernelIOPorts(MemoryRegion *mem, MMU *mmu, z8001_device *cpu)
+        : m_trace(false), m_memory(mem), m_mmu(mmu), m_cpu(cpu),
           m_dma_blk_hi(0), m_dma_blk_lo(0),
           m_dma_addr_hi(0), m_dma_addr_lo(0),
           m_dma_status(0),
@@ -333,6 +333,7 @@ private:
             m_ata_writing = false;
             m_ata_status = 0x48;  // DRDY + DRQ
             m_ata_error = 0;
+            m_cpu->assert_nvi();
         } else if (cmd == 0x30) {
             // WRITE SECTORS: set DRQ, driver fills buffer
             memset(m_ata_buf, 0, 512);
@@ -357,11 +358,13 @@ private:
         m_ata_active = false;
         m_ata_status = 0x40;  // DRDY, clear DRQ
         m_ata_error = 0;
+        m_cpu->assert_nvi();
     }
 
     bool m_trace;
     MemoryRegion *m_memory;
     MMU *m_mmu;
+    z8001_device *m_cpu;
     std::vector<uint8_t> m_disk;
     std::vector<uint8_t> m_hd;
     std::string m_console_buf;
@@ -438,8 +441,11 @@ int main(int argc, char* argv[]) {
     // Create paged MMU wrapping physical memory
     MMU mmu(&memory);
 
-    // Create I/O ports with DMA controller and MMU access
-    KernelIOPorts io(&memory, &mmu);
+    // Create Z8001 CPU (memory access goes through MMU)
+    z8001_device cpu;
+
+    // Create I/O ports with DMA controller, MMU access, and CPU reference
+    KernelIOPorts io(&memory, &mmu, &cpu);
 
     printf("Loading binaries:\n");
 
@@ -461,8 +467,6 @@ int main(int argc, char* argv[]) {
     if (!io.load_hd("hd.img"))
         return 1;
 
-    // Create Z8001 CPU (memory access goes through MMU)
-    z8001_device cpu;
     cpu.set_memory(&mmu);
     cpu.set_io(&io);
     cpu.set_trace(trace);

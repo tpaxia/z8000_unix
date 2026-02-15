@@ -97,24 +97,42 @@ Added process management (fork/exit/wait), a paged MMU emulation, and V7-style c
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\nhello from process 1\n", no panics. PASS.
 
+## Step 9: exec() Syscall, IDE Hard Drive, and Interrupt-Driven I/O
+
+Added exec() syscall, an IDE hard drive driver, and converted the HD driver to interrupt-driven I/O using the Z8000 NVI (Non-Vectored Interrupt).
+
+- exec() syscall (#11): loads a binary from the filesystem into the user segment, sets up user stack, and enters user mode. Process 1's icode now calls exec("/etc/init") instead of hardcoded write()+exit().
+- IDE hard drive driver (hd.c): ATA PIO driver at standard x86 register addresses (0x1F0-0x1F7). The root filesystem is now loaded from an HD image (hd.img) instead of the RAM disk.
+- Interrupt-driven I/O: hdstrategy() issues the ATA command and returns. The emulator asserts NVI on command completion. The NVI handler (trap.s nvi_entry) saves registers, switches to NONSEG+SYS, calls hdintr() which performs data transfer and calls iodone().
+- NVI trap infrastructure: PSA NVI vector points to nvi_entry handler in trap.s, which follows the same SEG/NONSEG mode switching pattern as syscall_entry. The nvi_dispatch entry at 0x0204 in krt.s calls the C interrupt handler.
+- SPL functions: spl0/spl1/spl4/spl5/spl6/spl7/splx implemented in assembly (krt.s), controlling the NVIE bit (0x0800) in the FCW. Replaced the C no-op stubs in machdep.c.
+- NVIE enabled at boot: boot_entry sets FCW to 0x4800 (NONSEG+SYS+NVIE) before calling main().
+- idle() fixed: added ret after halt so NVI can wake the CPU from HALT and return to swtch().
+- Emulator: added assert_nvi() method to z8002_device. KernelIOPorts takes a CPU pointer and asserts NVI on ATA read completion and write flush.
+- Build system: all build artifacts now go into build/ subdirectory.
+
+**Test:** CPU halted, console output = "boot\nZ8000 Unix\nhello from exec\n", no panics. PASS.
+
 ## Current State
 
-The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, and runs user-mode code:
+The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, exec's /etc/init from the HD, and runs user-mode code:
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
-- V7-style context switching (save/resume/swtch) — no bcopy of u-areas, no per-process kernel stacks
+- V7-style context switching (save/resume/swtch) -- no bcopy of u-areas, no per-process kernel stacks
 - Process creation via fork (newproc) with u-area copy through MMU window
 - sleep/wakeup, run queue management, priority scheduling
-- Buffer cache (bio.c) with 8 buffers and synchronous RAM disk I/O
-- Root filesystem mounted from a disk image via DMA
+- Buffer cache (bio.c) with 8 buffers
+- Interrupt-driven IDE hard drive with NVI
+- Root filesystem mounted from HD image via ATA PIO
+- exec() syscall loading binaries from filesystem
 - Directory traversal (namei) and inode management (iget/iput)
-- File descriptor table (falloc) and device open (openi → cdevsw)
-- Console output through the V7 printf → putchar → outb path
+- File descriptor table (falloc) and device open (openi -> cdevsw)
+- Console output through the V7 printf -> putchar -> outb path
 - Cross-segment user memory access (copyin/copyout) via SEG mode toggle
+- SPL functions controlling NVI enable/disable
 - All V7 C source compiled with ACK in Z8002 mode, K&R style unchanged
 
 ## Planned Steps
 
-- **exec() syscall**: load and execute programs from the filesystem
 - **Clock interrupts**: timer-driven scheduling and preemption
 - **read() syscall**: read from console (requires emulator interrupt support)
 - **Line discipline**: echo, erase, kill processing

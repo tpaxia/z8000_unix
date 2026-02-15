@@ -8,8 +8,13 @@
 /*
  * IDE hard drive driver for Z8000.
  *
- * Synchronous polling ATA PIO driver — no interrupts, no partitions.
+ * Interrupt-driven ATA PIO driver — NVI interrupt on command completion.
  * Single drive, whole disk, LBA addressing.
+ *
+ * hdstrategy() issues the ATA command and returns.
+ * The emulator asserts NVI when the operation completes.
+ * hdintr() (called from the NVI handler) performs the data transfer
+ * for reads, checks status, and calls iodone().
  *
  * ATA register interface (emulated at standard x86 addresses):
  *   0x1F0 (R/W): DATA — 16-bit data transfer (word I/O)
@@ -47,12 +52,7 @@ extern int inb(), outb();
 extern int insw(), outsw();
 
 struct buf hdtab;
-
-hdwait()
-{
-	while (inb(HD_STATUS) & ST_BSY)
-		;
-}
+struct buf *hd_bp;		/* active request */
 
 hdopen(dev, rw)
 dev_t dev;
@@ -68,12 +68,9 @@ hdstrategy(bp)
 register struct buf *bp;
 {
 	register int blkno;
-	int status;
 
+	hd_bp = bp;
 	blkno = bp->b_blkno;
-
-	/* Wait for drive ready */
-	hdwait();
 
 	/* Set LBA address and sector count */
 	outb(HD_SC, 1);
@@ -83,22 +80,38 @@ register struct buf *bp;
 	outb(HD_DH, 0xE0);		/* LBA mode, drive 0 */
 
 	if (bp->b_flags & B_READ) {
+		/* READ: emulator loads sector + asserts NVI */
 		outb(HD_CMD, CMD_READ);
-		hdwait();
-		insw(HD_DATA, bp->b_un.b_addr, 256);
 	} else {
+		/* WRITE: emulator sets DRQ, we fill buffer, NVI on last word */
 		outb(HD_CMD, CMD_WRITE);
-		hdwait();
 		outsw(HD_DATA, bp->b_un.b_addr, 256);
-		hdwait();
 	}
+	/* Don't call iodone — hdintr() will */
+}
+
+/*
+ * hdintr() — called from NVI interrupt handler.
+ * Completes the I/O: reads data for read commands,
+ * checks status, and calls iodone().
+ */
+hdintr()
+{
+	register struct buf *bp;
+
+	bp = hd_bp;
+	if (bp == 0)
+		return;
+
+	if (bp->b_flags & B_READ)
+		insw(HD_DATA, bp->b_un.b_addr, 256);
 
 	/* Check for errors */
-	status = inb(HD_STATUS);
-	if (status & ST_ERR) {
+	if (inb(HD_STATUS) & ST_ERR) {
 		bp->b_flags |= B_ERROR;
 		bp->b_error = EIO;
 	}
 
+	hd_bp = 0;
 	iodone(bp);
 }

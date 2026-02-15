@@ -155,17 +155,6 @@ expand(newsize)
 }
 
 /*
- * SPL functions: no-ops (no interrupts yet)
- */
-spl0() { return(0); }
-spl1() { return(0); }
-spl4() { return(0); }
-spl5() { return(0); }
-spl6() { return(0); }
-spl7() { return(0); }
-splx(s) { return(0); }
-
-/*
  * plock/prele: inode locking (flag-based, no sleep needed yet)
  */
 plock(ip)
