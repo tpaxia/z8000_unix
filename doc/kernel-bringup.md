@@ -16,11 +16,15 @@ Added syscall number extraction from the SC tag word, argument passing via saved
 
 The test proves the full write() syscall: `sc #4` with R1=1 (stdout), R2=msg, R3=23 -> trap handler extracts syscall #4 from tag word -> C dispatch calls `cons_write()` -> 23 bytes output to console port -> R0=23 returned to caller via saved register slot.
 
+#### Step 3: sysent[] Dispatch Table + exit() Syscall (completed)
+
+Replaced the switch-based dispatch with a V7-style `sysent[]` function-pointer table (64 entries, indexed by syscall number). Each entry holds a handler function pointer and argument count. Added `exit()` as syscall #1 and `sys_nosys()` as the default handler for unimplemented syscalls.
+
+The test proves both syscalls in sequence: `sc #4` (write) outputs "Hello from Z8000 Unix!\n" to console, then `sc #1` (exit) returns status 42 in R0. Validates indirect function calls through the sysent[] table, struct array indexing, and ACK function pointer relocations in initialized data.
+
 ### Planned Steps
 
-- **Syscall table**: V7-style `sysent[]` table (64 entries, indexed by syscall number)
-- **exit() syscall**: process termination
-- **Console input**: read from keyboard (requires emulator interrupt support)
+- **read() syscall**: read from console (requires emulator interrupt support)
 - **Line discipline**: echo, erase, kill processing
 - **clist buffering**: V7's character block allocator
 - **File descriptor table / u-area**: proper fd validation
@@ -146,7 +150,7 @@ Build outputs:
 - `test_driver` — test executable (links against `z8000_emu/build/libz8000.a`)
 
 The test driver runs with a 10,000 cycle safety limit and verifies:
-- R0 == 23 (bytes written by write() syscall)
+- R0 == 42 (exit status from exit() syscall)
 - Console output == "Hello from Z8000 Unix!\n"
 
 ## Boot Sequence Detail
@@ -179,7 +183,11 @@ Entry in SEG+SYS mode (set by CPU hardware):
 int syscall_handler(int num, int *regs)
 ```
 
-Dispatches by syscall number via switch. Currently implements:
+Dispatches by syscall number via V7-style `sysent[]` function-pointer table
+(64 entries). Each entry holds `{ sy_call, sy_narg }`. Bounds-checks the
+syscall number and NULL-checks the handler before calling. Currently implements:
+- **syscall 0 (nosys)**: returns -1 (placeholder for indirect)
+- **syscall 1 (exit)**: returns `regs[1]` (exit status) in R0
 - **syscall 4 (write)**: `regs[1]`=fd, `regs[2]`=buf, `regs[3]`=count.
   Calls `cons_write(buf, count)` for fd 1 (stdout) or fd 2 (stderr).
 
@@ -189,19 +197,28 @@ No copyin/copyout needed until separate user segments are implemented.
 
 ## ACK Compiler Workarounds
 
-Two bugs in the ACK z8000 code generator required workarounds:
+One bug in the ACK z8000 code generator required a workaround (the
+segmented IR-mode addressing bug affecting both byte and word pointer
+dereferences has been fixed in the code generator table with `#ifdef Z8002`
+blocks):
 
-### 1. `char *` dereference generates segmented addressing
+### ~~1. `char *` dereference generates segmented addressing~~ (FIXED)
 
-The ACK C compiler with `-z8002` generates segmented `@RR2` addressing for
-byte pointer dereferences: it puts the address in R3 (offset) and sets R2=0
-(segment), then executes `ldb rl0, @r2`. In z8002 NONSEG mode, `@r2` uses
-only R2 (=0) as the address — R3 is ignored, causing reads from address 0.
+Same root cause as #2 below. Fixed by the `#ifdef Z8002` code generator
+fix. `cons_write()` is now written in C with direct `buf[i]` dereference.
 
-**Workaround**: `cons_write()` is written in assembly (in `krt.s`) instead
-of C, using direct `ldb rl1, 0(r2)` + `outb` to avoid the buggy code path.
+### ~~2. Computed pointer dereference generates segmented addressing~~ (FIXED)
 
-### 2. `unsigned *` to `int` triggers broken `cii` conversion
+The code generator's IR-mode token definitions and all LOI/STI/LIL/SIL
+rules unconditionally used LWXREG (register pair) for indirect addressing,
+putting the address in the odd register (offset half) and zeroing the even
+register (segment half). In z8002 nonseg mode, `*RR2` uses only R2 (even)
+as the address, ignoring R3. Fixed by adding `#ifdef Z8002` blocks that
+put the address in `%[a.1]` (even register) instead of `%[a.2]` (odd
+register). The `load_word()` and `cons_write()` assembly workarounds have
+been removed.
+
+### 1. `unsigned *` to `int` triggers broken `cii` conversion
 
 Accessing `unsigned *regs` elements and assigning to `int` locals generates
 calls to the ACK EM `cii` (convert integer to integer) runtime function.

@@ -6,7 +6,6 @@
 .define hol0, trppc, trpim, reghp
 .define LINO_AD, FILN_AD
 .define _putc
-.define _cons_write
 
 .sect .text
 .sect .rom
@@ -53,28 +52,6 @@ _putc:
     pop     R13, *SP
     ret
 
-! --- int cons_write(char *buf, int count) ---
-! Written in assembly to avoid ACK z8002 char* dereference bug
-! (compiler generates segmented @RR2 addressing for byte loads).
-_cons_write:
-    push    *SP, R13
-    ld      R13, R15
-    ld      R2, 4(R13)      ! R2 = buf pointer
-    ld      R3, 6(R13)      ! R3 = count
-    ldk     R4, $0          ! R4 = i (loop counter)
-cons_loop:
-    cp      R4, R3
-    jr      GE, cons_done
-    ldb     RL1, 0(R2)      ! load byte from buf[i]
-    outb    0x00F0, RL1     ! output to console port
-    inc     R2, $1          ! advance buf pointer
-    inc     R4, $1          ! increment counter
-    jr      cons_loop
-cons_done:
-    ld      R0, R3          ! return count
-    ld      R15, R13
-    pop     R13, *SP
-    ret
 
 .sect .bss
 begbss:

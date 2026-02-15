@@ -2,7 +2,7 @@
 //
 // Loads ROM (segment 0) and kernel (segment 1) into an 8MB Z8001 address
 // space, runs the CPU, and verifies that the SYSCALL trap handler executed
-// successfully by checking R0 == 7.
+// successfully by checking R0 == 42 (exit status).
 //
 // Usage: ./test_driver [-t] [-r] [-m]
 //   -t  Enable instruction tracing
@@ -120,15 +120,15 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify: R0 = byte count (23), console output = test message
+    // Verify: R0 = 42 (exit status), console output = test message
     uint16_t r0 = cpu.get_reg(0);
     std::string expected_output = "Hello from Z8000 Unix!\n";
     printf("\n");
-    if (r0 == 23 && cpu.is_halted() && io.console_output() == expected_output) {
-        printf("PASS: R0 = %d, console output correct\n", r0);
+    if (r0 == 42 && cpu.is_halted() && io.console_output() == expected_output) {
+        printf("PASS: R0 = %d (exit status), console output correct\n", r0);
         return 0;
     } else {
-        printf("FAIL: R0 = %d (expected 23), halted = %s, console = \"%s\"\n",
+        printf("FAIL: R0 = %d (expected 42), halted = %s, console = \"%s\"\n",
                r0, cpu.is_halted() ? "yes" : "no", io.console_output().c_str());
         return 1;
     }

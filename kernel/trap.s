@@ -144,14 +144,13 @@ syscall_entry:
 	! R15 = system stack offset. Saved registers at R15+0..R15+24,
 	! tag word at R15+26.
 	!
-	! NOTE: Instructions using base-address (BA) mode must be encoded
-	! manually as .word directives. The assembler runs in z8001 mode
-	! and emits 6-byte segmented X-mode encodings for n(r15) syntax,
-	! but the CPU executes this section in NONSEG mode, expecting
-	! 4-byte z8002-style BA encodings.
+	! Switch assembler to nonseg mode so BA-mode instructions
+	! (e.g., 26(r15)) get 4-byte z8002 encodings instead of
+	! 6-byte z8001 X-mode encodings.
+	.unsegm
 
 	! Extract syscall number from SC instruction tag word
-	.word	0x61F0, 0x001A	! ld r0, 26(r15) — r0 = tag word
+	ld	r0, 26(r15)	! r0 = tag word
 	and	r0, #0xFF	! r0 = syscall number
 
 	! Set up arguments for C handler:
@@ -159,19 +158,22 @@ syscall_entry:
 	!   arg2 = pointer to saved registers (r15)
 	ld	r1, r15		! r1 = &saved_regs[0] (before SP adjustment)
 	sub	r15, #4		! allocate space for 2 arguments
-	.word	0x6FF1, 0x0002	! ld 2(r15), r1 — [SP+2] = arg2 (regs pointer)
-	.word	0x6FF0, 0x0000	! ld 0(r15), r0 — [SP+0] = arg1 (syscall number)
+	ld	2(r15), r1	! [SP+2] = arg2 (regs pointer)
+	ld	0(r15), r0	! [SP+0] = arg1 (syscall number)
 
 	! Call C handler entry point at 0x0200
 	ld	r2, #0x0200
-	call	@rr2		! pushes 2-byte ret addr (NONSEG mode)
+	call	@r2		! pushes 2-byte ret addr (NONSEG mode)
 
 	! Clean up pushed arguments (2 words = 4 bytes)
 	add	r15, #4
 
 	! Write C handler return value (R0) into the saved-R0 slot on
 	! the system stack, so it gets restored by pop r0 below.
-	.word	0x6FF0, 0x0000	! ld 0(r15), r0 — saved_regs[0] = return value
+	ld	0(r15), r0	! saved_regs[0] = return value
+
+	! Switch assembler back to segmented mode
+	.segm
 
 	! Switch back to SEG+SYS mode for register restore and IRET.
 	! The CPU swaps R14 with the saved stack segment again, restoring
@@ -210,9 +212,12 @@ test_start:
 	ld	r1, #1		! fd = stdout
 	ld	r2, #msg	! buffer pointer
 	ld	r3, #23		! byte count
-	sc	#4		! write() syscall
-	! R0 = bytes written (should be 23)
-	halt
+	sc	#4		! write(1, msg, 23)
+
+	! exit(42) — syscall #1
+	ld	r1, #42		! exit status
+	sc	#1		! exit(42)
+	halt			! R0 = 42
 
 msg:
 	.ascii	"Hello from Z8000 Unix!\n"
