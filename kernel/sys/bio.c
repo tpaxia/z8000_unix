@@ -7,48 +7,6 @@
 #include "../h/proc.h"
 #include "../h/seg.h"
 
-#define	DISKMON	1
-
-#ifdef	DISKMON
-struct {
-	int	nbuf;
-	long	nread;
-	long	nreada;
-	long	ncache;
-	long	nwrite;
-	long	bufcount[NBUF];
-} io_info;
-#endif
-
-/*
- * swap IO headers.
- * they are filled in to point
- * at the desired IO operation.
- */
-struct	buf	swbuf1;
-struct	buf	swbuf2;
-
-/*
- * The following several routines allocate and free
- * buffers with various side effects.  In general the
- * arguments to an allocate routine are a device and
- * a block number, and the value is a pointer to
- * to the buffer header; the buffer is marked "busy"
- * so that no one else can touch it.  If the block was
- * already in core, no I/O need be done; if it is
- * already busy, the process waits until it becomes free.
- * The following routines allocate a buffer:
- *	getblk
- *	bread
- *	breada
- * Eventually the buffer must be released, possibly with the
- * side effect of writing it out, by using one of
- *	bwrite
- *	bdwrite
- *	bawrite
- *	brelse
- */
-
 /*
  * Read in (if necessary) the block and return a buffer pointer.
  */
@@ -60,18 +18,11 @@ daddr_t blkno;
 	register struct buf *bp;
 
 	bp = getblk(dev, blkno);
-	if (bp->b_flags&B_DONE) {
-#ifdef	DISKMON
-		io_info.ncache++;
-#endif
+	if (bp->b_flags&B_DONE)
 		return(bp);
-	}
 	bp->b_flags |= B_READ;
 	bp->b_bcount = BSIZE;
 	(*bdevsw[major(dev)].d_strategy)(bp);
-#ifdef	DISKMON
-	io_info.nread++;
-#endif
 	iowait(bp);
 	return(bp);
 }
@@ -94,9 +45,6 @@ daddr_t blkno, rablkno;
 			bp->b_flags |= B_READ;
 			bp->b_bcount = BSIZE;
 			(*bdevsw[major(dev)].d_strategy)(bp);
-#ifdef	DISKMON
-			io_info.nread++;
-#endif
 		}
 	}
 	if (rablkno && !incore(dev, rablkno)) {
@@ -107,9 +55,6 @@ daddr_t blkno, rablkno;
 			rabp->b_flags |= B_READ|B_ASYNC;
 			rabp->b_bcount = BSIZE;
 			(*bdevsw[major(dev)].d_strategy)(rabp);
-#ifdef	DISKMON
-			io_info.nreada++;
-#endif
 		}
 	}
 	if(bp == NULL)
@@ -130,9 +75,6 @@ register struct buf *bp;
 	flag = bp->b_flags;
 	bp->b_flags &= ~(B_READ | B_DONE | B_ERROR | B_DELWRI | B_AGE);
 	bp->b_bcount = BSIZE;
-#ifdef	DISKMON
-	io_info.nwrite++;
-#endif
 	(*bdevsw[major(bp->b_dev)].d_strategy)(bp);
 	if ((flag&B_ASYNC) == 0) {
 		iowait(bp);
@@ -148,8 +90,6 @@ register struct buf *bp;
  * for another purpose it will be written out before being
  * given up (e.g. when writing a partial block where it is
  * assumed that another write for the same block will soon follow).
- * This can't be done for magtape, since writes must be done
- * in the same order as requested.
  */
 bdwrite(bp)
 register struct buf *bp;
@@ -233,6 +173,8 @@ daddr_t blkno;
  * Assign a buffer for the given block.  If the appropriate
  * block is already associated, return it; otherwise search
  * for the oldest non-busy buffer and reassign it.
+ *
+ * Note: sleep() should never trigger on a synchronous RAM disk.
  */
 struct buf *
 getblk(dev, blkno)
@@ -241,9 +183,6 @@ daddr_t blkno;
 {
 	register struct buf *bp;
 	register struct buf *dp;
-#ifdef	DISKMON
-	register i;
-#endif
 
 	if(major(dev) >= nblkdev)
 		panic("blkdev");
@@ -263,16 +202,6 @@ daddr_t blkno;
 			goto loop;
 		}
 		spl0();
-#ifdef	DISKMON
-		i = 0;
-		dp = bp->av_forw;
-		while (dp != &bfreelist) {
-			i++;
-			dp = dp->av_forw;
-		}
-		if (i<NBUF)
-			io_info.bufcount[i]++;
-#endif
 		notavail(bp);
 		return(bp);
 	}
@@ -339,6 +268,10 @@ loop:
 /*
  * Wait for I/O completion on the buffer; return errors
  * to the user.
+ *
+ * With synchronous RAM disk, the I/O is already done when
+ * strategy() returns, so B_DONE is already set and the
+ * sleep never triggers.
  */
 iowait(bp)
 register struct buf *bp;
@@ -375,8 +308,6 @@ iodone(bp)
 register struct buf *bp;
 {
 
-	if(bp->b_flags&B_MAP)
-		mapfree(bp);
 	bp->b_flags |= B_DONE;
 	if (bp->b_flags&B_ASYNC)
 		brelse(bp);
@@ -392,59 +323,9 @@ register struct buf *bp;
 clrbuf(bp)
 struct buf *bp;
 {
-	register *p;
-	register c;
 
-	p = bp->b_un.b_words;
-	c = BSIZE/sizeof(int);
-	do
-		*p++ = 0;
-	while (--c);
+	bzero(bp->b_un.b_addr, BSIZE);
 	bp->b_resid = 0;
-}
-
-/*
- * swap I/O
- */
-swap(blkno, coreaddr, count, rdflg)
-register count;
-{
-	register struct buf *bp;
-	register tcount;
-
-	bp = &swbuf1;
-	if(bp->b_flags & B_BUSY)
-		if((swbuf2.b_flags&B_WANTED) == 0)
-			bp = &swbuf2;
-	spl6();
-	while (bp->b_flags&B_BUSY) {
-		bp->b_flags |= B_WANTED;
-		sleep((caddr_t)bp, PSWP+1);
-	}
-	while (count) {
-		bp->b_flags = B_BUSY | B_PHYS | rdflg;
-		bp->b_dev = swapdev;
-		tcount = count;
-		if (tcount >= 01700)	/* prevent byte-count wrap */
-			tcount = 01700;
-		bp->b_bcount = ctob(tcount);
-		bp->b_blkno = swplo+blkno;
-		bp->b_un.b_addr = (caddr_t)(coreaddr<<6);
-		bp->b_xmem = (coreaddr>>10) & 077;
-		(*bdevsw[major(swapdev)].d_strategy)(bp);
-		spl6();
-		while((bp->b_flags&B_DONE)==0)
-			sleep((caddr_t)bp, PSWP);
-		count -= tcount;
-		coreaddr += tcount;
-		blkno += ctod(tcount);
-	}
-	if (bp->b_flags&B_WANTED)
-		wakeup((caddr_t)bp);
-	spl0();
-	bp->b_flags &= ~(B_BUSY|B_WANTED);
-	if (bp->b_flags & B_ERROR)
-		panic("IO err in swap");
 }
 
 /*
@@ -472,87 +353,9 @@ loop:
 }
 
 /*
- * Raw I/O. The arguments are
- *	The strategy routine for the device
- *	A buffer, which will always be a special buffer
- *	  header owned exclusively by the device for this purpose
- *	The device number
- *	Read/write flag
- * Essentially all the work is computing physical addresses and
- * validating them.
- */
-physio(strat, bp, dev, rw)
-register struct buf *bp;
-int (*strat)();
-{
-	register unsigned base;
-	register int nb;
-	int ts;
-
-	base = (unsigned)u.u_base;
-	/*
-	 * Check odd base, odd count, and address wraparound
-	 */
-	if (base&01 || u.u_count&01 || base>=base+u.u_count)
-		goto bad;
-	ts = (u.u_tsize+127) & ~0177;
-	if (u.u_sep)
-		ts = 0;
-	nb = (base>>6) & 01777;
-	/*
-	 * Check overlap with text. (ts and nb now
-	 * in 64-byte clicks)
-	 */
-	if (nb < ts)
-		goto bad;
-	/*
-	 * Check that transfer is either entirely in the
-	 * data or in the stack: that is, either
-	 * the end is in the data or the start is in the stack
-	 * (remember wraparound was already checked).
-	 */
-	if ((((base+u.u_count)>>6)&01777) >= ts+u.u_dsize
-	    && nb < 1024-u.u_ssize)
-		goto bad;
-	spl6();
-	while (bp->b_flags&B_BUSY) {
-		bp->b_flags |= B_WANTED;
-		sleep((caddr_t)bp, PRIBIO+1);
-	}
-	bp->b_flags = B_BUSY | B_PHYS | rw;
-	bp->b_dev = dev;
-	/*
-	 * Compute physical address by simulating
-	 * the segmentation hardware.
-	 */
-	ts = (u.u_sep? UDSA: UISA)->r[nb>>7] + (nb&0177);
-	bp->b_un.b_addr = (caddr_t)((ts<<6) + (base&077));
-	bp->b_xmem = (ts>>10) & 077;
-	bp->b_blkno = u.u_offset >> BSHIFT;
-	bp->b_bcount = u.u_count;
-	bp->b_error = 0;
-	u.u_procp->p_flag |= SLOCK;
-	(*strat)(bp);
-	spl6();
-	while ((bp->b_flags&B_DONE) == 0)
-		sleep((caddr_t)bp, PRIBIO);
-	u.u_procp->p_flag &= ~SLOCK;
-	if (bp->b_flags&B_WANTED)
-		wakeup((caddr_t)bp);
-	spl0();
-	bp->b_flags &= ~(B_BUSY|B_WANTED);
-	u.u_count = bp->b_resid;
-	geterror(bp);
-	return;
-    bad:
-	u.u_error = EFAULT;
-}
-
-/*
  * Pick up the device's error number and pass it to the user;
  * if there is an error but the number is 0 set a generalized
- * code.  Actually the latter is always true because devices
- * don't yet return specific errors.
+ * code.
  */
 geterror(bp)
 register struct buf *bp;

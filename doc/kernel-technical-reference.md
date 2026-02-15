@@ -102,3 +102,71 @@ R2 = arg2       — e.g., buffer pointer for write
 R3 = arg3       — e.g., byte count for write
 R0 = return     — bytes written, or -1 on error
 ```
+
+## Boot Flow (V7 Kernel)
+
+```
+ROM reset → seg0:0x0010 (init)
+  → set PSAP to seg1:0x0000, system stack RR14 = seg1:0xFFF0
+  → set NSP = 0xFFF0
+  → IRET to seg1:0x0100 (NONSEG+SYS)
+
+seg1:0x0100 (trap.s boot entry):
+  → call 0x0200
+
+seg1:0x0200 (krt.s entry):
+  → zero BSS (begbss..endbss)
+  → calr _main
+
+main() (sys/main.c):
+  → proc[0] setup: p_stat=SRUN, p_flag=SLOAD|SSYS
+  → u.u_procp = &proc[0], u.u_error = 0
+  → rootdev = makedev(0, 0)
+  → binit()         — init 8-buffer cache, count block devices
+  → iinit()         — open block device, bread superblock, mount root
+  → iget(ROOTINO)   — load root inode
+  → namei("/dev/console") — walk root→dev→console via bread/bmap/iget
+  → open1()         — falloc(), openi(), cdevsw[0].d_open()
+  → dup fd 0 → fd 1, fd 2
+  → printf("Z8000 Unix\n")
+  → idle()          — halt
+```
+
+## RAM Disk DMA
+
+The kernel runs in NONSEG mode with 16-bit pointers (64KB address space). The disk image cannot live in this space alongside the kernel. Instead, the RAM disk driver (`dev/md.c`) uses I/O port-based DMA: it writes a block number and kernel buffer address to I/O ports, and the emulator performs the memory transfer.
+
+### DMA Controller Ports
+
+| Port | R/W | Description |
+|------|-----|-------------|
+| 0xE0 | W | Block number high byte |
+| 0xE1 | W | Block number low byte |
+| 0xE2 | W | DMA address high byte (kernel buffer offset) |
+| 0xE3 | W | DMA address low byte |
+| 0xE4 | W | Command: 1=read block→mem, 2=write mem→block |
+| 0xE5 | R | Status: 0=ok, 0xFF=error |
+
+On command write, the emulator immediately copies 512 bytes between the disk image and the memory region at `0x010000 + dma_addr` (segment 1). Reads beyond the end of the disk image return zero-filled blocks.
+
+### Device Switch Tables
+
+```
+bdevsw[0] = { mdopen, mdclose, mdstrategy, &mdtab }   — RAM disk
+cdevsw[0] = { consopen, consclose, consread, conswrite } — console
+cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
+```
+
+## ACK Calling Convention (Z8002)
+
+| Aspect | Convention |
+|--------|-----------|
+| Stack pointer | R15 |
+| Frame pointer | R13 |
+| Return value | R0 (int/pointer) |
+| Arguments | Pushed right-to-left onto R15 stack |
+| Callee-saved | R4-R13 |
+| Function prologue | `push *SP, R13; ld R13, R15; sub R15, $N` |
+| Function epilogue | `ldk R14, $0; ld R15, R13; pop R13, *SP; ret` |
+
+The `push *SP` / `pop *SP` syntax resolves to R15 in z8002 mode (R14/RR14 in z8001 mode). Assembly functions called from C must return values in R0.

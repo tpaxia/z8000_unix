@@ -11,11 +11,12 @@
  * an inode. Note that the inode is locked.
  *
  * func = function called to get next char of name
- *	&uchar if name is in user space
  *	&schar if name is in system space
  * flag = 0 if name is sought
  *	1 if name is to be created
  *	2 if name is to be deleted
+ *
+ * Z8000 adaptation: removed mpxip handling.
  */
 struct inode *
 namei(func, flag)
@@ -63,8 +64,6 @@ cloop:
 
 	cp = &u.u_dbuf[0];
 	while (c != '/' && c != '\0' && u.u_error == 0 ) {
-		if (mpxip!=NULL && c=='!')
-			break;
 		if(cp < &u.u_dbuf[DIRSIZ])
 			*cp++ = c;
 		c = (*func)();
@@ -73,12 +72,6 @@ cloop:
 		*cp++ = '\0';
 	while(c == '/')
 		c = (*func)();
-	if (c == '!' && mpxip != NULL) {
-		iput(dp);
-		plock(mpxip);
-		mpxip->i_count++;
-		return(mpxip);
-	}
 
 seloop:
 	/*
@@ -212,13 +205,11 @@ schar()
 /*
  * Return the next character from the
  * user string pointed at by dirp.
+ * Stubbed for Z8000: just calls schar
+ * since everything is kernel-space.
  */
 uchar()
 {
-	register c;
 
-	c = fubyte(u.u_dirp++);
-	if(c == -1)
-		u.u_error = EFAULT;
-	return(c);
+	return(*u.u_dirp++ & 0377);
 }

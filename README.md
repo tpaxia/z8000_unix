@@ -54,23 +54,39 @@ Prerequisites: z8k-coff binutils, ACK built with Z8000 support, C++17 compiler.
 
 ```sh
 cd ack && gmake HOSTCC=cc CC=cc -j8 NINJA='ninja -k0'   # build ACK
-cd kernel && make test                                    # build + run kernel test
+cd tools && make                                          # build v7mkfs, create root.img
+cd kernel && make && cp ../tools/root.img . && ./test_driver  # build + run kernel test
 ```
 
-The test verifies R0 == 42 (exit status) and console output == "Hello from Z8000 Unix!\n".
+The test verifies the CPU halted, console output contains "Z8000 Unix", and no panics occurred.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `kernel/rom.s` | Reset vector + init code (segment 0) |
-| `kernel/trap.s` | PSA table + syscall entry/exit stubs + test code |
-| `kernel/krt.s` | Kernel runtime stub: entry trampoline, `putc()` |
-| `kernel/syscall.c` | Syscall dispatch, `sysent[]` table, `write()`, `exit()`, `cons_write()` |
-| `kernel/test_driver.cpp` | Emulator-based test driver |
+| `kernel/trap.s` | PSA table + syscall entry/exit stubs |
+| `kernel/krt.s` | Kernel runtime: BSS zeroing, entry trampoline, `putc()`, `putchar()`, `inb()`, `outb()`, `idle()` |
+| `kernel/h/` | V7 kernel headers adapted for Z8000 |
+| `kernel/sys/main.c` | Simplified V7 main: process 0, binit, iinit, open /dev/console |
+| `kernel/sys/bio.c` | V7 buffer cache |
+| `kernel/sys/alloc.c` | Block and inode allocation |
+| `kernel/sys/iget.c` | Inode read/write (big-endian 3-byte address conversion) |
+| `kernel/sys/nami.c` | Pathname resolution (namei) |
+| `kernel/sys/rdwri.c` | Read/write I/O |
+| `kernel/sys/subr.c` | bmap, bcopy, utilities |
+| `kernel/sys/fio.c` | File descriptor operations |
+| `kernel/sys/prf.c` | printf, panic |
+| `kernel/sys/machdep.c` | Machine-dependent stubs (spl, sleep, wakeup, etc.) |
+| `kernel/dev/md.c` | RAM disk driver (I/O port DMA) |
+| `kernel/dev/cons.c` | Console character device |
+| `kernel/dev/conf.c` | Device switch tables (bdevsw, cdevsw) |
+| `kernel/test_driver.cpp` | Emulator-based test driver with DMA controller |
 | `kernel/Makefile` | Build rules for all components |
+| `tools/v7mkfs.c` | V7 filesystem image builder |
+| `tools/proto.small` | Filesystem prototype (minimal root with /dev/console) |
 | `tests/run_test.sh` | ACK C test runner for standalone programs |
-| `v7unix/` | V7 Unix source tree (from TUHS, to be modified for Z8000) |
+| `v7unix/` | V7 Unix source tree (from TUHS, baseline for the port) |
 | `ack/` | ACK submodule (tpaxia/ack fork, z8000unix branch) |
 | `z8000_emu/` | Z8000 emulator submodule |
 

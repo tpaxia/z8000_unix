@@ -1,11 +1,12 @@
 /*
  * tunable variables
+ * Reduced for single-process Z8000 bring-up.
  */
 
-#define	NBUF	29		/* size of buffer cache */
-#define	NINODE	200		/* number of in core inodes */
-#define	NFILE	175		/* number of in core file structures */
-#define	NMOUNT	8		/* number of mountable file systems */
+#define	NBUF	8		/* size of buffer cache */
+#define	NINODE	16		/* number of in core inodes */
+#define	NFILE	16		/* number of in core file structures */
+#define	NMOUNT	2		/* number of mountable file systems */
 #define	MAXMEM	(64*32)		/* max core per process - first # is Kw */
 #define	MAXUPRC	25		/* max processes per user */
 #define	SSIZE	20		/* initial stack size (*64 bytes) */
@@ -15,7 +16,7 @@
 #define	CMAPSIZ	50		/* size of core allocation area */
 #define	SMAPSIZ	50		/* size of swap allocation area */
 #define	NCALL	20		/* max simultaneous time callouts */
-#define	NPROC	150		/* max number of processes */
+#define	NPROC	4		/* max number of processes */
 #define	NTEXT	40		/* max number of pure texts */
 #define	NCLIST	100		/* max total clist size */
 #define	HZ	60		/* Ticks/second of the clock */
@@ -46,10 +47,6 @@
  */
 
 #define	NSIG	17
-/*
- * No more than 16 signals (1-16) because they are
- * stored in bits in a word.
- */
 #define	SIGHUP	1	/* hangup */
 #define	SIGINT	2	/* interrupt (rubout) */
 #define	SIGQUIT	3	/* quit (FS) */
@@ -73,7 +70,6 @@
 
 #define	NBPW	sizeof(int)	/* number of bytes in an integer */
 #define	BSIZE	512		/* size of secondary block (bytes) */
-/* BSLOP can be 0 unless you have a TIU/Spider */
 #define	BSLOP	2		/* In case some device needs bigger buffers */
 #define	NINDIR	(BSIZE/sizeof(daddr_t))
 #define	BMASK	0777		/* BSIZE-1 */
@@ -81,7 +77,6 @@
 #define	NMASK	0177		/* NINDIR-1 */
 #define	NSHIFT	7		/* LOG2(NINDIR) */
 #define	USIZE	16		/* size of user block (*64) */
-#define	UBASE	0140000		/* abs. addr of user block */
 #define	NULL	0
 #define	CMASK	0		/* default mask for file creation */
 #define	NODEV	(dev_t)(-1)
@@ -133,12 +128,3 @@ typedef	long		time_t;
 typedef	int		label_t[6];	/* regs 2-7 */
 typedef	int		dev_t;
 typedef	long		off_t;
-
-/*
- * Machine-dependent bits and macros
- */
-#define	UMODE	0170000		/* usermode bits */
-#define	USERMODE(ps)	((ps & UMODE)==UMODE)
-
-#define	INTPRI	0340		/* Priority bits */
-#define	BASEPRI(ps)	((ps & INTPRI) != 0)

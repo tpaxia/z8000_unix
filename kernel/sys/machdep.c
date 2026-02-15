@@ -1,196 +1,105 @@
 #include "../h/param.h"
 #include "../h/systm.h"
-#include "../h/acct.h"
 #include "../h/dir.h"
 #include "../h/user.h"
 #include "../h/inode.h"
-#include "../h/proc.h"
-#include "../h/seg.h"
-#include "../h/map.h"
-#include "../h/reg.h"
-#include "../h/buf.h"
+#include "../h/conf.h"
 
 /*
- * Icode is the octal bootstrap
- * program executed in user mode
- * to bring up the system.
+ * Machine-dependent stubs for Z8000 single-process bring-up.
  */
-int	icode[] =
-{
-	0104413,	/* sys exec; init; initp */
-	0000014,
-	0000010,
-	0000777,	/* br . */
-	0000014,	/* initp: init; 0 */
-	0000000,
-	0062457,	/* init: </etc/init\0> */
-	0061564,
-	0064457,
-	0064556,
-	0000164,
-};
-int	szicode = sizeof(icode);
+
+extern int idle();
 
 /*
- * Machine-dependent startup code
+ * sleep: should never be called during single-process bring-up
+ * with synchronous RAM disk. If it is, something is wrong.
  */
-startup()
+sleep(chan, pri)
+caddr_t chan;
 {
-	register i;
-
-	/*
-	 * zero and free all of core
-	 */
-
-	i = ka6->r[0] + USIZE;
-	UISD->r[0] = 077406;
-	for(;;) {
-		UISA->r[0] = i;
-		if(fuibyte((caddr_t)0) < 0)
-			break;
-		clearseg(i);
-		maxmem++;
-		mfree(coremap, 1, i);
-		i++;
-	}
-	if(cputype == 70)
-	for(i=0; i<62; i+=2) {
-		UBMAP->r[i] = i<<12;
-		UBMAP->r[i+1] = 0;
-	}
-	printf("mem = %D\n", ctob((long)maxmem));
-	if(MAXMEM < maxmem)
-		maxmem = MAXMEM;
-	mfree(swapmap, nswap, 1);
-	swplo--;
-
-	/*
-	 * determine clock
-	 */
-
-	UISA->r[7] = ka6->r[1]; /* io segment */
-	UISD->r[7] = 077406;
+	printf("sleep(%x, %d)\n", chan, pri);
+	panic("sleep");
 }
 
 /*
- * set up a physical address
- * into users virtual address space.
+ * wakeup: no-op (no other processes to wake)
  */
-sysphys()
+wakeup(chan)
+caddr_t chan;
 {
-	register i, s, d;
-	register struct a {
-		int	segno;
-		int	size;
-		int	phys;
-	} *uap;
-
-	if(!suser())
-		return;
-	uap = (struct a *)u.u_ap;
-	i = uap->segno;
-	if(i < 0 || i >= 8)
-		goto bad;
-	s = uap->size;
-	if(s < 0 || s > 128)
-		goto bad;
-	d = u.u_uisd[i+8];
-	if(d != 0 && (d&ABS) == 0)
-		goto bad;
-	u.u_uisd[i+8] = 0;
-	u.u_uisa[i+8] = 0;
-	if(!u.u_sep) {
-		u.u_uisd[i] = 0;
-		u.u_uisa[i] = 0;
-	}
-	if(s) {
-		u.u_uisd[i+8] = ((s-1)<<8) | RW|ABS;
-		u.u_uisa[i+8] = uap->phys;
-		if(!u.u_sep) {
-			u.u_uisa[i] = u.u_uisa[i+8];
-			u.u_uisd[i] = u.u_uisd[i+8];
-		}
-	}
-	sureg();
-	return;
-
-bad:
-	u.u_error = EINVAL;
 }
 
 /*
- * Determine which clock is attached, and start it.
- * panic: no clock found
+ * SPL functions: no-ops (no interrupts)
  */
-#define	CLOCK1	((physadr)0177546)
-#define	CLOCK2	((physadr)0172540)
-clkstart()
+spl0() { return(0); }
+spl1() { return(0); }
+spl4() { return(0); }
+spl5() { return(0); }
+spl6() { return(0); }
+spl7() { return(0); }
+splx(s) { return(0); }
+
+/*
+ * plock/prele: inode locking (flag-based, no sleep)
+ */
+plock(ip)
+struct inode *ip;
 {
-	lks = CLOCK1;
-	if(fuiword((caddr_t)lks) == -1) {
-		lks = CLOCK2;
-		if(fuiword((caddr_t)lks) == -1)
-			panic("no clock");
-	}
-	lks->r[0] = 0115;
+	ip->i_flag |= 01;	/* ILOCK */
+}
+
+prele(ip)
+struct inode *ip;
+{
+	ip->i_flag &= ~01;	/* ~ILOCK */
 }
 
 /*
- * Let a process handle a signal by simulating an interrupt
+ * cinit: count character device switch entries.
+ * Sets nchrdev to the number of entries in cdevsw[].
  */
-sendsig(p, signo)
-caddr_t p;
+cinit()
 {
-	register unsigned n;
+	register struct cdevsw *cdp;
 
-	n = u.u_ar0[R6] - 4;
-	grow(n);
-	suword((caddr_t)n+2, u.u_ar0[RPS]);
-	suword((caddr_t)n, u.u_ar0[R7]);
-	u.u_ar0[R6] = n;
-	u.u_ar0[RPS] &= ~TBIT;
-	u.u_ar0[R7] = (int)p;
+	for (cdp = cdevsw; cdp->d_open; cdp++)
+		nchrdev++;
 }
 
 /*
- * 11/70 routine to allocate the
- * UNIBUS map and initialize for
- * a unibus device.
- * The code here and in
- * rhstart assumes that an rh on an 11/70
- * is an rh70 and contains 22 bit addressing.
+ * Stubs for functions not needed yet.
  */
-int	maplock;
+startup() {}
+clkstart() {}
+xrele(ip) struct inode *ip; {}
 
-mapalloc(bp)
-register struct buf *bp;
+/*
+ * bzero: zero count bytes starting at addr.
+ */
+bzero(addr, count)
+char *addr;
+int count;
 {
-	register i, a;
+	register char *p;
+	register int n;
 
-	if(cputype != 70)
-		return;
-	spl6();
-	while(maplock&B_BUSY) {
-		maplock |= B_WANTED;
-		sleep((caddr_t)&maplock, PSWP+1);
-	}
-	maplock |= B_BUSY;
-	spl0();
-	bp->b_flags |= B_MAP;
-	a = bp->b_xmem;
-	for(i=16; i<32; i+=2)
-		UBMAP->r[i+1] = a;
-	for(a++; i<48; i+=2)
-		UBMAP->r[i+1] = a;
-	bp->b_xmem = 1;
+	p = addr;
+	n = count;
+	while (n--)
+		*p++ = 0;
 }
 
-mapfree(bp)
-struct buf *bp;
-{
-
-	bp->b_flags &= ~B_MAP;
-	if(maplock&B_WANTED)
-		wakeup((caddr_t)&maplock);
-	maplock = 0;
-}
+/*
+ * fubyte/subyte/copyin/copyout: should never be called.
+ * Everything runs in kernel space.
+ */
+fubyte(addr) char *addr; { panic("fubyte"); return(-1); }
+subyte(addr, val) char *addr; { panic("subyte"); return(-1); }
+fuibyte(addr) char *addr; { panic("fuibyte"); return(-1); }
+suibyte(addr, val) char *addr; { panic("suibyte"); return(-1); }
+copyin(from, to, n) { panic("copyin"); return(-1); }
+copyout(from, to, n) { panic("copyout"); return(-1); }
+copyiin(from, to, n) { panic("copyiin"); return(-1); }
+copyiout(from, to, n) { panic("copyiout"); return(-1); }

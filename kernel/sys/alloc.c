@@ -166,7 +166,7 @@ loop:
 			return(NULL);
 		if(ip->i_mode == 0) {
 			for (i=0; i<NADDR; i++)
-				ip->i_un.i_addr[i] = 0;
+				ip->i_addr[i] = 0;
 			fp->s_fmod = 1;
 			return(ip);
 		}

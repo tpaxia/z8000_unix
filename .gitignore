@@ -2,5 +2,14 @@ v7x86/
 unix-archive/
 .claude
 *.o
+*.i
+*.m
 tests/build/
-
+kernel/root.img
+kernel/test_driver
+kernel/*.bin
+kernel/*.coff
+kernel/*.lst
+kernel/*.out
+tools/root.img
+tools/v7mkfs

@@ -72,7 +72,7 @@ loop:
 	ip->i_number = ino;
 	ip->i_flag = ILOCK;
 	ip->i_count++;
-	ip->i_un.i_lastr = 0;
+	ip->i_lastr = 0;
 	bp = bread(dev, itod(ino));
 	/*
 	 * Check I/O errors
@@ -89,6 +89,13 @@ loop:
 	return(ip);
 }
 
+/*
+ * iexpand: expand 3-byte disk addresses to 4-byte longs.
+ *
+ * Z8000 big-endian byte order (interdata convention):
+ * Each 3-byte disk address (high, mid, low) expands to
+ * a 4-byte long (0, high, mid, low).
+ */
 iexpand(ip, dp)
 register struct inode *ip;
 register struct dinode *dp;
@@ -102,13 +109,13 @@ register struct dinode *dp;
 	ip->i_uid = dp->di_uid;
 	ip->i_gid = dp->di_gid;
 	ip->i_size = dp->di_size;
-	p1 = (char *)ip->i_un.i_addr;
+	p1 = (char *)ip->i_addr;
 	p2 = (char *)dp->di_addr;
 	for(i=0; i<NADDR; i++) {
-		*p1++ = *p2++;
-		*p1++ = 0;
-		*p1++ = *p2++;
-		*p1++ = *p2++;
+		*p1++ = 0;		/* MSB = 0 (zero-extend) */
+		*p1++ = *p2++;		/* high byte */
+		*p1++ = *p2++;		/* mid byte */
+		*p1++ = *p2++;		/* low byte */
 	}
 }
 
@@ -145,6 +152,10 @@ register struct inode *ip;
  * an inode structure.
  * If any are on, update the inode
  * with the current time.
+ *
+ * Z8000 big-endian byte order for iupdat:
+ * Each 4-byte long (MSB, high, mid, low) compresses to
+ * 3-byte disk address (high, mid, low). Check MSB == 0.
  */
 iupdat(ip, ta, tm)
 register struct inode *ip;
@@ -172,14 +183,13 @@ time_t *ta, *tm;
 		dp->di_gid = ip->i_gid;
 		dp->di_size = ip->i_size;
 		p1 = (char *)dp->di_addr;
-		p2 = (char *)ip->i_un.i_addr;
+		p2 = (char *)ip->i_addr;
 		for(i=0; i<NADDR; i++) {
-			*p1++ = *p2++;
-			if(*p2++ != 0 && (ip->i_mode&IFMT)!=IFMPC
-			   && (ip->i_mode&IFMT)!=IFMPB)
+			if(*p2++ != 0)
 				printf("iaddress > 2^24\n");
-			*p1++ = *p2++;
-			*p1++ = *p2++;
+			*p1++ = *p2++;	/* high byte */
+			*p1++ = *p2++;	/* mid byte */
+			*p1++ = *p2++;	/* low byte */
 		}
 		if(ip->i_flag&IACC)
 			dp->di_atime = *ta;
@@ -213,10 +223,10 @@ register struct inode *ip;
 		return;
 	dev = ip->i_dev;
 	for(i=NADDR-1; i>=0; i--) {
-		bn = ip->i_un.i_addr[i];
+		bn = ip->i_addr[i];
 		if(bn == (daddr_t)0)
 			continue;
-		ip->i_un.i_addr[i] = (daddr_t)0;
+		ip->i_addr[i] = (daddr_t)0;
 		switch(i) {
 
 		default:

@@ -49,7 +49,6 @@ register struct file *fp;
 	int flag, mode;
 	dev_t dev;
 	register int (*cfunc)();
-	struct chan *cp;
 
 	if(fp == NULL)
 		return;
@@ -59,8 +58,7 @@ register struct file *fp;
 	}
 	ip = fp->f_inode;
 	flag = fp->f_flag;
-	cp = fp->f_un.f_chan;
-	dev = (dev_t)ip->i_un.i_rdev;
+	dev = (dev_t)ip->i_rdev;
 	mode = ip->i_mode;
 
 	plock(ip);
@@ -87,11 +85,10 @@ register struct file *fp;
 		return;
 	}
 
-	if ((flag & FMP) == 0)
-		for(fp=file; fp < &file[NFILE]; fp++)
-			if (fp->f_count && fp->f_inode==ip)
-				return;
-	(*cfunc)(dev, flag, cp);
+	for(fp=file; fp < &file[NFILE]; fp++)
+		if (fp->f_count && fp->f_inode==ip)
+			return;
+	(*cfunc)(dev, flag);
 }
 
 /*
@@ -105,7 +102,7 @@ register struct inode *ip;
 	dev_t dev;
 	register unsigned int maj;
 
-	dev = (dev_t)ip->i_un.i_rdev;
+	dev = (dev_t)ip->i_rdev;
 	maj = major(dev);
 	switch(ip->i_mode&IFMT) {
 

@@ -4,51 +4,56 @@
 #include "../h/user.h"
 #include "../h/filsys.h"
 #include "../h/mount.h"
-#include "../h/map.h"
 #include "../h/proc.h"
 #include "../h/inode.h"
 #include "../h/seg.h"
 #include "../h/conf.h"
 #include "../h/buf.h"
+#include "../h/file.h"
 
 /*
- * Initialization code.
- * Called from cold start routine as
- * soon as a stack and segmentation
- * have been established.
- * Functions:
- *	clear and free user core
- *	turn on clock
- *	hand craft 0th process
- *	call all initialization routines
- *	fork - process 0 to schedule
- *	     - process 1 execute bootstrap
- *
- * loop at low address in user mode -- /etc/init
- *	cannot be executed.
+ * Simplified main() for Z8000 single-process bring-up.
+ * No fork/exec/sched — just process 0 that mounts root,
+ * opens /dev/console, prints a message, and halts.
  */
+
+extern int open1();
+extern int schar();
+
+struct proc proc[NPROC];
+struct user u;
+
 main()
 {
+	register struct inode *ip;
+	register struct file *fp;
+	register int i;
 
-	startup();
 	/*
 	 * set up system process
 	 */
-
-	proc[0].p_addr = ka6->r[0];
-	proc[0].p_size = USIZE;
 	proc[0].p_stat = SRUN;
-	proc[0].p_flag |= SLOAD|SSYS;
+	proc[0].p_flag = SLOAD|SSYS;
 	proc[0].p_nice = NZERO;
 	u.u_procp = &proc[0];
 	u.u_cmask = CMASK;
+	u.u_uid = 0;
+	u.u_gid = 0;
+	u.u_ruid = 0;
+	u.u_rgid = 0;
+	u.u_error = 0;
+	u.u_rdir = NULL;
 
 	/*
 	 * Initialize devices and
-	 * set up 'known' i-nodes
+	 * set up 'known' i-nodes.
+	 * rootdev = major 0, minor 0 (RAM disk)
 	 */
+	rootdev = makedev(0, 0);
+	pipedev = rootdev;
+	swapdev = rootdev;
 
-	clkstart();
+	printf("boot\n");
 	cinit();
 	binit();
 	iinit();
@@ -56,25 +61,71 @@ main()
 	rootdir->i_flag &= ~ILOCK;
 	u.u_cdir = iget(rootdev, (ino_t)ROOTINO);
 	u.u_cdir->i_flag &= ~ILOCK;
-	u.u_rdir = NULL;
 
 	/*
-	 * make init process
-	 * enter scheduling loop
-	 * with system process
+	 * Open /dev/console as fd 0.
+	 * namei walks root -> dev -> console via bread/bmap/iget.
+	 * open1 calls falloc -> openi -> cdevsw[0].d_open.
 	 */
+	u.u_dirp = "/dev/console";
+	ip = namei(schar, 0);
+	if (ip == NULL)
+		panic("console");
+	open1(ip, FREAD|FWRITE, 0);
+	if (u.u_error)
+		panic("console open");
 
-	if(newproc()) {
-		expand(USIZE + (int)btoc(szicode));
-		estabur((unsigned)0, btoc(szicode), (unsigned)0, 0, RO);
-		copyout((caddr_t)icode, (caddr_t)0, szicode);
-		/*
-		 * Return goes to loc. 0 of user init
-		 * code just copied out.
-		 */
+	/*
+	 * Dup fd 0 to fd 1 and fd 2 (stdout, stderr).
+	 */
+	fp = u.u_ofile[0];
+	u.u_ofile[1] = fp;
+	fp->f_count++;
+	u.u_ofile[2] = fp;
+	fp->f_count++;
+
+	printf("Z8000 Unix\n");
+
+	idle();
+}
+
+/*
+ * open1 — common code for open and creat.
+ * Simplified: no tty handling, no mpx.
+ */
+open1(ip, mode, trf)
+register struct inode *ip;
+{
+	register struct file *fp;
+	int i;
+
+	if(trf != 2) {
+		if(mode&FREAD)
+			access(ip, IREAD);
+		if(mode&FWRITE) {
+			access(ip, IWRITE);
+			if((ip->i_mode&IFMT) == IFDIR)
+				u.u_error = EISDIR;
+		}
+	}
+	if(u.u_error) {
+		iput(ip);
 		return;
 	}
-	sched();
+	fp = falloc();
+	if(fp == NULL) {
+		iput(ip);
+		return;
+	}
+	fp->f_flag = mode&(FREAD|FWRITE);
+	fp->f_inode = ip;
+	i = u.u_r.r_val1;
+	openi(ip, mode&(FREAD|FWRITE));
+	if(u.u_error == 0)
+		return;
+	u.u_ofile[i] = NULL;
+	fp->f_count = 0;
+	iput(ip);
 }
 
 /*
@@ -83,9 +134,6 @@ main()
  * It reads the root's super block
  * and initializes the current date
  * from the last modified date.
- *
- * panic: iinit -- cannot read the super
- * block. Usually because of an IO error.
  */
 iinit()
 {
@@ -110,11 +158,7 @@ iinit()
 
 /*
  * This is the set of buffers proper, whose heads
- * were declared in buf.h.  There can exist buffer
- * headers not pointing here that are used purely
- * as arguments to the I/O routines to describe
- * I/O to be done-- e.g. swbuf for
- * swapping.
+ * were declared in buf.h.
  */
 char	buffers[NBUF][BSIZE+BSLOP];
 
@@ -151,3 +195,8 @@ binit()
 		nblkdev++;
 	}
 }
+
+struct buf buf[NBUF];
+struct buf bfreelist;
+struct inode inode[NINODE];
+struct file file[NFILE];

@@ -73,14 +73,13 @@ long n;
 /*
  * Panic is called on unresolvable
  * fatal errors.
- * It syncs, prints "panic: mesg" and
- * then loops.
+ * It prints "panic: mesg" and
+ * then halts.
  */
 panic(s)
 char *s;
 {
 	panicstr = s;
-	update();
 	printf("panic: %s\n", s);
 	for(;;)
 		idle();

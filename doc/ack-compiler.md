@@ -74,6 +74,24 @@ loc loc ciu $1==$2   | | | | |
 
 Replaced `*RR14` with `*SP` across libem (30 files), libmon (2 files), and boot.s, so the same source assembles correctly for both modes.
 
+### Libem: Z8002 Return Addresses
+
+The libem runtime functions (`cuu`, `cmi4`, `cms`, and others) save and restore the return address manually via `pop saveret, *SP` / `push *SP, saveret`. The original code used `popl` (4-byte pop/push) for the return address, matching z8001 segmented `call` which pushes a 4-byte segmented PC. In z8002 mode, `calr` only pushes a 2-byte PC, so `popl` consumed 2 extra bytes from the parameters, corrupting the stack.
+
+Fixed `cuu.s`, `cmi4.s`, and `cms.s` to use `pop`/`push` (2-byte) for return addresses. Additionally, `cms.s` had an indirect addressing issue: in z8001, `*RR2` uses R2 as segment and R3 as offset, but in z8002, `*RR2` dereferences R2 (the even register). Fixed to put the pointer in R2.
+
+### Libem: Rebuild for Z8002
+
+The entire libem.a (33 files) must be assembled with the `-z8002` flag so that `*SP` resolves to R15 (the z8002 stack pointer) instead of R14 (the z8001 segmented stack pointer RR14). Without this, all push/pop operations in libem functions operate on R14 instead of the actual stack, silently corrupting data. The compiler-generated code is unaffected because ACK's code generator emits R15-based push/pop directly.
+
+### Assembler: Relocation Bug Fix
+
+The assembler's `relonami` variable (tracking which symbol a relocation applies to) was not reset between operands of a single instruction. When an instruction had both an address operand (with relocation) and an immediate operand, the immediate would inherit the previous operand's relocation, producing wrong values after linking. Fixed in `comm0.h`/`comm2.y`/`mach4.c`/`mach5.c`.
+
+### Assembler: `ldb` Encoding Fix
+
+The `ldb` instruction encoding rules in `mach4.c` had incorrect opcode bits for certain addressing modes, producing wrong machine code for byte-register load instructions.
+
 ## Known Limitations
 
 - **No floating point**: All FP operations trap with EILLINS. The Z8000 has no FPU and no software FP library was implemented. Not needed for the kernel.

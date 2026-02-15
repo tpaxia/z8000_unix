@@ -37,17 +37,17 @@ daddr_t bn;
 	 */
 	if(bn < NADDR-3) {
 		i = bn;
-		nb = ip->i_un.i_addr[i];
+		nb = ip->i_addr[i];
 		if(nb == 0) {
 			if(rwflg==B_READ || (bp = alloc(dev))==NULL)
 				return((daddr_t)-1);
 			nb = bp->b_blkno;
 			bdwrite(bp);
-			ip->i_un.i_addr[i] = nb;
+			ip->i_addr[i] = nb;
 			ip->i_flag |= IUPD|ICHG;
 		}
 		if(i < NADDR-4)
-			rablock = ip->i_un.i_addr[i+1];
+			rablock = ip->i_addr[i+1];
 		return(nb);
 	}
 
@@ -75,13 +75,13 @@ daddr_t bn;
 	/*
 	 * fetch the address from the inode
 	 */
-	nb = ip->i_un.i_addr[NADDR-j];
+	nb = ip->i_addr[NADDR-j];
 	if(nb == 0) {
 		if(rwflg==B_READ || (bp = alloc(dev))==NULL)
 			return((daddr_t)-1);
 		nb = bp->b_blkno;
 		bdwrite(bp);
-		ip->i_un.i_addr[NADDR-j] = nb;
+		ip->i_addr[NADDR-j] = nb;
 		ip->i_flag |= IUPD|ICHG;
 	}
 
@@ -123,20 +123,14 @@ daddr_t bn;
  * Pass back  c  to the user at his location u_base;
  * update u_base, u_count, and u_offset.  Return -1
  * on the last character of the user's read.
- * u_base is in the user address space unless u_segflg is set.
+ *
+ * Z8000 simplification: kernel-space only.
  */
 passc(c)
 register c;
 {
-	register id;
 
-	if((id = u.u_segflg) == 1)
-		*u.u_base = c;
-	else
-		if(id?suibyte(u.u_base, c):subyte(u.u_base, c) < 0) {
-			u.u_error = EFAULT;
-			return(-1);
-		}
+	*u.u_base = c;
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;
@@ -147,22 +141,17 @@ register c;
  * Pick up and return the next character from the user's
  * write call at location u_base;
  * update u_base, u_count, and u_offset.  Return -1
- * when u_count is exhausted.  u_base is in the user's
- * address space unless u_segflg is set.
+ * when u_count is exhausted.
+ *
+ * Z8000 simplification: kernel-space only.
  */
 cpass()
 {
-	register c, id;
+	register c;
 
 	if(u.u_count == 0)
 		return(-1);
-	if((id = u.u_segflg) == 1)
-		c = *u.u_base;
-	else
-		if((c = id==0?fubyte(u.u_base):fuibyte(u.u_base)) < 0) {
-			u.u_error = EFAULT;
-			return(-1);
-		}
+	c = *u.u_base;
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;

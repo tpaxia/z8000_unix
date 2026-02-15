@@ -24,29 +24,13 @@ Extended ACK to support Z8002 (non-segmented) mode, since the kernel runs in NON
 
 ## Step 3: Trap Infrastructure
 
-Implemented the SYSCALL trap round-trip — the foundation for all system calls.
+Implemented the SYSCALL trap round-trip — the foundation for all system calls. See [step3-trap-infrastructure.md](step3-trap-infrastructure.md) for details.
 
-**What was built:**
-
-- ROM init code (`kernel/rom.s`, segment 0): sets up the system stack (RR14 = seg1:0xFFF0), configures PSAP to point to the PSA table (seg1:0x0000), sets the normal-mode stack pointer, and uses a fake IRET frame to jump from SEG+SYS mode to NONSEG+SYS mode in the kernel segment.
-- PSA table (`kernel/trap.s`): 8 interrupt/trap vector entries, each pointing to handlers in the kernel segment.
-- SYSCALL entry/exit stub: saves R0-R12, transitions SEG+SYS -> NONSEG+SYS, calls the C handler, writes the return value into the saved-R0 slot, transitions back to SEG+SYS, restores registers, and executes IRET.
-- Test driver (`kernel/test_driver.cpp`): loads ROM + kernel into the emulator's 8MB Z8001 address space and verifies the result.
-
-**Simplifications** for initial bring-up (see [kernel-technical-reference.md](kernel-technical-reference.md) for architecture details):
-
-- No bootloader — the emulator front end loads ROM, kernel, and C handler binaries directly at their target physical addresses. This avoids building a bootloader or file system before the kernel itself works.
-- Kernel hardcoded to segment 1, no MMU, identity-mapped.
-- All code runs in the same segment — no separate user segments, no copyin/copyout.
-- System stack at a fixed address (seg1:0xFFF0).
-- Test code embedded in the kernel binary.
-
-**Key challenges solved:**
-
-- Z8001 PSA table entry format (8 bytes with segmented PC encoding).
-- CHANGE_FCW R14/R15 swap semantics — R14 swaps with the saved stack segment register when F_SEG changes within system mode, R15 stays.
-- PSAPSEG register encoding: `(seg << 8) | 0x8000`.
-- The trap stub is assembled in z8001 mode (for `@RR14`) but must emit z8002 encodings for the NONSEG section. The z8k-coff-as `.unsegm`/`.segm` directives switch encoding mode within the file.
+- ROM init code (`kernel/rom.s`): sets up system stack, PSAP, and uses IRET to enter NONSEG+SYS mode.
+- PSA table (`kernel/trap.s`): 8 trap vector entries pointing to handlers in the kernel segment.
+- SYSCALL entry/exit stub: register save/restore, SEG+SYS <-> NONSEG+SYS transitions, C handler call, IRET return.
+- Test driver (`kernel/test_driver.cpp`): loads binaries into the emulator and verifies results.
+- Key challenges: PSA entry format, CHANGE_FCW R14/R15 swap semantics, mixed-mode assembly (`.unsegm`/`.segm`).
 
 **Test:** `sc #0` -> trap handler sets R0=7 -> IRET -> halt with R0=7. PASS.
 
@@ -82,21 +66,33 @@ Replaced the switch-based syscall dispatch with a V7-style `sysent[]` function-p
 
 **Test:** `write(1, msg, 23)` then `exit(42)` -> console output correct, R0=42. PASS.
 
+## Step 7: V7 Kernel — Process 0, Filesystem, /dev/console
+
+Replaced the test syscall handler with a real V7 kernel that boots to process 0, mounts a root filesystem from a RAM disk, opens `/dev/console`, and prints a message. This proves the entire V7 filesystem + buffer cache + device driver stack works end-to-end. See [step7-v7-kernel.md](step7-v7-kernel.md) for details.
+
+- Imported V7 kernel headers (`kernel/h/`) and source (`kernel/sys/`): buffer cache, inode/block allocation, pathname resolution, read/write I/O, file descriptor operations, printf. Adapted for Z8000: big-endian 3-byte inode addresses, PDP-11 fields removed, reduced table sizes.
+- Created a simplified `main()` — no fork/exec/sched, just process 0: `binit()`→`iinit()`→`namei("/dev/console")`→`open1()`→`printf("Z8000 Unix\n")`→`idle()`.
+- Created device drivers: RAM disk (`md.c`, I/O port DMA), console (`cons.c`), device switch tables (`conf.c`).
+- Extended `krt.s` with BSS zeroing, `inb()`/`outb()`/`putchar()`/`idle()`.
+- Extended `test_driver.cpp` with a DMA controller and disk image loading.
+- Fixed 8 ACK compiler/assembler/runtime bugs uncovered by compiling real V7 code (assembler relocations, `ldb` encoding, libem return addresses and `*SP` register encoding, `inb()` return register, BSS zeroing). Details in [ack-compiler.md](ack-compiler.md).
+
+**Test:** CPU halted, console output = "boot\nZ8000 Unix\n", no panics. PASS.
+
 ## Current State
 
-The kernel bring-up has a working SYSCALL trap round-trip with:
-- ROM boot -> kernel entry via IRET
-- `sc` instruction -> PSA vector -> trap stub -> C handler -> IRET return
-- V7-style `sysent[]` dispatch table
-- `write()` (syscall #4) with console TTY output
-- `exit()` (syscall #1)
-- All C code compiled with ACK in Z8002 mode, no assembly workarounds
+The kernel boots to process 0 with a working V7 filesystem stack:
+- Buffer cache (bio.c) with 8 buffers and synchronous RAM disk I/O
+- Root filesystem mounted from a disk image via DMA
+- Directory traversal (namei) and inode management (iget/iput)
+- File descriptor table (falloc) and device open (openi → cdevsw)
+- Console output through the V7 printf → putchar → outb path
+- All V7 C source compiled with ACK in Z8002 mode, K&R style unchanged
 
 ## Planned Steps
 
 - **read() syscall**: read from console (requires emulator interrupt support)
 - **Line discipline**: echo, erase, kill processing
 - **clist buffering**: V7's character block allocator
-- **File descriptor table / u-area**: proper fd validation
 - **Separate user segments**: copyin/copyout for user memory access via segment numbers
 - **Process management**: fork/exec using segment-based isolation

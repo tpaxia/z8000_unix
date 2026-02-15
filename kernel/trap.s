@@ -201,23 +201,16 @@ syscall_entry:
 
 
 ! =============================================================================
-! Test Code (at offset 0x0100)
-! This runs in NONSEG+SYS mode in segment 1
+! Boot entry (at offset 0x0100)
+! This runs in NONSEG+SYS mode in segment 1.
+! Calls the C handler entry point at 0x0200 which calls main().
 ! =============================================================================
+	.unsegm
 	.org	0x0100
 
 _start:
-test_start:
-	! write(1, msg, 23) — syscall #4
-	ld	r1, #1		! fd = stdout
-	ld	r2, #msg	! buffer pointer
-	ld	r3, #23		! byte count
-	sc	#4		! write(1, msg, 23)
+	ld	r2, #0x0200
+	call	@r2		! call handler entry at 0x0200
+	halt
 
-	! exit(42) — syscall #1
-	ld	r1, #42		! exit status
-	sc	#1		! exit(42)
-	halt			! R0 = 42
-
-msg:
-	.ascii	"Hello from Z8000 Unix!\n"
+	.segm			! restore segmented mode for object file

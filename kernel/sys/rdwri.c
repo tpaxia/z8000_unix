@@ -33,7 +33,7 @@ register struct inode *ip;
 		return;
 	}
 	ip->i_flag |= IACC;
-	dev = (dev_t)ip->i_un.i_rdev;
+	dev = (dev_t)ip->i_rdev;
 	type = ip->i_mode&IFMT;
 	if (type==IFCHR || type==IFMPC) {
 		return((*cdevsw[major(dev)].d_read)(dev));
@@ -58,11 +58,11 @@ register struct inode *ip;
 		if ((long)bn<0) {
 			bp = geteblk();
 			clrbuf(bp);
-		} else if (ip->i_un.i_lastr+1==lbn)
+		} else if (ip->i_lastr+1==lbn)
 			bp = breada(dev, bn, rablock);
 		else
 			bp = bread(dev, bn);
-		ip->i_un.i_lastr = lbn;
+		ip->i_lastr = lbn;
 		n = min((unsigned)n, BSIZE-bp->b_resid);
 		if (n!=0)
 			iomove(bp->b_un.b_addr+on, n, B_READ);
@@ -93,7 +93,7 @@ register struct inode *ip;
 		u.u_error = EINVAL;
 		return;
 	}
-	dev = (dev_t)ip->i_un.i_rdev;
+	dev = (dev_t)ip->i_rdev;
 	type = ip->i_mode&IFMT;
 	if (type==IFCHR || type==IFMPC) {
 		ip->i_flag |= IUPD|ICHG;
@@ -113,7 +113,7 @@ register struct inode *ip;
 				return;
 			dev = ip->i_dev;
 		}
-		if(n == BSIZE) 
+		if(n == BSIZE)
 			bp = getblk(dev, bn);
 		else
 			bp = bread(dev, bn);
@@ -159,57 +159,22 @@ unsigned a, b;
  * Move n bytes at byte location
  * &bp->b_un.b_addr[o] to/from (flag) the
  * user/kernel (u.segflg) area starting at u.base.
- * Update all the arguments by the number
- * of bytes moved.
  *
- * There are 2 algorithms,
- * if source address, dest address and count
- * are all even in a user copy,
- * then the machine language copyin/copyout
- * is called.
- * If not, its done byte-by-byte with
- * cpass and passc.
+ * Z8000 simplification: everything is kernel-space
+ * (u_segflg always 1), so just use bcopy.
  */
 iomove(cp, n, flag)
 register caddr_t cp;
 register n;
 {
-	register t;
 
 	if (n==0)
 		return;
-	if(u.u_segflg != 1 &&
-	  (n&(NBPW-1)) == 0 &&
-	  ((int)cp&(NBPW-1)) == 0 &&
-	  ((int)u.u_base&(NBPW-1)) == 0) {
-		if (flag==B_WRITE)
-			if (u.u_segflg==0)
-				t = copyin(u.u_base, (caddr_t)cp, n);
-			else
-				t = copyiin(u.u_base, (caddr_t)cp, n);
-		else
-			if (u.u_segflg==0)
-				t = copyout((caddr_t)cp, u.u_base, n);
-			else
-				t = copyiout((caddr_t)cp, u.u_base, n);
-		if (t) {
-			u.u_error = EFAULT;
-			return;
-		}
-		u.u_base += n;
-		u.u_offset += n;
-		u.u_count -= n;
-		return;
-	}
-	if (flag==B_WRITE) {
-		do {
-			if ((t = cpass()) < 0)
-				return;
-			*cp++ = t;
-		} while (--n);
-	} else
-		do {
-			if(passc(*cp++) < 0)
-				return;
-		} while (--n);
+	if (flag==B_WRITE)
+		bcopy(u.u_base, (caddr_t)cp, n);
+	else
+		bcopy((caddr_t)cp, u.u_base, n);
+	u.u_base += n;
+	u.u_offset += n;
+	u.u_count -= n;
 }
