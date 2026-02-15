@@ -58,6 +58,9 @@ struct filsys *getfs();
 struct file *getf();
 struct file *falloc();
 int	uchar();
+extern int	schar();
+extern int	icode[];
+extern int	szicode;
 /*
  * Instrumentation
  */

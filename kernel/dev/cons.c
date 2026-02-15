@@ -38,11 +38,6 @@ dev_t dev;
 {
 	register int c;
 
-	while (u.u_count > 0) {
-		c = *u.u_base & 0377;
+	while ((c = cpass()) >= 0)
 		putchar(c);
-		u.u_base++;
-		u.u_count--;
-		u.u_offset++;
-	}
 }

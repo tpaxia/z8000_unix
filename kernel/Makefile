@@ -33,6 +33,7 @@ TOOLS_DIR = ../tools
 HANDLER_OBJS = krt.o \
     sys/main.o sys/bio.o sys/alloc.o sys/iget.o sys/nami.o \
     sys/rdwri.o sys/subr.o sys/fio.o sys/prf.o sys/machdep.o \
+    sys/slp.o sys/trap.o sys/sys1.o sys/sig.o sys/sysent.o \
     dev/md.o dev/cons.o dev/conf.o
 
 all: rom.bin kernel.bin handler.bin test_driver

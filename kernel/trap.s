@@ -209,8 +209,8 @@ syscall_entry:
 	.org	0x0100
 
 _start:
-	ld	r2, #0x0200
-	call	@r2		! call handler entry at 0x0200
+	ld	r2, #0x0202
+	call	@r2		! call boot entry at 0x0202 (handler.bin + 2)
 	halt
 
 	.segm			! restore segmented mode for object file

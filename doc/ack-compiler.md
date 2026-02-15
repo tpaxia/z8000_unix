@@ -92,6 +92,32 @@ The assembler's `relonami` variable (tracking which symbol a relocation applies 
 
 The `ldb` instruction encoding rules in `mach4.c` had incorrect opcode bits for certain addressing modes, producing wrong machine code for byte-register load instructions.
 
+### Code Generator: Byte Zero-Extension Fix
+
+The MOVES rule for byte-to-word zero-extension (`src1` -> `B2REG`) at line 1945 of `mach/z8000/cg/table` generated:
+
+```asm
+ldk %[2], $0        ; clear destination word register
+ldb L%[2], %[1]     ; load byte into low half
+```
+
+This clobbers the destination register before the source operand is read. When the source uses indexed addressing through the same register as the destination (e.g., `ldb LR3, addr(R3)` after `ldk R3, $0`), the index is destroyed and the load reads from the wrong address.
+
+Fixed by reversing the order — load the byte first, then clear the high byte:
+
+```asm
+ldb L%[2], %[1]     ; load byte (source addressing intact)
+clrb H%[2]          ; clear high byte (zero-extend)
+```
+
+The `H%` prefix requires `HR0`-`HR7` assembler aliases for `RH0`-`RH7`, added in `mach/z8000/as/mach3.c` (matching the existing `LR0`-`LR7` aliases for `RL0`-`RL7`).
+
+This bug caused the `nami.c` directory comparison loop to fail when `u.u_dbuf[i]` and `u.u_dent.d_name[i]` were accessed through the `#define u` macro (absolute address + index register).
+
+### Libsys: `write.s` Implementation
+
+The original `write.s` stub returned -1 unconditionally. Replaced with a working implementation that outputs bytes to the console via I/O port 0xF0, enabling ACK platform tests to run on the z8002 emulator.
+
 ## Known Limitations
 
 - **No floating point**: All FP operations trap with EILLINS. The Z8000 has no FPU and no software FP library was implemented. Not needed for the kernel.

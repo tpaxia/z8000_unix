@@ -12,16 +12,17 @@
 #include "../h/file.h"
 
 /*
- * Simplified main() for Z8000 single-process bring-up.
- * No fork/exec/sched — just process 0 that mounts root,
- * opens /dev/console, prints a message, and halts.
+ * V7 kernel main() for Z8000.
+ *
+ * V7 style with paged MMU: process 0 mounts root, opens /dev/console,
+ * prints "Z8000 Unix", then forks process 1 which copies icode to
+ * user space and enters user mode.
  */
 
 extern int open1();
 extern int schar();
 
 struct proc proc[NPROC];
-struct user u;
 
 main()
 {
@@ -35,6 +36,7 @@ main()
 	proc[0].p_stat = SRUN;
 	proc[0].p_flag = SLOAD|SSYS;
 	proc[0].p_nice = NZERO;
+	proc[0].p_addr = 62;		/* identity-mapped u-area: seg1 page 30 = frame 62 */
 	u.u_procp = &proc[0];
 	u.u_cmask = CMASK;
 	u.u_uid = 0;
@@ -86,7 +88,23 @@ main()
 
 	printf("Z8000 Unix\n");
 
-	idle();
+	/*
+	 * Fork process 1.
+	 * V7 style: newproc() returns 1 in child, 0 in parent.
+	 * Child copies icode to user segment and enters user mode.
+	 */
+	if (newproc()) {
+		/* Child (process 1) */
+		estabur(0, btoc(szicode), 0, 0, 0);	/* no-op */
+		copyout((caddr_t)icode, (caddr_t)0, szicode);
+		return;		/* returns to krt.s boot_entry -> retu() -> user mode */
+	}
+
+	/*
+	 * Parent (process 0): become idle/scheduler.
+	 * swtch() will find proc[1] on the run queue and switch to it.
+	 */
+	swtch();
 }
 
 /*

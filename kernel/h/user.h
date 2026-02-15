@@ -80,7 +80,7 @@ struct	user
 					 */
 };
 
-extern struct user u;
+#define u (*(struct user *)0xF000)
 
 /* u_error codes */
 #define	EPERM	1
@@ -117,3 +117,5 @@ extern struct user u;
 #define	EPIPE	32
 #define	EDOM	33
 #define	ERANGE	34
+#define	ENOSYS	35
+#define	AFORK	02

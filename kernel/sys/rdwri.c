@@ -159,9 +159,7 @@ unsigned a, b;
  * Move n bytes at byte location
  * &bp->b_un.b_addr[o] to/from (flag) the
  * user/kernel (u.segflg) area starting at u.base.
- *
- * Z8000 simplification: everything is kernel-space
- * (u_segflg always 1), so just use bcopy.
+ * Handles both kernel-space (u_segflg=1) and user-space (u_segflg=0).
  */
 iomove(cp, n, flag)
 register caddr_t cp;
@@ -170,10 +168,19 @@ register n;
 
 	if (n==0)
 		return;
-	if (flag==B_WRITE)
-		bcopy(u.u_base, (caddr_t)cp, n);
-	else
-		bcopy((caddr_t)cp, u.u_base, n);
+	if (u.u_segflg) {
+		/* kernel space: direct bcopy */
+		if (flag==B_WRITE)
+			bcopy(u.u_base, (caddr_t)cp, n);
+		else
+			bcopy((caddr_t)cp, u.u_base, n);
+	} else {
+		/* user space: use copyin/copyout */
+		if (flag==B_WRITE)
+			copyin(u.u_base, (caddr_t)cp, n);
+		else
+			copyout((caddr_t)cp, u.u_base, n);
+	}
 	u.u_base += n;
 	u.u_offset += n;
 	u.u_count -= n;

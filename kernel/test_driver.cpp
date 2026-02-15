@@ -1,9 +1,10 @@
 // Test Driver for Z8001 Kernel Bring-up
 //
 // Loads ROM (segment 0), kernel (segment 1), and C handler into an 8MB
-// Z8001 address space, runs the CPU, and verifies that the kernel boots
-// to process 0, mounts the filesystem, opens /dev/console, and prints
-// "Z8000 Unix\n".
+// Z8001 address space, runs the CPU, and verifies that the kernel boots,
+// mounts the filesystem, opens /dev/console, prints "Z8000 Unix",
+// forks process 1 in segment 2, which writes "hello from process 1"
+// via syscall and exits.
 //
 // The I/O port space includes a DMA controller for the RAM disk driver.
 //
@@ -21,11 +22,77 @@
 #include "z8000.h"
 #include "memory.h"
 
+// Paged MMU: 128 segments x 32 pages x 2KB pages
+// Identity-mapped on construction; UPAGE/WPAGE ports remap specific pages.
+class MMU : public z8000_memory_bus {
+public:
+    MMU(MemoryRegion *phys) : m_phys(phys), m_trace(false) {
+        // Identity map: frame = seg * 32 + page
+        for (int seg = 0; seg < 128; seg++)
+            for (int page = 0; page < 32; page++)
+                m_pages[seg][page] = seg * 32 + page;
+    }
+
+    void set_trace(bool enable) { m_trace = enable; }
+
+    // KDSA6 equivalent: remap seg1 pages 30-31 (virtual 0xF000-0xFFFF)
+    void set_upage(uint16_t frame) {
+        m_pages[1][30] = frame;
+        m_pages[1][31] = frame + 1;
+        if (m_trace)
+            printf("  MMU: UPAGE=%d (seg1 pages 30-31 -> frames %d,%d)\n",
+                   frame, frame, frame + 1);
+    }
+
+    // Copy window: remap seg1 pages 28-29 (virtual 0xE000-0xEFFF)
+    void set_wpage(uint16_t frame) {
+        m_pages[1][28] = frame;
+        m_pages[1][29] = frame + 1;
+        if (m_trace)
+            printf("  MMU: WPAGE=%d (seg1 pages 28-29 -> frames %d,%d)\n",
+                   frame, frame, frame + 1);
+    }
+
+    uint32_t translate(uint32_t addr) {
+        uint32_t seg = (addr >> 16) & 0x7F;
+        uint32_t offset = addr & 0xFFFF;
+        uint32_t page = offset >> 11;
+        uint32_t pg_off = offset & 0x7FF;
+        uint32_t frame = m_pages[seg][page];
+        return (frame << 11) | pg_off;
+    }
+
+    u8 read_byte(u32 addr) override {
+        return m_phys->read_byte(translate(addr));
+    }
+
+    u16 read_word(u32 addr) override {
+        return m_phys->read_word(translate(addr));
+    }
+
+    void write_byte(u32 addr, u8 val) override {
+        m_phys->write_byte(translate(addr), val);
+    }
+
+    void write_word(u32 addr, u16 val) override {
+        m_phys->write_word(translate(addr), val);
+    }
+
+    void write_word(u32 addr, u16 val, u16 mask) override {
+        m_phys->write_word(translate(addr), val, mask);
+    }
+
+private:
+    MemoryRegion *m_phys;
+    uint16_t m_pages[128][32];
+    bool m_trace;
+};
+
 // Extended IOPorts with DMA controller for RAM disk
 class KernelIOPorts : public z8000_io_bus {
 public:
-    KernelIOPorts(MemoryRegion *mem)
-        : m_trace(false), m_memory(mem),
+    KernelIOPorts(MemoryRegion *mem, MMU *mmu)
+        : m_trace(false), m_memory(mem), m_mmu(mmu),
           m_dma_blk_hi(0), m_dma_blk_lo(0),
           m_dma_addr_hi(0), m_dma_addr_lo(0),
           m_dma_status(0)
@@ -127,6 +194,16 @@ public:
         if (m_trace) {
             printf("  %sI/O WR16 [%04X] <- %04X\n", mode ? "S" : "", addr, val);
         }
+        if (mode != 0) return;
+
+        switch (addr) {
+            case 0x00B0:  // UPAGE: KDSA6 equivalent
+                m_mmu->set_upage(val);
+                break;
+            case 0x00B4:  // WPAGE: copy window
+                m_mmu->set_wpage(val);
+                break;
+        }
     }
 
 private:
@@ -169,6 +246,7 @@ private:
 
     bool m_trace;
     MemoryRegion *m_memory;
+    MMU *m_mmu;
     std::vector<uint8_t> m_disk;
     std::string m_console_buf;
     u8 m_dma_blk_hi, m_dma_blk_lo;
@@ -212,7 +290,7 @@ int main(int argc, char* argv[]) {
     bool trace = false;
     bool reg_trace = false;
     bool mem_trace = false;
-    int max_cycles = 500000;  // increased for V7 init
+    int max_cycles = 2000000;  // increased for fork + user-mode syscall
 
     int opt;
     while ((opt = getopt(argc, argv, "trmc:")) != -1) {
@@ -235,8 +313,11 @@ int main(int argc, char* argv[]) {
     memory.set_name("MEM");
     memory.set_trace(mem_trace);
 
-    // Create I/O ports with DMA controller
-    KernelIOPorts io(&memory);
+    // Create paged MMU wrapping physical memory
+    MMU mmu(&memory);
+
+    // Create I/O ports with DMA controller and MMU access
+    KernelIOPorts io(&memory, &mmu);
 
     printf("Loading binaries:\n");
 
@@ -256,9 +337,9 @@ int main(int argc, char* argv[]) {
     if (!io.load_disk("root.img"))
         return 1;
 
-    // Create Z8001 CPU
+    // Create Z8001 CPU (memory access goes through MMU)
     z8001_device cpu;
-    cpu.set_memory(&memory);
+    cpu.set_memory(&mmu);
     cpu.set_io(&io);
     cpu.set_trace(trace);
     cpu.set_reg_trace(reg_trace);
@@ -284,9 +365,10 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify: CPU halted, console output contains "Z8000 Unix"
+    // Verify: CPU halted, console output contains both messages, no panics
     std::string output = io.console_output();
-    bool has_message = output.find("Z8000 Unix") != std::string::npos;
+    bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
+    bool has_user_msg = output.find("hello from process 1") != std::string::npos;
     bool has_panic = output.find("panic") != std::string::npos;
 
     printf("\nConsole output: \"");
@@ -296,13 +378,14 @@ int main(int argc, char* argv[]) {
     }
     printf("\"\n\n");
 
-    if (cpu.is_halted() && has_message && !has_panic) {
-        printf("PASS: Kernel booted, mounted root, opened console, printed message\n");
+    if (cpu.is_halted() && has_kernel_msg && has_user_msg && !has_panic) {
+        printf("PASS: Kernel booted, forked process 1, user-mode write + exit succeeded\n");
         return 0;
     } else {
-        printf("FAIL: halted=%s, message=%s, panic=%s\n",
+        printf("FAIL: halted=%s, kernel_msg=%s, user_msg=%s, panic=%s\n",
                cpu.is_halted() ? "yes" : "no",
-               has_message ? "yes" : "no",
+               has_kernel_msg ? "yes" : "no",
+               has_user_msg ? "yes" : "no",
                has_panic ? "yes" : "no");
         return 1;
     }

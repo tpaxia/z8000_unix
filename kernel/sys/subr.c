@@ -123,14 +123,16 @@ daddr_t bn;
  * Pass back  c  to the user at his location u_base;
  * update u_base, u_count, and u_offset.  Return -1
  * on the last character of the user's read.
- *
- * Z8000 simplification: kernel-space only.
+ * u_segflg distinguishes kernel vs user address space.
  */
 passc(c)
 register c;
 {
 
-	*u.u_base = c;
+	if(u.u_segflg)
+		*u.u_base = c;
+	else
+		subyte(u.u_base, c);
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;
@@ -142,8 +144,7 @@ register c;
  * write call at location u_base;
  * update u_base, u_count, and u_offset.  Return -1
  * when u_count is exhausted.
- *
- * Z8000 simplification: kernel-space only.
+ * u_segflg distinguishes kernel vs user address space.
  */
 cpass()
 {
@@ -151,7 +152,10 @@ cpass()
 
 	if(u.u_count == 0)
 		return(-1);
-	c = *u.u_base;
+	if(u.u_segflg)
+		c = *u.u_base;
+	else
+		c = fubyte(u.u_base);
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;

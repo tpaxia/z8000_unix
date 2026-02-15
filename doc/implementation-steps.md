@@ -79,20 +79,44 @@ Replaced the test syscall handler with a real V7 kernel that boots to process 0,
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\n", no panics. PASS.
 
+## Step 8: Fork, Paged MMU, and V7-Style Context Switching
+
+Added process management (fork/exit/wait), a paged MMU emulation, and V7-style context switching. Process 0 forks process 1, which writes a message via syscall and exits. See [step8-fork-mmu.md](step8-fork-mmu.md) for details.
+
+- Emulated a paged MMU in the test driver (128 segments x 32 pages x 2KB pages, identity-mapped). Two I/O ports remap pages: UPAGE (0x00B0) acts as a KDSA6 equivalent remapping the u-area (seg1 pages 30-31), WPAGE (0x00B4) provides a copy window for `newproc()`.
+- u-area at fixed virtual address (`#define u (*(struct user *)0xF000)`), remapped per-process by the MMU — exactly like the PDP-11.
+- V7-style `save()`/`resume()` in assembly: `resume()` writes KDSA6 to remap the u-area before restoring registers. `label_t[12]` stores all state including return address and SP (the PDP-11 uses `label_t[6]`) because `bcopy()` in `newproc()` clobbers save's deallocated stack frame.
+- V7-style `swtch()` — the save/resume dance with `u_rsav`/`u_qsav`/`u_ssav`, proc[0] as idle process, run queue search.
+- V7-style `newproc()` — allocates u-area frames, copies parent u-area to child via MMU copy window, no per-process kernel stacks or trampolines.
+- `sleep()`/`wakeup()` with hash-table sleep queues, `setrq()`/`setrun()`/`setpri()`.
+- `fork()`/`exit()`/`wait()` syscalls in `sys1.c`.
+- `retu()` for user-mode entry via IRET frame (NONSEG+NORM).
+- Cross-segment memory access: `fubyte`/`subyte`/`fuword`/`suword`/`copyin`/`copyout` using SEG+SYS mode toggle.
+- Physical frame allocator (`frame_alloc`/`frame_free`) and segment allocator for user processes.
+- Fixed ACK code generator byte zero-extension bug (`mach/z8000/cg/table` MOVES rule): the old pattern cleared the destination register before loading the byte, clobbering the index register when source addressing used the same register. Fixed by reversing the order (load byte first, then `clrb` high byte) and adding `HR0`-`HR7` assembler aliases. The `nami.c` comparison loop now uses original V7 code with no workaround.
+
+**Test:** CPU halted, console output = "boot\nZ8000 Unix\nhello from process 1\n", no panics. PASS.
+
 ## Current State
 
-The kernel boots to process 0 with a working V7 filesystem stack:
+The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, and runs user-mode code:
+- Paged MMU with KDSA6-equivalent for per-process u-area remapping
+- V7-style context switching (save/resume/swtch) — no bcopy of u-areas, no per-process kernel stacks
+- Process creation via fork (newproc) with u-area copy through MMU window
+- sleep/wakeup, run queue management, priority scheduling
 - Buffer cache (bio.c) with 8 buffers and synchronous RAM disk I/O
 - Root filesystem mounted from a disk image via DMA
 - Directory traversal (namei) and inode management (iget/iput)
 - File descriptor table (falloc) and device open (openi → cdevsw)
 - Console output through the V7 printf → putchar → outb path
+- Cross-segment user memory access (copyin/copyout) via SEG mode toggle
 - All V7 C source compiled with ACK in Z8002 mode, K&R style unchanged
 
 ## Planned Steps
 
+- **exec() syscall**: load and execute programs from the filesystem
+- **Clock interrupts**: timer-driven scheduling and preemption
 - **read() syscall**: read from console (requires emulator interrupt support)
 - **Line discipline**: echo, erase, kill processing
 - **clist buffering**: V7's character block allocator
-- **Separate user segments**: copyin/copyout for user memory access via segment numbers
-- **Process management**: fork/exec using segment-based isolation
+- **Pipes**: inter-process communication

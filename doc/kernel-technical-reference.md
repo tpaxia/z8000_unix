@@ -112,14 +112,15 @@ ROM reset → seg0:0x0010 (init)
   → IRET to seg1:0x0100 (NONSEG+SYS)
 
 seg1:0x0100 (trap.s boot entry):
-  → call 0x0200
+  → call 0x0202
 
-seg1:0x0200 (krt.s entry):
+seg1:0x0202 (krt.s boot_entry):
   → zero BSS (begbss..endbss)
+  → ld R15, $0xFFFE   (kernel stack at top of u-area page)
   → calr _main
 
 main() (sys/main.c):
-  → proc[0] setup: p_stat=SRUN, p_flag=SLOAD|SSYS
+  → proc[0] setup: p_stat=SRUN, p_flag=SLOAD|SSYS, p_addr=62
   → u.u_procp = &proc[0], u.u_error = 0
   → rootdev = makedev(0, 0)
   → binit()         — init 8-buffer cache, count block devices
@@ -129,8 +130,38 @@ main() (sys/main.c):
   → open1()         — falloc(), openi(), cdevsw[0].d_open()
   → dup fd 0 → fd 1, fd 2
   → printf("Z8000 Unix\n")
-  → idle()          — halt
+  → newproc()       — fork process 1
+    → child: copyout(icode) → return → krt.s → retu() → user mode
+    → parent: swtch() → resumes child → child runs icode
+  → icode: write(1, "hello from process 1\n", 21) → exit(0)
 ```
+
+## Paged MMU
+
+The emulated MMU provides 128 segments x 32 pages x 2KB pages, identity-mapped on construction. Two I/O ports remap specific pages within segment 1:
+
+### MMU Control Ports
+
+| Port | Width | Name | Function |
+|------|-------|------|----------|
+| 0x00B0 | word | UPAGE | KDSA6 equivalent: sets seg1 pages 30-31 to frame pair (value, value+1) |
+| 0x00B4 | word | WPAGE | Copy window: sets seg1 pages 28-29 to frame pair (value, value+1) |
+
+### Address Translation
+
+```
+segment = (addr >> 16) & 0x7F
+page    = (addr & 0xFFFF) >> 11    // 5 bits → 32 pages
+pg_off  = addr & 0x7FF             // 11 bits → 2048 bytes per page
+frame   = pages[segment][page]
+physical = (frame << 11) | pg_off
+```
+
+### u-area Mapping
+
+The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
+
+Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame 96.
 
 ## RAM Disk DMA
 
