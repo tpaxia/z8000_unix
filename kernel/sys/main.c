@@ -49,9 +49,9 @@ main()
 	/*
 	 * Initialize devices and
 	 * set up 'known' i-nodes.
-	 * rootdev = major 0, minor 0 (RAM disk)
+	 * rootdev = major 1, minor 0 (IDE hard drive)
 	 */
-	rootdev = makedev(0, 0);
+	rootdev = makedev(1, 0);
 	pipedev = rootdev;
 	swapdev = rootdev;
 

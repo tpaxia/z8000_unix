@@ -9,8 +9,8 @@
 .define ERANGE, ESET, EHEAP, EILLINS, EODDZ, ECASE, EBADMON
 .define hol0, trppc, trpim, reghp
 .define LINO_AD, FILN_AD
-.define _putc, _putchar, _inb, _outb, _outw, _idle
-.define _save, _resume, _retu
+.define _putc, _putchar, _inb, _inw, _insw, _outb, _outw, _outsw, _idle
+.define _save, _resume, _retu, _set_usp
 .define _fubyte, _subyte, _fuword, _suword, _copyin, _copyout
 
 .sect .text
@@ -387,6 +387,70 @@ _retu:
 
     iret                    ! -> NONSEG+NORM, user_seg:0x0000
 
+
+! --- void set_usp(int value) ---
+! Set user stack pointer (NSPOFF control register).
+_set_usp:
+    push    *SP, R13
+    ld      R13, R15
+    ld      R0, 4(R13)      ! user SP value
+    ldctl   NSPOFF, R0
+    ld      R15, R13
+    pop     R13, *SP
+    ret
+
+! --- int inw(int port) ---
+! Word-width I/O input, used for ATA data register.
+_inw:
+    push    *SP, R13
+    ld      R13, R15
+    ld      R2, 4(R13)      ! port
+    in      R0, *RR2
+    ld      R15, R13
+    pop     R13, *SP
+    ret
+
+! --- void insw(int port, char *addr, int count) ---
+! Block word input: read count words from I/O port to memory.
+_insw:
+    push    *SP, R13
+    ld      R13, R15
+    ld      R2, 4(R13)      ! port
+    ld      R4, 6(R13)      ! addr
+    ld      R5, 8(R13)      ! count (words)
+    cp      R5, $0
+    jr      EQ, insw_done
+insw_loop:
+    in      R0, *RR2        ! read word from port
+    ld      *RR4, R0        ! store to memory
+    inc     R4, $2           ! advance pointer by word
+    dec     R5, $1
+    jr      NZ, insw_loop
+insw_done:
+    ld      R15, R13
+    pop     R13, *SP
+    ret
+
+! --- void outsw(int port, char *addr, int count) ---
+! Block word output: write count words from memory to I/O port.
+_outsw:
+    push    *SP, R13
+    ld      R13, R15
+    ld      R2, 4(R13)      ! port
+    ld      R4, 6(R13)      ! addr
+    ld      R5, 8(R13)      ! count (words)
+    cp      R5, $0
+    jr      EQ, outsw_done
+outsw_loop:
+    ld      R0, *RR4        ! load word from memory
+    out     *RR2, R0        ! write word to port
+    inc     R4, $2           ! advance pointer by word
+    dec     R5, $1
+    jr      NZ, outsw_loop
+outsw_done:
+    ld      R15, R13
+    pop     R13, *SP
+    ret
 
 ! --- void outw(int port, int value) ---
 ! Word-width I/O output, used for KDSA6 and WPAGE ports.

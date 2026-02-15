@@ -205,11 +205,13 @@ schar()
 /*
  * Return the next character from the
  * user string pointed at by dirp.
- * Stubbed for Z8000: just calls schar
- * since everything is kernel-space.
  */
 uchar()
 {
+	register c;
 
-	return(*u.u_dirp++ & 0377);
+	c = fubyte(u.u_dirp++);
+	if (c == -1)
+		u.u_error = EFAULT;
+	return(c);
 }

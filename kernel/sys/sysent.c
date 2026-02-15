@@ -16,7 +16,7 @@
  * All others -> nosys (returns ENOSYS).
  */
 
-extern int rexit(), fork(), write(), wait1();
+extern int rexit(), fork(), write(), wait1(), exec();
 
 nosys()
 {
@@ -35,7 +35,7 @@ struct sysent sysent[] = {
 	{ 0, 0, nosys },	/*  8 = creat */
 	{ 0, 0, nosys },	/*  9 = link */
 	{ 0, 0, nosys },	/* 10 = unlink */
-	{ 0, 0, nosys },	/* 11 = exec */
+	{ 2, 2, exec },		/* 11 = exec */
 	{ 0, 0, nosys },	/* 12 = chdir */
 	{ 0, 0, nosys },	/* 13 = time */
 	{ 0, 0, nosys },	/* 14 = mknod */

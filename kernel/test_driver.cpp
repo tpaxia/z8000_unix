@@ -3,8 +3,8 @@
 // Loads ROM (segment 0), kernel (segment 1), and C handler into an 8MB
 // Z8001 address space, runs the CPU, and verifies that the kernel boots,
 // mounts the filesystem, opens /dev/console, prints "Z8000 Unix",
-// forks process 1 in segment 2, which writes "hello from process 1"
-// via syscall and exits.
+// forks process 1 which exec's /etc/init from the filesystem, and
+// init writes "hello from exec" via syscall and exits.
 //
 // The I/O port space includes a DMA controller for the RAM disk driver.
 //
@@ -95,8 +95,12 @@ public:
         : m_trace(false), m_memory(mem), m_mmu(mmu),
           m_dma_blk_hi(0), m_dma_blk_lo(0),
           m_dma_addr_hi(0), m_dma_addr_lo(0),
-          m_dma_status(0)
+          m_dma_status(0),
+          m_ata_sc(0), m_ata_sn(0), m_ata_cl(0), m_ata_ch(0), m_ata_dh(0),
+          m_ata_status(0x40), m_ata_error(0),
+          m_ata_buf_idx(0), m_ata_active(false), m_ata_writing(false)
     {
+        memset(m_ata_buf, 0, sizeof(m_ata_buf));
     }
 
     const std::string& console_output() const { return m_console_buf; }
@@ -123,6 +127,27 @@ public:
         return true;
     }
 
+    bool load_hd(const char *filename) {
+        FILE *f = fopen(filename, "rb");
+        if (!f) {
+            fprintf(stderr, "Error: Cannot open HD image '%s'\n", filename);
+            return false;
+        }
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        m_hd.resize(size);
+        size_t nread = fread(m_hd.data(), 1, size, f);
+        fclose(f);
+        if ((long)nread != size) {
+            fprintf(stderr, "Error: Short read on HD image '%s'\n", filename);
+            return false;
+        }
+        printf("  Loaded HD image   %-11s (%ld bytes, %ld blocks)\n",
+               filename, size, size / 512);
+        return true;
+    }
+
     // z8000_io_bus interface
     u8 read_byte(u16 addr, int mode) override {
         u8 val;
@@ -136,6 +161,12 @@ public:
                     break;
                 case 0x00F2:
                     val = 0x01;  // Console status: TX ready
+                    break;
+                case 0x01F1:  // ATA ERROR
+                    val = m_ata_error;
+                    break;
+                case 0x01F7:  // ATA STATUS
+                    val = m_ata_status;
                     break;
                 default:
                     val = 0xDE;
@@ -153,6 +184,18 @@ public:
     u16 read_word(u16 addr, int mode) override {
         addr &= 0xFFFE;
         u16 val = 0xDEAD;
+        if (mode == 0 && addr == 0x01F0 && m_ata_active && !m_ata_writing) {
+            // ATA DATA read: return next word from sector buffer (big-endian)
+            if (m_ata_buf_idx < 256) {
+                unsigned off = m_ata_buf_idx * 2;
+                val = ((u16)m_ata_buf[off] << 8) | m_ata_buf[off + 1];
+                m_ata_buf_idx++;
+                if (m_ata_buf_idx >= 256) {
+                    m_ata_active = false;
+                    m_ata_status = 0x40;  // DRDY, clear DRQ
+                }
+            }
+        }
         if (m_trace) {
             printf("  %sI/O RD16 [%04X] -> %04X\n", mode ? "S" : "", addr, val);
         }
@@ -186,6 +229,24 @@ public:
                 fflush(stdout);
                 m_console_buf += static_cast<char>(val);
                 break;
+            case 0x01F2:  // ATA SC
+                m_ata_sc = val;
+                break;
+            case 0x01F3:  // ATA SN (LBA[0:7])
+                m_ata_sn = val;
+                break;
+            case 0x01F4:  // ATA CL (LBA[8:15])
+                m_ata_cl = val;
+                break;
+            case 0x01F5:  // ATA CH (LBA[16:23])
+                m_ata_ch = val;
+                break;
+            case 0x01F6:  // ATA DH (LBA[24:27] + flags)
+                m_ata_dh = val;
+                break;
+            case 0x01F7:  // ATA CMD
+                do_ata_cmd(val);
+                break;
         }
     }
 
@@ -202,6 +263,17 @@ public:
                 break;
             case 0x00B4:  // WPAGE: copy window
                 m_mmu->set_wpage(val);
+                break;
+            case 0x01F0:  // ATA DATA write
+                if (m_ata_active && m_ata_writing && m_ata_buf_idx < 256) {
+                    unsigned off = m_ata_buf_idx * 2;
+                    m_ata_buf[off]     = (val >> 8) & 0xFF;  // big-endian
+                    m_ata_buf[off + 1] = val & 0xFF;
+                    m_ata_buf_idx++;
+                    if (m_ata_buf_idx >= 256) {
+                        ata_flush_write();
+                    }
+                }
                 break;
         }
     }
@@ -244,14 +316,64 @@ private:
         }
     }
 
+    void do_ata_cmd(u8 cmd) {
+        unsigned lba = m_ata_sn | ((unsigned)m_ata_cl << 8);
+        unsigned disk_off = lba * 512;
+
+        if (cmd == 0x20) {
+            // READ SECTORS: load sector into buffer, set DRQ
+            memset(m_ata_buf, 0, 512);
+            if (disk_off < m_hd.size()) {
+                size_t avail = m_hd.size() - disk_off;
+                if (avail > 512) avail = 512;
+                memcpy(m_ata_buf, m_hd.data() + disk_off, avail);
+            }
+            m_ata_buf_idx = 0;
+            m_ata_active = true;
+            m_ata_writing = false;
+            m_ata_status = 0x48;  // DRDY + DRQ
+            m_ata_error = 0;
+        } else if (cmd == 0x30) {
+            // WRITE SECTORS: set DRQ, driver fills buffer
+            memset(m_ata_buf, 0, 512);
+            m_ata_buf_idx = 0;
+            m_ata_active = true;
+            m_ata_writing = true;
+            m_ata_status = 0x48;  // DRDY + DRQ
+            m_ata_error = 0;
+        } else {
+            m_ata_status = 0x41;  // DRDY + ERR
+            m_ata_error = 0x04;   // abort
+        }
+    }
+
+    void ata_flush_write() {
+        unsigned lba = m_ata_sn | ((unsigned)m_ata_cl << 8);
+        unsigned disk_off = lba * 512;
+        if (disk_off + 512 > m_hd.size()) {
+            m_hd.resize(disk_off + 512, 0);
+        }
+        memcpy(m_hd.data() + disk_off, m_ata_buf, 512);
+        m_ata_active = false;
+        m_ata_status = 0x40;  // DRDY, clear DRQ
+        m_ata_error = 0;
+    }
+
     bool m_trace;
     MemoryRegion *m_memory;
     MMU *m_mmu;
     std::vector<uint8_t> m_disk;
+    std::vector<uint8_t> m_hd;
     std::string m_console_buf;
     u8 m_dma_blk_hi, m_dma_blk_lo;
     u8 m_dma_addr_hi, m_dma_addr_lo;
     u8 m_dma_status;
+    // ATA PIO state
+    u8 m_ata_sc, m_ata_sn, m_ata_cl, m_ata_ch, m_ata_dh;
+    u8 m_ata_status, m_ata_error;
+    u8 m_ata_buf[512];
+    unsigned m_ata_buf_idx;
+    bool m_ata_active, m_ata_writing;
 };
 
 static bool load_file(MemoryRegion& mem, const char* filename, uint32_t addr) {
@@ -333,8 +455,10 @@ int main(int argc, char* argv[]) {
     if (!load_file(memory, "handler.bin", 0x010200))
         return 1;
 
-    // Load disk image
+    // Load disk images
     if (!io.load_disk("root.img"))
+        return 1;
+    if (!io.load_hd("hd.img"))
         return 1;
 
     // Create Z8001 CPU (memory access goes through MMU)
@@ -368,7 +492,7 @@ int main(int argc, char* argv[]) {
     // Verify: CPU halted, console output contains both messages, no panics
     std::string output = io.console_output();
     bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
-    bool has_user_msg = output.find("hello from process 1") != std::string::npos;
+    bool has_user_msg = output.find("hello from exec") != std::string::npos;
     bool has_panic = output.find("panic") != std::string::npos;
 
     printf("\nConsole output: \"");
@@ -379,7 +503,7 @@ int main(int argc, char* argv[]) {
     printf("\"\n\n");
 
     if (cpu.is_halted() && has_kernel_msg && has_user_msg && !has_panic) {
-        printf("PASS: Kernel booted, forked process 1, user-mode write + exit succeeded\n");
+        printf("PASS: Kernel booted, forked process 1, exec + user-mode write + exit succeeded\n");
         return 0;
     } else {
         printf("FAIL: halted=%s, kernel_msg=%s, user_msg=%s, panic=%s\n",

@@ -8,6 +8,7 @@
  *
  * Block devices:
  *   Major 0: RAM disk (md)
+ *   Major 1: IDE hard drive (hd)
  *
  * Character devices:
  *   Major 0: Console (cons)
@@ -19,6 +20,10 @@
 extern int mdopen(), mdclose(), mdstrategy();
 extern struct buf mdtab;
 
+/* IDE hard drive driver */
+extern int hdopen(), hdclose(), hdstrategy();
+extern struct buf hdtab;
+
 /* Console driver */
 extern int consopen(), consclose(), consread(), conswrite();
 
@@ -27,6 +32,7 @@ extern int nodev(), nulldev();
 
 struct bdevsw bdevsw[] = {
 	{ mdopen, mdclose, mdstrategy, &mdtab },	/* 0 = md */
+	{ hdopen, hdclose, hdstrategy, &hdtab },	/* 1 = hd */
 	{ 0 }
 };
 

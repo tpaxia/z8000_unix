@@ -34,7 +34,7 @@ HANDLER_OBJS = krt.o \
     sys/main.o sys/bio.o sys/alloc.o sys/iget.o sys/nami.o \
     sys/rdwri.o sys/subr.o sys/fio.o sys/prf.o sys/machdep.o \
     sys/slp.o sys/trap.o sys/sys1.o sys/sig.o sys/sysent.o \
-    dev/md.o dev/cons.o dev/conf.o
+    dev/md.o dev/hd.o dev/cons.o dev/conf.o
 
 all: rom.bin kernel.bin handler.bin test_driver
 
@@ -104,12 +104,16 @@ handler.bin: handler.out
 # =============================================================================
 # Disk image (built by tools)
 # =============================================================================
-disk_image: $(TOOLS_DIR)/v7mkfs $(TOOLS_DIR)/proto.small
+disk_image: $(TOOLS_DIR)/v7mkfs $(TOOLS_DIR)/proto.small $(TOOLS_DIR)/init
 	cd $(TOOLS_DIR) && ./v7mkfs root.img proto.small
 	cp $(TOOLS_DIR)/root.img .
+	cp $(TOOLS_DIR)/root.img hd.img
 
 $(TOOLS_DIR)/v7mkfs:
-	$(MAKE) -C $(TOOLS_DIR)
+	$(MAKE) -C $(TOOLS_DIR) v7mkfs
+
+$(TOOLS_DIR)/init:
+	$(MAKE) -C $(TOOLS_DIR) init
 
 # =============================================================================
 # Test driver - links against emulator library
@@ -130,5 +134,5 @@ test: all disk_image
 # Clean
 # =============================================================================
 clean:
-	rm -f *.o *.coff *.bin *.lst *.out test_driver root.img
+	rm -f *.o *.coff *.bin *.lst *.out test_driver root.img hd.img
 	rm -f sys/*.o dev/*.o

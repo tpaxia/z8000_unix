@@ -8,8 +8,8 @@
 #include "../h/seg.h"
 
 /*
- * System calls: fork, exit, wait (Step 8).
- * Simplified from V7 sys1.c -- no exec, no swapping.
+ * System calls: fork, exit, wait, exec.
+ * Simplified from V7 sys1.c -- no swapping, no SUID/SGID.
  */
 
 /*
@@ -172,6 +172,128 @@ fork()
 
 out:
 	;
+}
+
+/*
+ * exec system call.
+ * Load and execute a program from the filesystem.
+ * Simplified from V7: no swap for argument collection,
+ * no text sharing, no SUID/SGID.
+ */
+exec()
+{
+	register struct inode *ip;
+	register unsigned i;
+	extern int uchar();
+	extern int useg;
+
+	/*
+	 * Look up executable.
+	 */
+	u.u_dirp = (caddr_t)u.u_arg[0];	/* filename from R1 */
+	ip = namei(uchar, 0);
+	if (ip == NULL)
+		return;
+	if (access(ip, IEXEC) ||
+	    (ip->i_mode & IFMT) != IFREG ||
+	    (ip->i_mode & (IEXEC|(IEXEC>>3)|(IEXEC>>6))) == 0) {
+		u.u_error = EACCES;
+		goto bad;
+	}
+
+	/*
+	 * Read header into u.u_exdata.
+	 */
+	u.u_base = (caddr_t)&u.u_exdata;
+	u.u_count = sizeof(u.u_exdata);
+	u.u_offset = 0;
+	u.u_segflg = 1;		/* kernel space */
+	readi(ip);
+	if (u.u_error)
+		goto bad;
+
+	/*
+	 * Validate magic number.
+	 */
+	if (u.u_exdata.ux_mag != 0407) {
+		u.u_error = ENOEXEC;
+		goto bad;
+	}
+
+	/*
+	 * For 0407: merge text into data.
+	 */
+	u.u_exdata.ux_dsize += u.u_exdata.ux_tsize;
+	u.u_exdata.ux_tsize = 0;
+
+	/*
+	 * Load program into user segment.
+	 */
+	u.u_base = 0;
+	u.u_offset = sizeof(u.u_exdata);	/* skip header */
+	u.u_count = u.u_exdata.ux_dsize;
+	u.u_segflg = 0;		/* user space (copyout) */
+	readi(ip);
+	if (u.u_error)
+		goto bad;
+
+	/*
+	 * Zero BSS in user segment.
+	 */
+	for (i = 0; i < u.u_exdata.ux_bsize; i++)
+		subyte(u.u_exdata.ux_dsize + i, 0);
+
+	/*
+	 * Close EXCLOSE files, reset signals.
+	 */
+	setregs();
+
+	/*
+	 * Set return PC to entry point.
+	 * regs[15] = PC high (segment encoding)
+	 * regs[16] = PC low (offset)
+	 */
+	u.u_ar0[15] = useg;
+	u.u_ar0[16] = u.u_exdata.ux_entloc;
+
+	/*
+	 * Clear user registers.
+	 */
+	for (i = 0; i < 13; i++)
+		u.u_ar0[i] = 0;
+
+	/*
+	 * Set user stack pointer to top of segment.
+	 */
+	set_usp(0xFFF0);
+
+	iput(ip);
+	return;
+
+bad:
+	iput(ip);
+}
+
+/*
+ * setregs - Reset signals and close EXCLOSE files after exec.
+ */
+setregs()
+{
+	register int i;
+
+	for (i = 0; i < NSIG; i++)
+		if ((u.u_signal[i] & 1) == 0)
+			u.u_signal[i] = 0;
+
+	for (i = 0; i < NOFILE; i++)
+		if (u.u_pofile[i] & EXCLOSE) {
+			closef(u.u_ofile[i]);
+			u.u_ofile[i] = NULL;
+			u.u_pofile[i] &= ~EXCLOSE;
+		}
+
+	u.u_acflag &= ~AFORK;
+	bcopy((caddr_t)u.u_dbuf, (caddr_t)u.u_comm, DIRSIZ);
 }
 
 /*
