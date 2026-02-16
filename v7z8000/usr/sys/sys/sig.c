@@ -28,7 +28,21 @@ struct proc *p;
 }
 
 /*
- * signal(sig, func) - set signal disposition.
+ * signal(pgrp, sig) - send signal to process group.
+ * Called by ttyinput() for SIGINT/SIGQUIT.
+ * psignal is a no-op stub, so this effectively does nothing.
+ */
+signal(pgrp, sig)
+{
+	register struct proc *p;
+
+	for (p = &proc[0]; p < &proc[NPROC]; p++)
+		if (p->p_pgrp == pgrp)
+			psignal(p, sig);
+}
+
+/*
+ * ssignal(sig, func) - set signal disposition syscall.
  * No-op, returns 0.
  */
 ssignal(sig, func)

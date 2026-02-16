@@ -39,7 +39,9 @@ HANDLER_OBJS = $(B)/krt.o \
     $(B)/sys/main.o $(B)/sys/bio.o $(B)/sys/alloc.o $(B)/sys/iget.o $(B)/sys/nami.o \
     $(B)/sys/rdwri.o $(B)/sys/subr.o $(B)/sys/fio.o $(B)/sys/prf.o $(B)/sys/machdep.o \
     $(B)/sys/slp.o $(B)/sys/trap.o $(B)/sys/sys1.o $(B)/sys/sig.o $(B)/sys/sysent.o \
-    $(B)/dev/md.o $(B)/dev/hd.o $(B)/dev/cons.o $(B)/dev/conf.o
+    $(B)/sys/clock.o $(B)/sys/prim.o \
+    $(B)/dev/md.o $(B)/dev/hd.o $(B)/dev/cons.o $(B)/dev/conf.o \
+    $(B)/dev/tty.o $(B)/dev/partab.o
 
 all: $(B)/rom.bin $(B)/kernel.bin $(B)/handler.bin $(B)/test_driver
 

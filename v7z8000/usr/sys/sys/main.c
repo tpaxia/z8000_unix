@@ -56,6 +56,7 @@ main()
 	swapdev = rootdev;
 
 	printf("boot\n");
+	clkstart();
 	cinit();
 	binit();
 	iinit();

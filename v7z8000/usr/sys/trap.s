@@ -9,8 +9,8 @@
 !
 ! Memory layout within segment 1 (offset from segment base):
 !   0x0000 - 0x003F: PSA table (8 entries x 8 bytes = 64 bytes)
-!   0x0040 - 0x00FF: Trap handler stubs
-!   0x0100+:         Test code
+!   0x0040 - 0x017F: Trap handler stubs (syscall, NVI clock, VI device)
+!   0x0180+:         Boot entry
 ! =============================================================================
 
 	.segm
@@ -80,10 +80,13 @@
 	.word	nvi_entry	! PC low: offset of NVI handler
 
 ! --- VI vector (offset 0x38) ---
+! FCW: SEG + SYS (no VIE/NVIE — interrupts disabled on entry)
+! PC field at offset 0x3C doubles as vector 0 entry in the VI vector table
+! (VEC00 = PSA + 0x3C, and read_irq_vector reads from VEC00 + 2*vec)
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
-	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	0x8100		! PC high: segment 1 (= vector 0 PC high)
+	.word	vi_entry	! PC low: VI handler (= vector 0 PC low)
 
 
 ! =============================================================================
@@ -201,7 +204,7 @@ syscall_entry:
 
 
 ! =============================================================================
-! NVI (Non-Vectored Interrupt) entry stub
+! NVI (Non-Vectored Interrupt) entry stub — Clock interrupt
 !
 ! Entry state (set up by CPU hardware):
 !   - Mode: SEG + SYS (F_SEG | F_S_N), NVIE cleared (interrupts disabled)
@@ -213,9 +216,9 @@ syscall_entry:
 !       [-2,-1]:   tag (interrupt vector, 0x0000 for NVI)
 !
 ! Strategy:
-!   1. Save registers R0-R12 onto the system stack
-!   2. Switch to NONSEG+SYS to call C handler
-!   3. Call nvi_dispatch at 0x0204
+!   1. Read interrupted FCW from IRET frame (needed by clock())
+!   2. Save registers R0-R12 onto the system stack
+!   3. Switch to NONSEG+SYS, pass FCW in R0 to nvi_dispatch
 !   4. Switch back to SEG+SYS
 !   5. Restore registers
 !   6. IRET to return (restores FCW with NVIE set)
@@ -241,6 +244,13 @@ nvi_entry:
 	ldctl	fcw, r1
 
 	.unsegm
+
+	! Stack layout (NONSEG mode):
+	!   R15+0:  saved R0
+	!   R15+26: tag word
+	!   R15+28: saved FCW (interrupted process's FCW)
+	! Read interrupted FCW and pass to clock() via nvi_dispatch
+	ld	r0, 28(r15)	! R0 = interrupted FCW
 
 	! Call NVI dispatch at 0x0204
 	ld	r2, #0x0204
@@ -272,12 +282,97 @@ nvi_entry:
 
 
 ! =============================================================================
-! Boot entry (at offset 0x0100)
+! VI (Vectored Interrupt) entry stub — Device interrupts
+!
+! Entry state (set up by CPU hardware):
+!   - Mode: SEG + SYS (F_SEG | F_S_N), VIE cleared
+!   - RR14 = system stack pointer (segment:offset)
+!   - System stack already contains (pushed by CPU):
+!       [SP+4,+5]: saved PC high (segmented format)
+!       [SP+2,+3]: saved PC low
+!       [SP+0,+1]: saved FCW
+!       [-2,-1]:   tag (vector identifier)
+!
+! Note: The CPU reads the new PC from the vector table (VEC00 + 2*vec),
+! NOT from the PSA VI entry. For vector 0, VEC00 = PSA + 0x3C, which
+! overlaps with the PC field of the PSA VI entry. So for vector 0,
+! the CPU jumps here (vi_entry) via the vector table.
+!
+! The vector identifier is pushed as the tag word. We need to extract
+! it from the IRET frame on the stack and pass it to vi_dispatch.
+!
+! Stack layout after CPU push (before our saves):
+!   @RR14 → saved FCW   (+0)
+!            saved PC_low (+2)
+!            saved PC_high (+4)
+!   Tag word is at @RR14 - 2 (pushed last, below FCW)
+!
+! Actually: the CPU pushes in order: PC(4), FCW(2), tag(2).
+! The last push (tag) is at the top of stack = @RR14.
+! =============================================================================
+vi_entry:
+	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
+	push	@rr14, r12
+	push	@rr14, r11
+	push	@rr14, r10
+	push	@rr14, r9
+	push	@rr14, r8
+	push	@rr14, r7
+	push	@rr14, r6
+	push	@rr14, r5
+	push	@rr14, r4
+	push	@rr14, r3
+	push	@rr14, r2
+	push	@rr14, r1
+	push	@rr14, r0
+
+	! Switch to NONSEG+SYS mode
+	ld	r1, #0x4000	! FCW: NONSEG + SYS
+	ldctl	fcw, r1
+
+	.unsegm
+
+	! Stack layout (NONSEG mode):
+	!   R15+0:  saved R0
+	!   R15+26: tag word (vector identifier)
+	! Read vector identifier and pass to vi_dispatch in R0
+	ld	r0, 26(r15)	! R0 = vector identifier
+
+	! Call VI dispatch at 0x0206
+	ld	r2, #0x0206
+	call	@r2
+
+	.segm
+
+	! Switch back to SEG+SYS mode
+	ld	r1, #0xC000	! FCW: SEG + SYS
+	ldctl	fcw, r1
+
+	! Restore saved registers
+	pop	r0, @rr14
+	pop	r1, @rr14
+	pop	r2, @rr14
+	pop	r3, @rr14
+	pop	r4, @rr14
+	pop	r5, @rr14
+	pop	r6, @rr14
+	pop	r7, @rr14
+	pop	r8, @rr14
+	pop	r9, @rr14
+	pop	r10, @rr14
+	pop	r11, @rr14
+	pop	r12, @rr14
+
+	iret
+
+
+! =============================================================================
+! Boot entry (at offset 0x0180)
 ! This runs in NONSEG+SYS mode in segment 1.
 ! Calls the C handler entry point at 0x0200 which calls main().
 ! =============================================================================
 	.unsegm
-	.org	0x0100
+	.org	0x0180
 
 _start:
 	ld	r2, #0x0202

@@ -114,28 +114,49 @@ Added exec() syscall, an IDE hard drive driver, and converted the HD driver to i
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\nhello from exec\n", no panics. PASS.
 
+## Step 10: Console Read with TTY Subsystem
+
+Added the V7 TTY subsystem for console input — line discipline (echo, erase, kill), clist character buffering, and the `read()` syscall. Process 1 now reads from stdin and echoes back to stdout.
+
+- Imported V7 TTY subsystem sources: `tty.c` (line discipline), `prim.c` (clist character buffering with `getc`/`putc`/`b_to_q`/`cinit`), `partab.c` (character type table), `tty.h` (tty structures and constants).
+- Adapted `tty.c` for Z8000: removed PDP-11 multiplexer dependencies (`mx.h`, `reg.h`, `t_chan` references, `sdata()`/`scontrol()` calls), removed `ioctl()`/`stty()`/`gtty()`/`ttioccomm()` (syscalls not needed yet). Kept all core routines: `ttyopen`, `ttychars`, `ttyclose`, `ttread`, `ttwrite`, `canon`, `ttyinput`, `ttyoutput`, `ttstart`, `ttrstrt`, `wflushtty`, `flushtty`, `ttyblock`, `ttyrend`.
+- Fixed V7 `tty.h` anonymous struct member (`struct tc;` inside union) — ACK doesn't support this PDP-11 C extension. Changed to named member `struct tc t_tc;` with updated `tun` macro (`tp->t_un.t_tc` instead of `tp->t_un`).
+- Replaced `cinit()` in `machdep.c` with V7's `prim.c:cinit()` which both initializes the clist freelist AND counts character devices.
+- Rewrote `cons.c` following V7 `kl.c` pattern: `cons_tty[]` struct, `consopen` sets `t_oproc`/`t_state`/`t_flags`/`ttychars`, `consread`/`conswrite` call `ttread`/`ttwrite`, `consrint()` interrupt handler reads from status/data ports and calls `ttyinput()`, `consstart()` `t_oproc` callback drains `t_outq` via `putchar()` with delay character handling via `timeout(ttrstrt)`.
+- Updated `conf.c`: `cdevsw` entries now have `d_ttys = &cons_tty[0]`.
+- Added `read()` syscall in `sys1.c` (mirror of `write()`), wired as syscall #3 in `sysent.c`.
+- Added `signal(pgrp, sig)` in `sig.c` — sends signal to process group, called by `ttyinput()` for SIGINT/SIGQUIT. Routes through `psignal()` (still a no-op stub).
+- Removed `_putc` from `krt.s` — name collision with V7's clist `putc()` in `prim.c`. All console output uses `_putchar` (called by `prf.c:printf` and `cons.c:consstart`).
+- Updated `vi_dispatch` in `krt.s` to call both `_hdintr` and `_consrint` — all devices share VI vector 0, each handler guards itself (hdintr checks `hd_bp==0`, consrint checks RX-ready status register).
+- Emulator (`test_driver.cpp`): added console input FIFO (`std::queue<uint8_t>`), `queue_console_char()` method that pushes a character and asserts VI(0). Port 0xF0 read dequeues from FIFO, port 0xF2 status bit 1 reflects FIFO non-empty. Main loop delivers "hi\n" after 100 clock ticks.
+- Test program (`tools/init.s`): replaced write-only test with `read(0, buf, 80)` then `write(1, buf, n)` echo loop.
+
+**Test:** CPU halted, console output = "boot\nZ8000 Unix\nhi\nhi\n", no panics. PASS. The first "hi\n" is echo from `ttyinput()` (ECHO+CRMOD flags), the second is the write-back from init's read+write.
+
 ## Current State
 
-The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, exec's /etc/init from the HD, and runs user-mode code:
+The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, exec's /etc/init from the HD, and runs user-mode code that reads from and writes to the console:
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
 - V7-style context switching (save/resume/swtch) -- no bcopy of u-areas, no per-process kernel stacks
 - Process creation via fork (newproc) with u-area copy through MMU window
 - sleep/wakeup, run queue management, priority scheduling
 - Buffer cache (bio.c) with 8 buffers
-- Interrupt-driven IDE hard drive with NVI
+- Interrupt-driven IDE hard drive with VI
 - Root filesystem mounted from HD image via ATA PIO
 - exec() syscall loading binaries from filesystem
 - Directory traversal (namei) and inode management (iget/iput)
 - File descriptor table (falloc) and device open (openi -> cdevsw)
-- Console output through the V7 printf -> putchar -> outb path
+- V7 TTY subsystem: line discipline (echo, erase, kill), clist buffering, canon
+- Console input via VI interrupt (consrint → ttyinput → sleep/wakeup)
+- Console output through ttwrite → ttyoutput → consstart → putchar → outb
+- read() and write() syscalls for character devices
+- Clock interrupts via NVI with timeout() callouts
 - Cross-segment user memory access (copyin/copyout) via SEG mode toggle
-- SPL functions controlling NVI enable/disable
+- SPL functions controlling VIE/NVIE enable/disable
 - All V7 C source compiled with ACK in Z8002 mode, K&R style unchanged
 
 ## Planned Steps
 
-- **Clock interrupts**: timer-driven scheduling and preemption
-- **read() syscall**: read from console (requires emulator interrupt support)
-- **Line discipline**: echo, erase, kill processing
-- **clist buffering**: V7's character block allocator
 - **Pipes**: inter-process communication
+- **Shell**: /bin/sh with fork/exec/wait/pipe
+- **stty/ioctl**: terminal parameter control

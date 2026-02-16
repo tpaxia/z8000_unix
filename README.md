@@ -58,7 +58,7 @@ cd tools && make                                          # build v7mkfs, create
 cd v7z8000/usr/sys && make test                               # build + run kernel test
 ```
 
-The test verifies the CPU halted, console output contains "Z8000 Unix", and no panics occurred.
+The test verifies the CPU halted, console output contains "Z8000 Unix" and echoed input, and no panics occurred.
 
 ## Files
 
@@ -66,7 +66,7 @@ The test verifies the CPU halted, console output contains "Z8000 Unix", and no p
 |------|---------|
 | `v7z8000/usr/sys/rom.s` | Reset vector + init code (segment 0) |
 | `v7z8000/usr/sys/trap.s` | PSA table + syscall entry/exit stubs |
-| `v7z8000/usr/sys/krt.s` | Kernel runtime: BSS zeroing, entry trampoline, `putc()`, `putchar()`, `inb()`, `outb()`, `idle()` |
+| `v7z8000/usr/sys/krt.s` | Kernel runtime: BSS zeroing, entry trampoline, `putchar()`, `inb()`, `outb()`, `idle()`, SPL, save/resume |
 | `v7z8000/usr/sys/h/` | V7 kernel headers adapted for Z8000 |
 | `v7z8000/usr/sys/sys/main.c` | Simplified V7 main: process 0, binit, iinit, open /dev/console |
 | `v7z8000/usr/sys/sys/bio.c` | V7 buffer cache |
@@ -77,9 +77,13 @@ The test verifies the CPU halted, console output contains "Z8000 Unix", and no p
 | `v7z8000/usr/sys/sys/subr.c` | bmap, bcopy, utilities |
 | `v7z8000/usr/sys/sys/fio.c` | File descriptor operations |
 | `v7z8000/usr/sys/sys/prf.c` | printf, panic |
-| `v7z8000/usr/sys/sys/machdep.c` | Machine-dependent stubs (spl, sleep, wakeup, etc.) |
+| `v7z8000/usr/sys/sys/machdep.c` | Machine-dependent stubs (segment/frame allocators, sureg, etc.) |
+| `v7z8000/usr/sys/sys/prim.c` | V7 clist character buffering (getc, putc, b_to_q, cinit) |
 | `v7z8000/usr/sys/dev/md.c` | RAM disk driver (I/O port DMA) |
-| `v7z8000/usr/sys/dev/cons.c` | Console character device |
+| `v7z8000/usr/sys/dev/hd.c` | IDE hard drive driver (ATA PIO, interrupt-driven) |
+| `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
+| `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |
+| `v7z8000/usr/sys/dev/partab.c` | Character type/parity table for TTY |
 | `v7z8000/usr/sys/dev/conf.c` | Device switch tables (bdevsw, cdevsw) |
 | `v7z8000/usr/sys/test_driver.cpp` | Emulator-based test driver with DMA controller |
 | `v7z8000/usr/sys/Makefile` | Build rules for all components |

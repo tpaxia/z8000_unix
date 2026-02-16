@@ -18,6 +18,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <queue>
 #include <getopt.h>
 #include "z8000.h"
 #include "memory.h"
@@ -106,6 +107,11 @@ public:
     const std::string& console_output() const { return m_console_buf; }
     void set_trace(bool enable) { m_trace = enable; }
 
+    void queue_console_char(uint8_t c) {
+        m_console_rx.push(c);
+        m_cpu->assert_vi(0);
+    }
+
     bool load_disk(const char *filename) {
         FILE *f = fopen(filename, "rb");
         if (!f) {
@@ -157,10 +163,17 @@ public:
                     val = m_dma_status;
                     break;
                 case 0x00F0:
-                    val = 0x00;  // Console RX data (no input)
+                    // Console RX data: dequeue from FIFO
+                    if (!m_console_rx.empty()) {
+                        val = m_console_rx.front();
+                        m_console_rx.pop();
+                    } else {
+                        val = 0x00;
+                    }
                     break;
                 case 0x00F2:
-                    val = 0x01;  // Console status: TX ready
+                    // Console status: bit 0=TX ready (always), bit 1=RX ready
+                    val = 0x01 | (m_console_rx.empty() ? 0x00 : 0x02);
                     break;
                 case 0x01F1:  // ATA ERROR
                     val = m_ata_error;
@@ -333,7 +346,7 @@ private:
             m_ata_writing = false;
             m_ata_status = 0x48;  // DRDY + DRQ
             m_ata_error = 0;
-            m_cpu->assert_nvi();
+            m_cpu->assert_vi(0);
         } else if (cmd == 0x30) {
             // WRITE SECTORS: set DRQ, driver fills buffer
             memset(m_ata_buf, 0, 512);
@@ -358,7 +371,7 @@ private:
         m_ata_active = false;
         m_ata_status = 0x40;  // DRDY, clear DRQ
         m_ata_error = 0;
-        m_cpu->assert_nvi();
+        m_cpu->assert_vi(0);
     }
 
     bool m_trace;
@@ -368,6 +381,7 @@ private:
     std::vector<uint8_t> m_disk;
     std::vector<uint8_t> m_hd;
     std::string m_console_buf;
+    std::queue<uint8_t> m_console_rx;
     u8 m_dma_blk_hi, m_dma_blk_lo;
     u8 m_dma_addr_hi, m_dma_addr_lo;
     u8 m_dma_status;
@@ -415,7 +429,7 @@ int main(int argc, char* argv[]) {
     bool trace = false;
     bool reg_trace = false;
     bool mem_trace = false;
-    int max_cycles = 2000000;  // increased for fork + user-mode syscall
+    int max_cycles = 10000000;  // increased for clock interrupt overhead
 
     int opt;
     while ((opt = getopt(argc, argv, "trmc:")) != -1) {
@@ -482,8 +496,24 @@ int main(int argc, char* argv[]) {
     printf("\nRunning (max %d cycles)...\n", max_cycles);
     if (trace) printf("---\n");
 
-    // Run CPU
-    cpu.run(max_cycles);
+    // Run CPU in chunks, delivering periodic NVI clock ticks
+    // and delayed console input for testing read()
+    const int CYCLES_PER_TICK = 5000;
+    int tick_count = 0;
+    const char *console_input = "hi\n";
+    int input_idx = 0;
+
+    while (!cpu.is_halted() && cpu.get_cycles() < max_cycles) {
+        cpu.run(CYCLES_PER_TICK);
+        if (!cpu.is_halted()) {
+            cpu.assert_nvi();  // clock tick
+            tick_count++;
+            // Deliver console input after kernel is ready (100 ticks)
+            if (tick_count >= 100 && console_input[input_idx]) {
+                io.queue_console_char(console_input[input_idx++]);
+            }
+        }
+    }
 
     if (trace) printf("---\n");
 
@@ -493,10 +523,10 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify: CPU halted, console output contains both messages, no panics
+    // Verify: CPU halted, console output contains kernel msg + echo, no panics
     std::string output = io.console_output();
     bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
-    bool has_user_msg = output.find("hello from exec") != std::string::npos;
+    bool has_echo = output.find("hi") != std::string::npos;
     bool has_panic = output.find("panic") != std::string::npos;
 
     printf("\nConsole output: \"");
@@ -506,14 +536,14 @@ int main(int argc, char* argv[]) {
     }
     printf("\"\n\n");
 
-    if (cpu.is_halted() && has_kernel_msg && has_user_msg && !has_panic) {
-        printf("PASS: Kernel booted, forked process 1, exec + user-mode write + exit succeeded\n");
+    if (cpu.is_halted() && has_kernel_msg && has_echo && !has_panic) {
+        printf("PASS: Kernel booted, console read+write with TTY subsystem succeeded\n");
         return 0;
     } else {
-        printf("FAIL: halted=%s, kernel_msg=%s, user_msg=%s, panic=%s\n",
+        printf("FAIL: halted=%s, kernel_msg=%s, echo=%s, panic=%s\n",
                cpu.is_halted() ? "yes" : "no",
                has_kernel_msg ? "yes" : "no",
-               has_user_msg ? "yes" : "no",
+               has_echo ? "yes" : "no",
                has_panic ? "yes" : "no");
         return 1;
     }

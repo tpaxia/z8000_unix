@@ -297,6 +297,34 @@ setregs()
 }
 
 /*
+ * read system call.
+ * Sets up u-area fields and calls readi.
+ */
+read()
+{
+	register struct file *fp;
+	register struct inode *ip;
+
+	fp = getf(u.u_arg[0]);
+	if (fp == NULL)
+		return;
+	if ((fp->f_flag & FREAD) == 0) {
+		u.u_error = EBADF;
+		return;
+	}
+	u.u_base = (caddr_t)u.u_arg[1];
+	u.u_count = u.u_arg[2];
+	u.u_offset = fp->f_un.f_offset;
+	u.u_segflg = 0;
+	ip = fp->f_inode;
+	plock(ip);
+	readi(ip);
+	prele(ip);
+	fp->f_un.f_offset += u.u_arg[2] - u.u_count;
+	u.u_r.r_val1 = u.u_arg[2] - u.u_count;
+}
+
+/*
  * write system call.
  * Sets up u-area fields and calls writei.
  */

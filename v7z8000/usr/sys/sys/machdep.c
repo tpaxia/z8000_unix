@@ -4,7 +4,6 @@
 #include "../h/user.h"
 #include "../h/proc.h"
 #include "../h/inode.h"
-#include "../h/conf.h"
 
 /*
  * Machine-dependent code for Z8000 kernel.
@@ -169,22 +168,22 @@ struct inode *ip;
 	ip->i_flag &= ~01;	/* ~ILOCK */
 }
 
-/*
- * cinit: count character device switch entries.
- */
-cinit()
-{
-	register struct cdevsw *cdp;
-
-	for (cdp = cdevsw; cdp->d_open; cdp++)
-		nchrdev++;
-}
+/* cinit() is provided by prim.c (clist initialization + device counting) */
 
 /*
  * Stubs for functions not needed yet.
  */
 startup() {}
-clkstart() {}
+
+/*
+ * clkstart() - enable clock interrupts.
+ * Called from main() after proc[0] is set up.
+ * Enables NVIE in the FCW so clock NVI interrupts are delivered.
+ */
+clkstart()
+{
+	spl0();		/* enable VIE+NVIE */
+}
 xrele(ip) struct inode *ip; {}
 xfree() {}
 acct() {}

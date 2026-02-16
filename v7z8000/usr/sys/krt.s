@@ -10,10 +10,11 @@
 .define ERANGE, ESET, EHEAP, EILLINS, EODDZ, ECASE, EBADMON
 .define hol0, trppc, trpim, reghp
 .define LINO_AD, FILN_AD
-.define _putc, _putchar, _inb, _inw, _insw, _outb, _outw, _outsw, _idle
+.define _putchar, _inb, _inw, _insw, _outb, _outw, _outsw, _idle
 .define _save, _resume, _retu, _set_usp
 .define _fubyte, _subyte, _fuword, _suword, _copyin, _copyout
 .define _spl0, _spl1, _spl4, _spl5, _spl6, _spl7, _splx
+.define _display
 
 .sect .text
 .sect .rom
@@ -34,7 +35,8 @@ EBADMON = 25
 ! --- Jump table at offset 0x0000 (address 0x0200) ---
     jr      syscall_dispatch    ! 0x0200: syscall entry
     jr      boot_entry          ! 0x0202: boot entry
-    jr      nvi_dispatch        ! 0x0204: NVI handler entry
+    jr      nvi_dispatch        ! 0x0204: NVI handler entry (clock)
+    jr      vi_dispatch         ! 0x0206: VI handler entry (devices)
 
 ! --- Syscall dispatch entry ---
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
@@ -53,13 +55,31 @@ syscall_dispatch:
     pop     R13, *SP
     ret
 
-! --- NVI dispatch entry ---
+! --- NVI dispatch entry (clock) ---
 ! Called from trap.s nvi_entry in NONSEG+SYS mode.
-! Calls the C interrupt handler _hdintr().
+! R0 = interrupted FCW (passed by nvi_entry from IRET frame).
+! Calls _clock(ps) where ps = interrupted FCW.
 nvi_dispatch:
     push    *SP, R13
     ld      R13, R15
+    sub     R15, $2
+    ld      0(R15), R0      ! push argument: ps = interrupted FCW
+    calr    _clock
+    add     R15, $2
+    ld      R15, R13
+    pop     R13, *SP
+    ret
+
+! --- VI dispatch entry (device interrupts) ---
+! Called from trap.s vi_entry in NONSEG+SYS mode.
+! R0 = vector identifier (from tag word on IRET frame).
+! All devices share VI vector 0.  Each handler guards itself:
+!   hdintr checks hd_bp==0, consrint checks RX-ready status.
+vi_dispatch:
+    push    *SP, R13
+    ld      R13, R15
     calr    _hdintr
+    calr    _consrint
     ld      R15, R13
     pop     R13, *SP
     ret
@@ -77,8 +97,9 @@ boot_entry:
     ! Kernel stack at top of u-area page (0xF000-0xFFFF).
     ! MMU maps these pages per-process via KDSA6.
     ld      R15, $0xFFFE
-    ! Enable NVI: set FCW to NONSEG+SYS+NVIE (0x4800)
-    ld      R0, $0x4800
+    ! Enable VIE only: set FCW to NONSEG+SYS+VIE (0x5000)
+    ! NVIE (clock) enabled later by clkstart() after proc[0] setup.
+    ld      R0, $0x5000
     ldctl   FCW, R0
     calr    _main
     ! After main returns in child process, enter user mode
@@ -88,16 +109,6 @@ boot_entry:
 EXIT:   halt
 WRITE:  ret
 BRK:    ret
-
-! --- void putc(int ch) ---
-_putc:
-    push    *SP, R13
-    ld      R13, R15
-    ld      R1, 4(R13)
-    outb    0x00F0, RL1
-    ld      R15, R13
-    pop     R13, *SP
-    ret
 
 ! --- void putchar(int ch) ---
 _putchar:
@@ -485,42 +496,48 @@ _outw:
 ! =============================================================================
 ! SPL functions -- interrupt priority level control.
 !
-! Z8000 has no priority levels; NVI is simply on or off via NVIE (bit 0x0800).
-! spl0/spl1/spl4/spl5: enable interrupts (set NVIE)
-! spl6/spl7: disable interrupts (clear NVIE)
-! splx(s): restore NVIE from saved FCW value
+! Z8000 has no priority levels; VIE (0x1000) and NVIE (0x0800) control
+! device and clock interrupts respectively.
+! spl0/spl1/spl4/spl5: enable both (set VIE+NVIE)
+! spl6/spl7: disable both (clear VIE+NVIE)
+! splx(s): restore VIE+NVIE from saved FCW value
 ! All return the previous FCW value (for splx restoration).
 ! =============================================================================
 
-! --- spl0/spl1/spl4/spl5: enable NVI ---
+! --- spl0/spl1/spl4/spl5: enable VIE+NVIE ---
 _spl0:
 _spl1:
 _spl4:
 _spl5:
     ldctl   R0, FCW         ! R0 = old FCW (return value)
     ld      R1, R0
-    or      R1, $0x0800     ! set NVIE
+    or      R1, $0x1800     ! set VIE+NVIE
     ldctl   FCW, R1
     ret
 
-! --- spl6/spl7: disable NVI ---
+! --- spl6/spl7: disable VIE+NVIE ---
 _spl6:
 _spl7:
     ldctl   R0, FCW         ! R0 = old FCW (return value)
     ld      R1, R0
-    and     R1, $0xF7FF     ! clear NVIE
+    and     R1, $0xE7FF     ! clear VIE+NVIE
     ldctl   FCW, R1
     ret
 
-! --- splx(s): restore NVIE from argument ---
+! --- splx(s): restore VIE+NVIE from argument ---
 _splx:
     ldctl   R0, FCW         ! R0 = old FCW (return value)
     ld      R1, R0
-    and     R1, $0xF7FF     ! clear NVIE in current
+    and     R1, $0xE7FF     ! clear VIE+NVIE in current
     ld      R2, 2(R15)      ! R2 = argument (saved FCW)
-    and     R2, $0x0800     ! isolate NVIE bit
-    or      R1, R2          ! copy NVIE from argument
+    and     R2, $0x1800     ! isolate VIE+NVIE bits
+    or      R1, R2          ! copy VIE+NVIE from argument
     ldctl   FCW, R1
+    ret
+
+! --- void display(void) ---
+! PDP-11 front panel display -- no-op on Z8000.
+_display:
     ret
 
 .sect .bss

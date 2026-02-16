@@ -16,7 +16,7 @@
  * All others -> nosys (returns ENOSYS).
  */
 
-extern int rexit(), fork(), write(), wait1(), exec();
+extern int rexit(), fork(), read(), write(), wait1(), exec();
 
 nosys()
 {
@@ -27,7 +27,7 @@ struct sysent sysent[] = {
 	{ 0, 0, nosys },	/*  0 = indir (unused) */
 	{ 1, 1, rexit },	/*  1 = exit */
 	{ 0, 0, fork },		/*  2 = fork */
-	{ 0, 0, nosys },	/*  3 = read (not yet) */
+	{ 3, 3, read },		/*  3 = read */
 	{ 3, 3, write },	/*  4 = write */
 	{ 0, 0, nosys },	/*  5 = open (not yet) */
 	{ 0, 0, nosys },	/*  6 = close (not yet) */

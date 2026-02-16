@@ -1,5 +1,6 @@
 #include "../h/param.h"
 #include "../h/systm.h"
+#include "../h/tty.h"
 #include "../h/buf.h"
 #include "../h/conf.h"
 
@@ -26,6 +27,7 @@ extern struct buf hdtab;
 
 /* Console driver */
 extern int consopen(), consclose(), consread(), conswrite();
+extern struct tty cons_tty[];
 
 /* Stubs */
 extern int nodev(), nulldev();
@@ -37,9 +39,9 @@ struct bdevsw bdevsw[] = {
 };
 
 struct cdevsw cdevsw[] = {
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, 0 },  /* 0 = console */
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, 0 },  /* 1 = spare */
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, 0 },  /* 2 = tty */
+	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 0 = console */
+	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 1 = spare */
+	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 2 = tty */
 	{ 0 }
 };
 
