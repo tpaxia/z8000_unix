@@ -110,6 +110,7 @@ Added exec() syscall, an IDE hard drive driver, and converted the HD driver to i
 - idle() fixed: added ret after halt so NVI can wake the CPU from HALT and return to swtch().
 - Emulator: added assert_nvi() method to z8002_device. KernelIOPorts takes a CPU pointer and asserts NVI on ATA read completion and write flush.
 - Build system: all build artifacts now go into build/ subdirectory.
+- Directory restructure: moved kernel/ to v7z8000/usr/sys/ to mirror the V7 directory layout. The V7 import commit now seeds the full V7 user-space tree (libc, commands, man pages, include headers, etc.) under v7z8000/, and the kernel dev/ files (conf.c, cons.c) with their V7 originals. This ensures all future modifications show as diffs from the V7 baseline.
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\nhello from exec\n", no panics. PASS.
 

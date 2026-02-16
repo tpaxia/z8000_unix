@@ -17,20 +17,20 @@ Z8K_LD = $(Z8K_PREFIX)ld
 Z8K_OBJCOPY = $(Z8K_PREFIX)objcopy
 
 # ACK toolchain
-ACK_ROOT = ../ack/.obj/staging
+ACK_ROOT = ../../../ack/.obj/staging
 ACK = ACKDIR=$(ACK_ROOT) $(ACK_ROOT)/bin/ack
 ACK_LED = $(ACK_ROOT)/lib/ack/em_led
 ASLOD = $(ACK_ROOT)/bin/aslod
 ACK_PLATFORM = $(ACK_ROOT)/share/ack/z8000
 
 # Emulator library
-EMU_DIR = ../z8000_emu
+EMU_DIR = ../../../z8000_emu
 EMU_LIB = $(EMU_DIR)/build/libz8000.a
 EMU_INC = $(EMU_DIR)/include
 EMU_TOOLS = $(EMU_DIR)/tools
 
 # Tools
-TOOLS_DIR = ../tools
+TOOLS_DIR = ../../../tools
 
 .PHONY: all clean test emu_lib disk_image
 

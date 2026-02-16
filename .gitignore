@@ -5,11 +5,6 @@ unix-archive/
 *.i
 *.m
 tests/build/
-kernel/root.img
-kernel/test_driver
-kernel/*.bin
-kernel/*.coff
-kernel/*.lst
-kernel/*.out
+v7z8000/usr/sys/build/
 tools/root.img
 tools/v7mkfs

@@ -4,7 +4,7 @@ The project uses a Z8000 software emulator (`z8000_emu/`) for development and te
 
 ## Custom Front End
 
-Rather than using the emulator as a standalone tool, the project links it as a library and implements a custom front end (`kernel/test_driver.cpp`). This front end can:
+Rather than using the emulator as a standalone tool, the project links it as a library and implements a custom front end (`v7z8000/usr/sys/test_driver.cpp`). This front end can:
 
 - Load binary images at arbitrary physical addresses in the Z8001's 8MB address space, without needing bootstrap code
 - Register I/O ports for simulated devices (currently a console TTY)
