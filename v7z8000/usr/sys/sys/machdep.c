@@ -1,9 +1,11 @@
 #include "../h/param.h"
 #include "../h/systm.h"
+#include "../h/mount.h"
 #include "../h/dir.h"
 #include "../h/user.h"
 #include "../h/proc.h"
 #include "../h/inode.h"
+#include "../h/buf.h"
 
 /*
  * Machine-dependent code for Z8000 kernel.
@@ -15,6 +17,10 @@
  */
 
 extern int idle();
+extern int outw();
+
+/* Identity frame for copy window (seg1 pages 28-29) */
+#define WPAGE_IDENTITY	60
 
 /*
  * Current user segment encoding for cross-segment access.
@@ -69,10 +75,11 @@ seg_free(segno)
 /*
  * Physical frame allocator for u-area pages.
  * Each u-area is 4KB = 2 frames (2KB pages).
- * Frames 0-95 are reserved (segments 0-2 identity-mapped).
+ * Frames 0 through (NPROC+1)*32-1 are reserved for identity-mapped
+ * segments (seg 0=ROM, seg 1=kernel, seg 2..NPROC=user processes).
  */
 static char frame_used[4096];	/* 4096 frames in 8MB */
-static int frame_next = 96;	/* frames 0-95 reserved */
+static int frame_next = (NPROC+1)*32;	/* reserve all segment frames */
 
 /*
  * frame_alloc() - allocate a 2-frame pair for a u-area.
@@ -91,7 +98,7 @@ frame_alloc()
 		}
 	}
 	/* wrap around */
-	for (i = 96; i < frame_next; i += 2) {
+	for (i = (NPROC+1)*32; i < frame_next; i += 2) {
 		if (frame_used[i] == 0 && frame_used[i+1] == 0) {
 			frame_used[i] = 1;
 			frame_used[i+1] = 1;
@@ -107,7 +114,7 @@ frame_alloc()
  */
 frame_free(f)
 {
-	if (f >= 96 && f < 4096) {
+	if (f >= (NPROC+1)*32 && f < 4096) {
 		frame_used[f] = 0;
 		frame_used[f+1] = 0;
 	}
@@ -134,11 +141,37 @@ clearseg(segno)
 }
 
 /*
- * copyseg(from, to) - copy a click (64 bytes).
- * Not needed (fork copies u-area via MMU window, icode via copyout).
+ * copyseg(from_seg, to_seg) - copy a 64KB user segment.
+ *
+ * Uses the MMU copy window (pages 28-29 at 0xE000-0xEFFF) to access
+ * source and destination pages. Copies 2 pages (4KB) per iteration.
+ * Identity mapping: segment S page P = frame S*32+P.
  */
-copyseg(from, to)
+static char copybuf[4096];
+
+copyseg(from_seg, to_seg)
 {
+	register int i;
+	int s;
+
+	/*
+	 * Disable interrupts: BSS extends into the copy window region
+	 * (0xE000-0xEFFF). While the window is remapped, variables like
+	 * callout[] and cfree[] would read as garbage. A clock interrupt
+	 * during this window would crash.
+	 */
+	s = spl7();
+	for (i = 0; i < 32; i += 2) {
+		/* Map window to source page pair */
+		outw(0x00B4, from_seg * 32 + i);
+		bcopy(0xE000, copybuf, 4096);
+		/* Map window to dest page pair */
+		outw(0x00B4, to_seg * 32 + i);
+		bcopy(copybuf, 0xE000, 4096);
+	}
+	/* Restore window identity mapping */
+	outw(0x00B4, WPAGE_IDENTITY);
+	splx(s);
 }
 
 /*
@@ -153,22 +186,33 @@ expand(newsize)
 {
 }
 
-/*
- * plock/prele: inode locking (flag-based, no sleep needed yet)
- */
-plock(ip)
-struct inode *ip;
-{
-	ip->i_flag |= 01;	/* ILOCK */
-}
-
-prele(ip)
-struct inode *ip;
-{
-	ip->i_flag &= ~01;	/* ~ILOCK */
-}
+/* plock/prele are now provided by pipe.c with proper sleep/wakeup locking */
 
 /* cinit() is provided by prim.c (clist initialization + device counting) */
+
+/*
+ * sbreak -- set break (brk syscall).
+ * Grow or shrink data segment.
+ * On Z8000, no actual allocation needed (64KB segment already exists).
+ * Just validate the new break address.
+ */
+sbreak()
+{
+	register unsigned n;
+
+	n = u.u_arg[0];
+	if (n == 0) {
+		/* brk(0): return current break address */
+		u.u_r.r_val1 = ctob(u.u_dsize);
+		return;
+	}
+	/* Ensure break doesn't grow into stack area (leave at least 256 bytes) */
+	if (n >= 0xFF00) {
+		u.u_error = ENOMEM;
+		return;
+	}
+	u.u_dsize = btoc(n);
+}
 
 /*
  * Stubs for functions not needed yet.
@@ -186,6 +230,7 @@ clkstart()
 }
 xrele(ip) struct inode *ip; {}
 xfree() {}
+xumount(dev) {}
 acct() {}
 
 /*

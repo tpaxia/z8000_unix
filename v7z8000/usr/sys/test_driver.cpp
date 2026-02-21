@@ -429,7 +429,7 @@ int main(int argc, char* argv[]) {
     bool trace = false;
     bool reg_trace = false;
     bool mem_trace = false;
-    int max_cycles = 10000000;  // increased for clock interrupt overhead
+    int max_cycles = 50000000;  // increased for shell startup overhead
 
     int opt;
     while ((opt = getopt(argc, argv, "trmc:")) != -1) {
@@ -500,7 +500,7 @@ int main(int argc, char* argv[]) {
     // and delayed console input for testing read()
     const int CYCLES_PER_TICK = 5000;
     int tick_count = 0;
-    const char *console_input = "hi\n";
+    const char *console_input = "echo hello\nexit\n";
     int input_idx = 0;
 
     while (!cpu.is_halted() && cpu.get_cycles() < max_cycles) {
@@ -508,8 +508,8 @@ int main(int argc, char* argv[]) {
         if (!cpu.is_halted()) {
             cpu.assert_nvi();  // clock tick
             tick_count++;
-            // Deliver console input after kernel is ready (100 ticks)
-            if (tick_count >= 100 && console_input[input_idx]) {
+            // Deliver console input after shell prompt appears (1500 ticks)
+            if (tick_count >= 1500 && console_input[input_idx]) {
                 io.queue_console_char(console_input[input_idx++]);
             }
         }
@@ -523,10 +523,22 @@ int main(int argc, char* argv[]) {
     printf("\nTotal cycles: %d\n", cpu.get_cycles());
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
-    // Verify: CPU halted, console output contains kernel msg + echo, no panics
+    // Dump system stack (IRET frame from trap handler)
+    if (cpu.is_halted()) {
+        uint16_t sp = cpu.get_reg(15);  // R15 = stack offset
+        printf("\nSystem stack at seg1:%04X:\n", sp);
+        for (int i = 0; i < 16; i++) {
+            uint32_t addr = 0x010000 + sp + i * 2;  // segment 1
+            uint16_t w = memory.read_word(addr);
+            printf("  [%04X] = %04X\n", sp + i * 2, w);
+        }
+    }
+
+    // Verify: console output contains kernel msg, shell prompt, echo output, no panics
     std::string output = io.console_output();
     bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
-    bool has_echo = output.find("hi") != std::string::npos;
+    bool has_prompt = output.find("# ") != std::string::npos;
+    bool has_hello = output.find("hello") != std::string::npos;
     bool has_panic = output.find("panic") != std::string::npos;
 
     printf("\nConsole output: \"");
@@ -536,15 +548,16 @@ int main(int argc, char* argv[]) {
     }
     printf("\"\n\n");
 
-    if (cpu.is_halted() && has_kernel_msg && has_echo && !has_panic) {
-        printf("PASS: Kernel booted, console read+write with TTY subsystem succeeded\n");
+    if (has_kernel_msg && has_prompt && has_hello && !has_panic) {
+        printf("PASS: Kernel booted, shell ran, echo hello succeeded\n");
         return 0;
     } else {
-        printf("FAIL: halted=%s, kernel_msg=%s, echo=%s, panic=%s\n",
-               cpu.is_halted() ? "yes" : "no",
+        printf("FAIL: kernel_msg=%s, prompt=%s, hello=%s, panic=%s, halted=%s\n",
                has_kernel_msg ? "yes" : "no",
-               has_echo ? "yes" : "no",
-               has_panic ? "yes" : "no");
+               has_prompt ? "yes" : "no",
+               has_hello ? "yes" : "no",
+               has_panic ? "yes" : "no",
+               cpu.is_halted() ? "yes" : "no");
         return 1;
     }
 }

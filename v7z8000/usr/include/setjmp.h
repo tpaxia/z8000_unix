@@ -1,1 +1,1 @@
-typedef int jmp_buf[3];
+typedef int jmp_buf[12];

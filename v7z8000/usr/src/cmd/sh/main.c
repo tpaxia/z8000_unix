@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  * UNIX shell
@@ -22,7 +25,7 @@ FILEBLK		stdfile;
 FILE		standin = &stdfile;
 #include	<execargs.h>
 
-PROC VOID	exfile();
+LOCAL VOID	exfile();
 
 
 
@@ -35,7 +38,7 @@ main(c, v)
 
 	/* initialise storage allocation */
 	stdsigs();
-	setbrk(BRKINCR);
+	{ extern BLKPTR bloktop; bloktop = BLK(setbrk(BRKINCR)); }
 	addblok((POS)0);
 
 	/* set names from userenv */
@@ -82,7 +85,7 @@ main(c, v)
 		ELSE	input=((flags&stdflg) ? 0 : chkopen(cmdadr));
 			comdiv--;
 		FI
-	ELSE	*execargs=dolv;	/* for `ps' cmd */
+	ELSE	*execargs=(char *)dolv;	/* for `ps' cmd */
 	FI
 
 	exfile(0);
@@ -127,7 +130,8 @@ BOOL		prof;
 	IF input>=0 THEN initf(input) FI
 
 	/* command loop */
-	LOOP	tdystak(0);
+	LOOP
+		tdystak(0);
 		stakchk(); /* may reduce sbrk */
 		exitset();
 		IF (flags&prompt) ANDF standin->fstak==0 ANDF !eof

@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  * UNIX shell
@@ -9,16 +12,17 @@
 
 #include	"defs.h"
 
-PROC BOOL	chkid();
+LOCAL BOOL	chkid();
+LOCAL VOID	namwalk();
 
 
-NAMNOD	ps2nod	= {	NIL,		NIL,		ps2name},
-	fngnod	= {	NIL,		NIL,		fngname},
-	pathnod = {	NIL,		NIL,		pathname},
-	ifsnod	= {	NIL,		NIL,		ifsname},
-	ps1nod	= {	&pathnod,	&ps2nod,	ps1name},
-	homenod = {	&fngnod,	&ifsnod,	homename},
-	mailnod = {	&homenod,	&ps1nod,	mailname};
+NAMNOD	ps2nod	= {(NAMPTR)NIL,	(NAMPTR)NIL,	ps2name},
+	fngnod	= {(NAMPTR)NIL,	(NAMPTR)NIL,	fngname},
+	pathnod = {(NAMPTR)NIL,	(NAMPTR)NIL,	pathname},
+	ifsnod	= {(NAMPTR)NIL,	(NAMPTR)NIL,	ifsname},
+	ps1nod	= {&pathnod,	&ps2nod,	ps1name},
+	homenod = {&fngnod,	&ifsnod,	homename},
+	mailnod = {&homenod,	&ps1nod,	mailname};
 
 NAMPTR		namep = &mailnod;
 
@@ -118,7 +122,7 @@ INT	readvar(names)
 	REG CHAR	c;
 	REG INT		rc=0;
 	NAMPTR		n=lookup(*names++); /* done now to avoid storage mess */
-	STKPTR		rel=relstak();
+	STKPTR		rel=(STKPTR)relstak();
 
 	push(f); initf(dup(0));
 	IF lseek(0,0L,1)==-1
@@ -191,8 +195,8 @@ NAMPTR		lookup(nam)
 	OD
 
 	/* add name node */
-	nscan=alloc(sizeof *nscan);
-	nscan->namlft=nscan->namrgt=NIL;
+	nscan=(NAMPTR)alloc(sizeof *nscan);
+	nscan->namlft=nscan->namrgt=(NAMPTR)NIL;
 	nscan->namid=make(nam);
 	nscan->namval=0; nscan->namflg=N_DEFAULT; nscan->namenv=0;
 	return(*prev = nscan);
@@ -286,7 +290,8 @@ VOID	getenv()
 	REG STRING	*e=environ;
 
 	WHILE *e
-	DO setname(*e++, N_ENVNAM) OD
+	DO setname(*e++, N_ENVNAM);
+	OD
 }
 
 LOCAL INT	namec;
@@ -313,7 +318,7 @@ STRING	*setenv()
 
 	namec=0;
 	namscan(countnam);
-	argnam = er = getstak(namec*BYTESPERWORD+BYTESPERWORD);
+	argnam = er = (STRING *)getstak(namec*BYTESPERWORD+BYTESPERWORD);
 	namscan(pushnam);
 	*argnam++ = 0;
 	return(er);

@@ -313,12 +313,23 @@ retry:
 
 	/*
 	 * Copy parent's u-area to child's physical frames via window.
-	 * The copy window maps virtual 0xE000-0xEFFF to the child's
-	 * physical u-area frames.
+	 * Interrupts must be disabled: BSS extends into the copy window
+	 * region (0xE000-0xEFFF), so clock handlers would read garbage.
 	 */
-	outw(0x00B4, rpp->p_addr);		/* map window to child's frames */
-	bcopy(0xF000, 0xE000, 4096);		/* copy u-area + kernel stack */
-	outw(0x00B4, WPAGE_IDENTITY);		/* restore window identity map */
+	{
+		int s;
+		s = spl7();
+		outw(0x00B4, rpp->p_addr);		/* map window to child's frames */
+		bcopy(0xF000, 0xE000, 4096);		/* copy u-area + kernel stack */
+		outw(0x00B4, WPAGE_IDENTITY);		/* restore window identity map */
+		splx(s);
+	}
+
+	/*
+	 * Copy parent's user segment to child's segment.
+	 * Segment number = proc index + 1 (proc[0]->seg 1, etc.)
+	 */
+	copyseg((rip - proc) + 1, (rpp - proc) + 1);
 
 	u.u_procp = rip;
 	setrq(rpp);

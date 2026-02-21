@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  *	UNIX shell
@@ -88,18 +91,16 @@ NAMPTR		lookup();
 VOID		setname();
 VOID		setargs();
 DOLPTR		useargs();
+DOLPTR		freeargs();
 REAL		expr();
 STRING		catpath();
 STRING		getpath();
 STRING		*scan();
 STRING		mactrim();
 STRING		macro();
-STRING		execs();
 VOID		await();
 VOID		post();
-STRING		copyto();
 VOID		exname();
-STRING		staknam();
 VOID		printnam();
 VOID		printflg();
 VOID		prs();

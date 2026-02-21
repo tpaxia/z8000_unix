@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  * UNIX shell
@@ -13,6 +16,9 @@
 LOCAL CHAR	quote;	/* used locally */
 LOCAL CHAR	quoted;	/* used locally */
 
+LOCAL	getch();
+LOCAL	comsubst();
+LOCAL	flush();
 
 
 LOCAL STRING	copyto(endch)
@@ -59,7 +65,7 @@ retry:
 	IF d==DOLLAR
 	THEN	REG INT	c;
 		IF (c=readc(), dolchar(c))
-		THEN	NAMPTR		n=NIL;
+		THEN	NAMPTR		n=(NAMPTR)NIL;
 			INT		dolg=0;
 			BOOL		bra;
 			REG STRING	argp, v;
@@ -68,7 +74,7 @@ retry:
 
 			IF bra=(c==BRACE) THEN c=readc() FI
 			IF letter(c)
-			THEN	argp=relstak();
+			THEN	argp=(STRING)relstak();
 				WHILE alphanum(c) DO pushstak(c); c=readc() OD
 				zerostak();
 				n=lookup(absstak(argp)); setstak(argp);
@@ -80,7 +86,7 @@ retry:
 				THEN	dolg=1; c='1';
 				FI
 				c -= '0';
-				v=((c==0) ? cmdadr : (c<=dolc) ? dolv[c] : (dolg=0));
+				v=((c==0) ? cmdadr : (c<=dolc) ? dolv[c] : (STRING)(dolg=0));
 			ELIF c=='$'
 			THEN	v=pidadr;
 			ELIF c=='!'
@@ -101,7 +107,7 @@ retry:
 			argp=0;
 			IF bra
 			THEN	IF c!='}'
-				THEN	argp=relstak();
+				THEN	argp=(STRING)relstak();
 					IF (v==0)NEQ(setchar(c))
 					THEN	copyto('}');
 					ELSE	skipto('}');

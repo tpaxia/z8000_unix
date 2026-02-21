@@ -8,6 +8,8 @@
 #include "../h/user.h"
 #include "../h/tty.h"
 #include "../h/proc.h"
+#include "../h/inode.h"
+#include "../h/file.h"
 #include "../h/conf.h"
 
 char	partab[];
@@ -534,4 +536,127 @@ register struct tty *tp;
 	}
 	ttstart(tp);
 	return(NULL);
+}
+
+/*
+ * stty/gtty syscalls.
+ * Copy struct sgttyb to/from tty struct.
+ */
+stty()
+{
+	u.u_arg[2] = TIOCSETP;
+	ioctl();
+}
+
+gtty()
+{
+	u.u_arg[2] = TIOCGETP;
+	ioctl();
+}
+
+/*
+ * ioctl system call.
+ * u_arg[0] = fd
+ * u_arg[1] = data pointer
+ * u_arg[2] = ioctl cmd (set by stty/gtty, or from user for ioctl)
+ */
+ioctl()
+{
+	register struct file *fp;
+	register struct inode *ip;
+	register dev_t dev;
+	register int cmd;
+
+	fp = getf(u.u_arg[0]);
+	if (fp == NULL)
+		return;
+	ip = fp->f_inode;
+	cmd = u.u_arg[2];
+
+	/* FIOCLEX/FIONCLEX work on any fd */
+	if (cmd == FIOCLEX) {
+		u.u_pofile[u.u_arg[0]] |= EXCLOSE;
+		return;
+	}
+	if (cmd == FIONCLEX) {
+		u.u_pofile[u.u_arg[0]] &= ~EXCLOSE;
+		return;
+	}
+
+	if ((ip->i_mode & IFMT) != IFCHR) {
+		u.u_error = ENOTTY;
+		return;
+	}
+	dev = ip->i_rdev;
+	ttioccomm(cmd, cdevsw[major(dev)].d_ttys, u.u_arg[1], dev);
+}
+
+/*
+ * ttioccomm - common ioctl handler for TTY devices.
+ */
+ttioccomm(com, tp, addr, dev)
+register struct tty *tp;
+caddr_t addr;
+{
+	struct ttiocb iocb;
+	register int s;
+
+	switch(com) {
+
+	case TIOCGETP:
+		iocb.ioc_ispeed = tp->t_ispeed;
+		iocb.ioc_ospeed = tp->t_ospeed;
+		iocb.ioc_erase = tp->t_erase;
+		iocb.ioc_kill = tp->t_kill;
+		iocb.ioc_flags = tp->t_flags;
+		if (copyout((caddr_t)&iocb, addr, sizeof(iocb)) < 0)
+			u.u_error = EFAULT;
+		break;
+
+	case TIOCSETP:
+	case TIOCSETN:
+		if (copyin(addr, (caddr_t)&iocb, sizeof(iocb))) {
+			u.u_error = EFAULT;
+			break;
+		}
+		if (com == TIOCSETP)
+			wflushtty(tp);
+		s = spl5();
+		tp->t_ispeed = iocb.ioc_ispeed;
+		tp->t_ospeed = iocb.ioc_ospeed;
+		tp->t_erase = iocb.ioc_erase;
+		tp->t_kill = iocb.ioc_kill;
+		tp->t_flags = iocb.ioc_flags;
+		splx(s);
+		break;
+
+	case TIOCGETC:
+		if (copyout((caddr_t)&tun, addr, sizeof(struct tc)) < 0)
+			u.u_error = EFAULT;
+		break;
+
+	case TIOCSETC:
+		if (copyin(addr, (caddr_t)&tun, sizeof(struct tc)))
+			u.u_error = EFAULT;
+		break;
+
+	case TIOCEXCL:
+		tp->t_state |= XCLUDE;
+		break;
+
+	case TIOCNXCL:
+		tp->t_state &= ~XCLUDE;
+		break;
+
+	case TIOCHPCL:
+		tp->t_state |= HUPCLS;
+		break;
+
+	case TIOCFLUSH:
+		flushtty(tp);
+		break;
+
+	default:
+		u.u_error = ENOTTY;
+	}
 }

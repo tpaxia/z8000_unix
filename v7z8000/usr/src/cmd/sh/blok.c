@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  *	UNIX shell
@@ -20,7 +23,8 @@
 
 POS		brkincr=BRKINCR;
 BLKPTR		blokp;			/*current search pointer*/
-BLKPTR		bloktop=BLK(end);	/*top of arena (last blok)*/
+BLKPTR		bloktop;		/*top of arena (last blok)*/
+LOCAL BLKPTR	brkbegin;		/*base of arena (for sentinel)*/
 
 
 
@@ -52,12 +56,15 @@ ADDRESS	alloc(nbytes)
 VOID	addblok(reqd)
 	POS		reqd;
 {
+	IF brkbegin==0
+	THEN	brkbegin=bloktop;
+	FI
 	IF stakbas!=staktop
 	THEN	REG STKPTR	rndstak;
 		REG BLKPTR	blokstak;
 
 		pushstak(0);
-		rndstak=round(staktop,BYTESPERWORD);
+		rndstak=(STKPTR)round(staktop,BYTESPERWORD);
 		blokstak=BLK(stakbas)-1;
 		blokstak->word=stakbsy; stakbsy=blokstak;
 		bloktop->word=BLK(Rcheat(rndstak)|BUSY);
@@ -66,7 +73,7 @@ VOID	addblok(reqd)
 	reqd += brkincr; reqd &= ~(brkincr-1);
 	blokp=bloktop;
 	bloktop=bloktop->word=BLK(Rcheat(bloktop)+reqd);
-	bloktop->word=BLK(ADR(end)+1);
+	bloktop->word=BLK(ADR(brkbegin)+1);
 	BEGIN
 	   REG STKPTR stakadr=STK(bloktop+2);
 	   staktop=movstr(stakbot,stakadr);

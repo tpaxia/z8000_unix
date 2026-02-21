@@ -10,18 +10,19 @@ CXXFLAGS = -std=c++17 -Wall -Wextra
 # Build directory
 B = build
 
-# Z8000 cross-toolchain
+# Z8000 cross-toolchain (segmented mode, for rom.s and trap.s only)
 Z8K_PREFIX ?= z8k-coff-
 Z8K_AS = $(Z8K_PREFIX)as
 Z8K_LD = $(Z8K_PREFIX)ld
 Z8K_OBJCOPY = $(Z8K_PREFIX)objcopy
 
-# ACK toolchain
-ACK_ROOT = ../../../ack/.obj/staging
-ACK = ACKDIR=$(ACK_ROOT) $(ACK_ROOT)/bin/ack
-ACK_LED = $(ACK_ROOT)/lib/ack/em_led
-ASLOD = $(ACK_ROOT)/bin/aslod
-ACK_PLATFORM = $(ACK_ROOT)/share/ack/z8000
+# PCC toolchain (non-segmented mode, for kernel C and krt.s)
+PCC_ROOT = ../../../PCC-z8000/z8000
+CZ8      = $(PCC_ROOT)/cz8/cz8
+AZ8      = $(PCC_ROOT)/az8/az8
+LDZ8     = $(PCC_ROOT)/ldz8
+CPP      = cpp
+CPPFLAGS = -Dz8000 -Dz8002 -Ih
 
 # Emulator library
 EMU_DIR = ../../../z8000_emu
@@ -35,13 +36,14 @@ TOOLS_DIR = ../../../tools
 .PHONY: all clean test emu_lib disk_image
 
 # Handler object files (in build dir)
-HANDLER_OBJS = $(B)/krt.o \
-    $(B)/sys/main.o $(B)/sys/bio.o $(B)/sys/alloc.o $(B)/sys/iget.o $(B)/sys/nami.o \
-    $(B)/sys/rdwri.o $(B)/sys/subr.o $(B)/sys/fio.o $(B)/sys/prf.o $(B)/sys/machdep.o \
-    $(B)/sys/slp.o $(B)/sys/trap.o $(B)/sys/sys1.o $(B)/sys/sig.o $(B)/sys/sysent.o \
-    $(B)/sys/clock.o $(B)/sys/prim.o \
-    $(B)/dev/md.o $(B)/dev/hd.o $(B)/dev/cons.o $(B)/dev/conf.o \
-    $(B)/dev/tty.o $(B)/dev/partab.o
+HANDLER_OBJS = $(B)/krt.b \
+    $(B)/sys/main.b $(B)/sys/bio.b $(B)/sys/alloc.b $(B)/sys/iget.b $(B)/sys/nami.b \
+    $(B)/sys/rdwri.b $(B)/sys/subr.b $(B)/sys/fio.b $(B)/sys/prf.b $(B)/sys/machdep.b \
+    $(B)/sys/slp.b $(B)/sys/trap.b $(B)/sys/sys1.b $(B)/sys/sys2.b $(B)/sys/sys3.b \
+    $(B)/sys/sys4.b $(B)/sys/pipe.b $(B)/sys/sig.b $(B)/sys/sysent.b \
+    $(B)/sys/clock.b $(B)/sys/prim.b \
+    $(B)/dev/md.b $(B)/dev/hd.b $(B)/dev/cons.b $(B)/dev/conf.b \
+    $(B)/dev/tty.b $(B)/dev/partab.b
 
 all: $(B)/rom.bin $(B)/kernel.bin $(B)/handler.bin $(B)/test_driver
 
@@ -82,28 +84,45 @@ $(B)/kernel.bin: $(B)/trap.coff
 	@echo "Kernel: $$(wc -c < $@) bytes"
 
 # =============================================================================
-# C handler binary (ACK toolchain) - loaded at segment 1, offset 0x0200
+# C handler binary (PCC toolchain) - loaded at segment 1, offset 0x0200
 # =============================================================================
 
-# Assembly files
-$(B)/krt.o: krt.s | $(B)
-	$(ACK) -mz8000 -z8002 -c -o $@ $<
+# krt.s: copy to .az8 (az8 requires that extension), then assemble
+$(B)/krt.az8: krt.s | $(B)
+	cp $< $@
+
+$(B)/krt.b: $(B)/krt.az8
+	$(AZ8) -o $@ $<
 
 # Pattern rule for kernel C source in sys/
-$(B)/sys/%.o: sys/%.c | $(B)/sys
-	$(ACK) -mz8000 -z8002 -c -o $@ $<
+# Pipeline: cpp | cz8 > .az8, az8 > .b
+# grep -v filters cz8 warnings (start with ") from the assembly output
+$(B)/sys/%.az8: sys/%.c | $(B)/sys
+	$(CPP) $(CPPFLAGS) $< | $(CZ8) 2>&1 | grep -v '^"' > $@
+
+$(B)/sys/%.b: $(B)/sys/%.az8
+	$(AZ8) -o $@ $<
 
 # Pattern rule for device driver C source in dev/
-$(B)/dev/%.o: dev/%.c | $(B)/dev
-	$(ACK) -mz8000 -z8002 -c -o $@ $<
+$(B)/dev/%.az8: dev/%.c | $(B)/dev
+	$(CPP) $(CPPFLAGS) $< | $(CZ8) 2>&1 | grep -v '^"' > $@
 
-$(B)/handler.out: $(HANDLER_OBJS)
-	$(ACK_LED) -a0:2 -a1:2 -a2:2 -a3:2 -b0:0x0200 \
-		$^ $(ACK_PLATFORM)/libem.a $(ACK_PLATFORM)/libend.a \
-		-o $@
+$(B)/dev/%.b: $(B)/dev/%.az8
+	$(AZ8) -o $@ $<
 
-$(B)/handler.bin: $(B)/handler.out
-	$(ASLOD) $< $@
+# Link all kernel objects into b.out, then extract flat binary
+# Arithmetic library for long multiply/divide/modulus
+$(B)/arith.az8: $(PCC_ROOT)/lib/arith.az8 | $(B)
+	cp $< $@
+
+$(B)/arith.b: $(B)/arith.az8
+	$(AZ8) -o $@ $<
+
+$(B)/handler.bout: $(HANDLER_OBJS) $(B)/arith.b
+	$(LDZ8) -x -R 200 $^ -o $@
+
+$(B)/handler.bin: $(B)/handler.bout
+	python3 $(TOOLS_DIR)/bout2bin.py $< $@
 	@echo "Handler: $$(wc -c < $@) bytes"
 
 # =============================================================================

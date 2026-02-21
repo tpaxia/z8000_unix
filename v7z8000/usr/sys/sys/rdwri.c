@@ -41,7 +41,7 @@ register struct inode *ip;
 
 	do {
 		lbn = bn = u.u_offset >> BSHIFT;
-		on = u.u_offset & BMASK;
+		on = ((unsigned)u.u_offset) & BMASK;
 		n = min((unsigned)(BSIZE-on), u.u_count);
 		if (type!=IFBLK && type!=IFMPB) {
 			diff = ip->i_size - u.u_offset;
@@ -105,7 +105,7 @@ register struct inode *ip;
 
 	do {
 		bn = u.u_offset >> BSHIFT;
-		on = u.u_offset & BMASK;
+		on = ((unsigned)u.u_offset) & BMASK;
 		n = min((unsigned)(BSIZE-on), u.u_count);
 		if (type!=IFBLK && type!=IFMPB) {
 			bn = bmap(ip, bn, B_WRITE);

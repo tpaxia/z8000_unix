@@ -5,3 +5,6 @@
 [submodule "z8000_emu"]
 	path = z8000_emu
 	url = https://github.com/tpaxia/z8000_emu.git
+[submodule "PCC-z8000"]
+	path = PCC-z8000
+	url = https://github.com/tpaxia/PCC-z8000

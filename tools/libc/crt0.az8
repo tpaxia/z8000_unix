@@ -1,0 +1,50 @@
+! crt0.az8 - C runtime startup for Z8002 user programs (PCC/az8)
+!
+! Entry: exec() sets up user stack with:
+!   @sp = argc
+!   sp+2, sp+4, ... = argv[0], argv[1], ..., NULL, envp[], NULL
+!
+! Calls main(argc, argv), then _exit(retval).
+
+	.text
+	.globl	_start
+	.globl	_main
+	.globl	__crtinit
+	.globl	_edata
+	.globl	_end
+	.globl	_exit
+	.globl	__exit
+
+! --- Entry point (first instruction in text segment) ---
+_start:
+	! Zero BSS from _edata to _end
+	lda	r8, _edata
+	lda	r9, _end
+	clr	r0
+.Lbzloop:
+	cp	r8, r9
+	jr ge,	.Lbzdone
+	ldb	@r8, rl0
+	inc	r8, #1
+	jr	.Lbzloop
+.Lbzdone:
+	! Set up args: argc at @sp, argv at sp+2
+	ld	r1, @sp		! r1 = argc
+	ld	r2, sp
+	add	r2, #2		! r2 = argv = &sp[1]
+	sub	sp, #4		! allocate space for 2 args
+	ld	2(sp), r2	! arg 2: argv
+	ld	0(sp), r1	! arg 1: argc
+	call	__crtinit	! set environ = &argv[argc+1]
+	call	_main
+	! main() returned; call _exit(retval)
+	ld	0(sp), r0	! arg 1: return value
+	call	__exit
+	halt
+
+! --- _exit(status) / exit(status) --- syscall #1
+__exit:
+_exit:
+	ld	r1, 2(sp)	! status
+	sc	#1
+	halt			! should not return

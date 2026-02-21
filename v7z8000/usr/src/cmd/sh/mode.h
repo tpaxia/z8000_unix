@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  *	UNIX shell
@@ -10,7 +13,7 @@ TYPE char	CHAR;
 TYPE char	BOOL;
 TYPE int	UFD;
 TYPE int	INT;
-TYPE float	REAL;
+TYPE long int	REAL;
 TYPE char	*ADDRESS;
 TYPE long int	L_INT;
 TYPE int	VOID;
@@ -52,8 +55,7 @@ STRUCT sysnod	SYSTAB[];
  * into an Rvalue so two cheats
  * are necessary, one for each context.
  */
-union { int _cheat;};
-#define Lcheat(a)	((a)._cheat)
+#define Lcheat(a)	(*(int *)&(a))
 #define Rcheat(a)	((int)(a))
 
 
@@ -70,10 +72,6 @@ UNION {
 	NAMPTR	_namptr;
 	BYTPTR	_bytptr;
 	}	address;
-
-
-/* for functions that do not return values */
-struct void {INT vvvvvvvv;};
 
 
 /* heap storage */

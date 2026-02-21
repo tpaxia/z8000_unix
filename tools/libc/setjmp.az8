@@ -1,0 +1,60 @@
+! setjmp.az8 - setjmp/longjmp for Z8002 (PCC calling convention)
+!
+! PCC callee-saved registers: R4-R7, R10-R13, R14 (frame pointer)
+!
+! jmp_buf layout (12 words = 24 bytes):
+!   [0] r4   [1] r5   [2] r6   [3] r7
+!   [4] r10  [5] r11  [6] r12  [7] r13
+!   [8] r14  [9] sp   [10] return_addr  [11] (unused)
+
+	.text
+	.globl	_setjmp
+	.globl	_longjmp
+
+! int setjmp(jmp_buf env)
+! Save callee-saved registers, SP, and return address.
+! Returns 0.
+_setjmp:
+	ld	r2, 2(sp)	! r2 = env pointer (first arg)
+	ld	0(r2), r4	! env[0] = r4
+	ld	2(r2), r5	! env[1] = r5
+	ld	4(r2), r6	! env[2] = r6
+	ld	6(r2), r7	! env[3] = r7
+	ld	8(r2), r10	! env[4] = r10
+	ld	10(r2), r11	! env[5] = r11
+	ld	12(r2), r12	! env[6] = r12
+	ld	14(r2), r13	! env[7] = r13
+	ld	16(r2), r14	! env[8] = r14 (frame pointer)
+	! Save caller's SP: after setjmp returns, caller's SP = current SP + 4
+	! (pop return address + caller deallocates 1 arg)
+	ld	r0, sp
+	add	r0, #4
+	ld	18(r2), r0	! env[9] = caller's SP
+	ld	r0, @sp		! r0 = return address
+	ld	20(r2), r0	! env[10] = return address
+	clr	r0		! return 0
+	ret
+
+! void longjmp(jmp_buf env, int val)
+! Restore saved state and return val to setjmp callsite.
+! If val is 0, returns 1 instead.
+_longjmp:
+	ld	r2, 2(sp)	! r2 = env pointer
+	ld	r0, 4(sp)	! r0 = val
+	cp	r0, #0
+	jr ne,	.Lnz
+	ldk	r0, #1		! val must be nonzero
+.Lnz:
+	ld	r4, 0(r2)	! restore r4
+	ld	r5, 2(r2)	! restore r5
+	ld	r6, 4(r2)	! restore r6
+	ld	r7, 6(r2)	! restore r7
+	ld	r10, 8(r2)	! restore r10
+	ld	r11, 10(r2)	! restore r11
+	ld	r12, 12(r2)	! restore r12
+	ld	r13, 14(r2)	! restore r13
+	ld	r14, 16(r2)	! restore r14 (frame pointer)
+	ld	sp, 18(r2)	! restore SP (caller's SP)
+	ld	r3, 20(r2)	! r3 = return address
+	push	@sp, r3		! push return address onto restored stack
+	ret			! return to setjmp callsite with r0 = val

@@ -19,8 +19,8 @@
  * user space and enters user mode.
  */
 
-extern int open1();
 extern int schar();
+extern int open1();
 
 struct proc proc[NPROC];
 
@@ -108,44 +108,7 @@ main()
 	swtch();
 }
 
-/*
- * open1 — common code for open and creat.
- * Simplified: no tty handling, no mpx.
- */
-open1(ip, mode, trf)
-register struct inode *ip;
-{
-	register struct file *fp;
-	int i;
-
-	if(trf != 2) {
-		if(mode&FREAD)
-			access(ip, IREAD);
-		if(mode&FWRITE) {
-			access(ip, IWRITE);
-			if((ip->i_mode&IFMT) == IFDIR)
-				u.u_error = EISDIR;
-		}
-	}
-	if(u.u_error) {
-		iput(ip);
-		return;
-	}
-	fp = falloc();
-	if(fp == NULL) {
-		iput(ip);
-		return;
-	}
-	fp->f_flag = mode&(FREAD|FWRITE);
-	fp->f_inode = ip;
-	i = u.u_r.r_val1;
-	openi(ip, mode&(FREAD|FWRITE));
-	if(u.u_error == 0)
-		return;
-	u.u_ofile[i] = NULL;
-	fp->f_count = 0;
-	iput(ip);
-}
+/* open1 is now provided by sys2.c */
 
 /*
  * iinit is called once (from main)

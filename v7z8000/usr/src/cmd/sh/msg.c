@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  *	UNIX shell
@@ -67,7 +70,7 @@ MSG	profile		= ".profile";
 
 
 /* tables */
-SYSTAB reserved {
+SYSTAB reserved = {
 		{"in",		INSYM},
 		{"esac",	ESSYM},
 		{"case",	CASYM},
@@ -86,7 +89,7 @@ SYSTAB reserved {
 		{0,	0},
 };
 
-STRING	sysmsg[] {
+STRING	sysmsg[] = {
 		0,
 		"Hangup",
 		0,	/* Interrupt */
@@ -108,7 +111,7 @@ STRING	sysmsg[] {
 
 MSG		export = "export";
 MSG		readonly = "readonly";
-SYSTAB	commands {
+SYSTAB	commands = {
 		{"cd",		SYSCD},
 		{"read",	SYSREAD},
 /*

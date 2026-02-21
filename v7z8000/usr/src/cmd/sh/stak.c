@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  * UNIX shell
@@ -51,7 +54,7 @@ STKPTR	endstak(argp)
 {	/* tidy up after `locstak' */
 	REG STKPTR	oldstak;
 	*argp++=0;
-	oldstak=stakbot; stakbot=staktop=round(argp,BYTESPERWORD);
+	oldstak=stakbot; stakbot=staktop=(STKPTR)round(argp,BYTESPERWORD);
 	return(oldstak);
 }
 

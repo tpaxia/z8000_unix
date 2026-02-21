@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  *	UNIX shell
@@ -24,7 +27,7 @@
  *
  */
 
-PROC VOID	addg();
+LOCAL VOID	addg();
 
 
 INT	expand(as,rflg)
@@ -184,7 +187,7 @@ LOCAL VOID	addg(as1,as2,as3)
 makearg(args)
 	REG STRING	args;
 {
-	args->argnxt=gchain;
-	gchain=args;
+	((ARGPTR)args)->argnxt=gchain;
+	gchain=(ARGPTR)args;
 }
 

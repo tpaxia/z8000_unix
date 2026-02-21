@@ -9,7 +9,7 @@
 
 /*
  * System calls: fork, exit, wait, exec.
- * Simplified from V7 sys1.c -- no swapping, no SUID/SGID.
+ * read/write are now in sys2.c (via rdwr()).
  */
 
 /*
@@ -74,7 +74,6 @@ exit(rv)
 		plock(u.u_rdir);
 		iput(u.u_rdir);
 	}
-	/* xfree() and acct() are no-ops for Step 8 */
 	xfree();
 	acct();
 	/*
@@ -142,7 +141,9 @@ loop:
 /*
  * fork system call.
  *
- * Simplified for Step 8: no swap space check, no MAXUPRC check.
+ * r_val1 = child pid (in parent) or parent pid (in child)
+ * r_val2 = 0 (in parent) or 1 (in child)
+ * Libc fork wrapper uses r_val2 to distinguish parent from child.
  */
 fork()
 {
@@ -159,7 +160,9 @@ fork()
 	}
 	p1 = u.u_procp;
 	if(newproc()) {
+		/* child */
 		u.u_r.r_val1 = p1->p_pid;
+		u.u_r.r_val2 = 1;	/* child indicator */
 		u.u_start = time;
 		u.u_cstime = 0;
 		u.u_stime = 0;
@@ -168,7 +171,9 @@ fork()
 		u.u_acflag = AFORK;
 		return;
 	}
+	/* parent */
 	u.u_r.r_val1 = p2->p_pid;
+	u.u_r.r_val2 = 0;		/* parent indicator */
 
 out:
 	;
@@ -177,20 +182,39 @@ out:
 /*
  * exec system call.
  * Load and execute a program from the filesystem.
+ * Handles argv and envp: collects argument and environment strings
+ * from user space into a kernel buffer, loads the new binary,
+ * then builds the user stack with argc/argv[]/envp[]/strings.
+ *
  * Simplified from V7: no swap for argument collection,
  * no text sharing, no SUID/SGID.
+ *
+ * u_arg[0] = pathname (user pointer)
+ * u_arg[1] = argv (user pointer to array of user pointers)
+ * u_arg[2] = envp (user pointer to array of user pointers, or 0)
  */
+
+static char argbuf[NCARGS];	/* kernel buffer for exec arguments */
+
 exec()
 {
 	register struct inode *ip;
 	register unsigned i;
 	extern int uchar();
 	extern int useg;
+	char *cp;
+	int nc;		/* total chars in argbuf */
+	int na;		/* number of arg strings */
+	int ne;		/* number of env strings */
+	int ap;		/* user pointer to argv[] array */
+	int c;
+	unsigned usp;
+	unsigned strbase;
 
 	/*
 	 * Look up executable.
 	 */
-	u.u_dirp = (caddr_t)u.u_arg[0];	/* filename from R1 */
+	u.u_dirp = (caddr_t)u.u_arg[0];
 	ip = namei(uchar, 0);
 	if (ip == NULL)
 		return;
@@ -199,6 +223,72 @@ exec()
 	    (ip->i_mode & (IEXEC|(IEXEC>>3)|(IEXEC>>6))) == 0) {
 		u.u_error = EACCES;
 		goto bad;
+	}
+
+	/*
+	 * Collect arguments from user space into argbuf[].
+	 * Format in argbuf: NUL-separated strings.
+	 */
+	nc = 0;
+	na = 0;
+	ne = 0;
+	cp = argbuf;
+
+	/* Collect argv strings */
+	ap = u.u_arg[1];	/* user pointer to argv[] */
+	if (ap) {
+		for (;;) {
+			int sp;
+			sp = fuword(ap);
+			ap += 2;
+			if (sp == 0 || sp == -1)
+				break;
+			na++;
+			/* Copy string from user space */
+			for (;;) {
+				if (nc >= NCARGS) {
+					u.u_error = E2BIG;
+					goto bad;
+				}
+				c = fubyte(sp++);
+				if (c == -1) {
+					u.u_error = EFAULT;
+					goto bad;
+				}
+				*cp++ = c;
+				nc++;
+				if (c == 0)
+					break;
+			}
+		}
+	}
+
+	/* Collect envp strings */
+	ap = u.u_arg[2];	/* user pointer to envp[] */
+	if (ap) {
+		for (;;) {
+			int sp;
+			sp = fuword(ap);
+			ap += 2;
+			if (sp == 0 || sp == -1)
+				break;
+			ne++;
+			for (;;) {
+				if (nc >= NCARGS) {
+					u.u_error = E2BIG;
+					goto bad;
+				}
+				c = fubyte(sp++);
+				if (c == -1) {
+					u.u_error = EFAULT;
+					goto bad;
+				}
+				*cp++ = c;
+				nc++;
+				if (c == 0)
+					break;
+			}
+		}
 	}
 
 	/*
@@ -244,9 +334,74 @@ exec()
 		subyte(u.u_exdata.ux_dsize + i, 0);
 
 	/*
+	 * Set up user stack with arguments.
+	 *
+	 * Stack layout (growing downward from top of segment):
+	 *
+	 *   string data (NUL-terminated arg and env strings)
+	 *   [padding to word boundary]
+	 *   0         (envp terminator)
+	 *   envp[ne-1]
+	 *   ...
+	 *   envp[0]
+	 *   0         (argv terminator)
+	 *   argv[na-1]
+	 *   ...
+	 *   argv[0]
+	 *   argc      <-- sp points here
+	 */
+
+	/* Start strings at top of segment, working down */
+	usp = 0xFFF0;
+
+	/* Copy strings to user stack, recording their user addresses */
+	usp -= nc;
+	/* Word-align */
+	usp &= ~1;
+	strbase = usp;
+	for (i = 0; i < nc; i++)
+		subyte(strbase + i, argbuf[i]);
+
+	/* Now lay out pointers below the strings */
+	/* Space needed: argc(2) + na ptrs(2*na) + NULL(2) + ne ptrs(2*ne) + NULL(2) */
+	usp -= 2 + (na + 1) * 2 + (ne + 1) * 2;
+	usp &= ~1;
+
+	/* Write argc */
+	suword(usp, na);
+
+	/* Write argv[] pointers */
+	cp = argbuf;
+	for (i = 0; i < na; i++) {
+		suword(usp + 2 + i * 2, strbase);
+		/* Advance past this string */
+		while (*cp++)
+			strbase++;
+		strbase++;	/* skip NUL */
+	}
+	/* argv terminator */
+	suword(usp + 2 + na * 2, 0);
+
+	/* Write envp[] pointers */
+	for (i = 0; i < ne; i++) {
+		suword(usp + 2 + (na + 1) * 2 + i * 2, strbase);
+		while (*cp++)
+			strbase++;
+		strbase++;
+	}
+	/* envp terminator */
+	suword(usp + 2 + (na + 1) * 2 + ne * 2, 0);
+
+	/*
 	 * Close EXCLOSE files, reset signals.
 	 */
 	setregs();
+
+	/*
+	 * Set up u-area for new program.
+	 */
+	u.u_dsize = btoc(u.u_exdata.ux_dsize + u.u_exdata.ux_bsize);
+	u.u_ssize = 1;		/* minimal stack */
 
 	/*
 	 * Set return PC to entry point.
@@ -263,9 +418,9 @@ exec()
 		u.u_ar0[i] = 0;
 
 	/*
-	 * Set user stack pointer to top of segment.
+	 * Set user stack pointer.
 	 */
-	set_usp(0xFFF0);
+	set_usp(usp);
 
 	iput(ip);
 	return;
@@ -294,60 +449,4 @@ setregs()
 
 	u.u_acflag &= ~AFORK;
 	bcopy((caddr_t)u.u_dbuf, (caddr_t)u.u_comm, DIRSIZ);
-}
-
-/*
- * read system call.
- * Sets up u-area fields and calls readi.
- */
-read()
-{
-	register struct file *fp;
-	register struct inode *ip;
-
-	fp = getf(u.u_arg[0]);
-	if (fp == NULL)
-		return;
-	if ((fp->f_flag & FREAD) == 0) {
-		u.u_error = EBADF;
-		return;
-	}
-	u.u_base = (caddr_t)u.u_arg[1];
-	u.u_count = u.u_arg[2];
-	u.u_offset = fp->f_un.f_offset;
-	u.u_segflg = 0;
-	ip = fp->f_inode;
-	plock(ip);
-	readi(ip);
-	prele(ip);
-	fp->f_un.f_offset += u.u_arg[2] - u.u_count;
-	u.u_r.r_val1 = u.u_arg[2] - u.u_count;
-}
-
-/*
- * write system call.
- * Sets up u-area fields and calls writei.
- */
-write()
-{
-	register struct file *fp;
-	register struct inode *ip;
-
-	fp = getf(u.u_arg[0]);		/* fd from R1 */
-	if (fp == NULL)
-		return;
-	if ((fp->f_flag & FWRITE) == 0) {
-		u.u_error = EBADF;
-		return;
-	}
-	u.u_base = (caddr_t)u.u_arg[1];	/* buffer from R2 */
-	u.u_count = u.u_arg[2];		/* count from R3 */
-	u.u_offset = fp->f_un.f_offset;
-	u.u_segflg = 0;			/* user space */
-	ip = fp->f_inode;
-	plock(ip);
-	writei(ip);
-	prele(ip);
-	fp->f_un.f_offset += u.u_arg[2] - u.u_count;
-	u.u_r.r_val1 = u.u_arg[2] - u.u_count;
 }

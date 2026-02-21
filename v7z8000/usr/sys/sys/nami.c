@@ -124,7 +124,7 @@ eloop:
 	 * Release previous if it exists.
 	 */
 
-	if((u.u_offset&BMASK) == 0) {
+	if((((unsigned)u.u_offset)&BMASK) == 0) {
 		if(bp != NULL)
 			brelse(bp);
 		bp = bread(dp->i_dev,
@@ -143,7 +143,7 @@ eloop:
 	 * If they do not match, go back to eloop.
 	 */
 
-	bcopy(bp->b_un.b_addr+(u.u_offset&BMASK), (caddr_t)&u.u_dent,
+	bcopy(bp->b_un.b_addr+(((unsigned)u.u_offset)&BMASK), (caddr_t)&u.u_dent,
 		sizeof(struct direct));
 	u.u_offset += sizeof(struct direct);
 	if(u.u_dent.d_ino == 0) {

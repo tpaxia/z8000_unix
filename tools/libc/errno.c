@@ -1,0 +1,2 @@
+int errno;
+char **environ;

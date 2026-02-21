@@ -1,3 +1,6 @@
+/* UNIX V7 source code: see /COPYRIGHT or www.tuhs.org for details. */
+/* Changes: Copyright (c) 1999 Robert Nordier. All rights reserved. */
+
 #
 /*
  * UNIX shell
@@ -9,7 +12,7 @@
 
 #include	"defs.h"
 
-PROC STRING *copyargs();
+LOCAL STRING *copyargs();
 LOCAL DOLPTR	dolh;
 
 CHAR	flagadr[10];
@@ -76,10 +79,11 @@ VOID	setargs(argi)
 
 	/* free old ones unless on for loop chain */
 	freeargs(dolh);
-	dolh=copyargs(argi,argn);	/* sets dolv */
+	dolh=(DOLPTR)copyargs(argi,argn);	/* sets dolv */
 	assnum(&dolladr,dolc=argn-1);
 }
 
+DOLPTR
 freeargs(blk)
 	DOLPTR		blk;
 {
@@ -90,7 +94,7 @@ freeargs(blk)
 	IF argblk=blk
 	THEN	argr = argblk->dolnxt;
 		IF (--argblk->doluse)==0
-		THEN	FOR argp=argblk->dolarg; Rcheat(*argp)!=ENDARGS; argp++
+		THEN	FOR argp=(STRING *)argblk->dolarg; Rcheat(*argp)!=ENDARGS; argp++
 			DO free(*argp) OD
 			free(argblk);
 		FI
@@ -101,12 +105,12 @@ freeargs(blk)
 LOCAL STRING *	copyargs(from, n)
 	STRING		from[];
 {
-	REG STRING *	np=alloc(sizeof(STRING*)*n+3*BYTESPERWORD);
+	REG STRING *	np=(STRING *)alloc(sizeof(STRING*)*n+3*BYTESPERWORD);
 	REG STRING *	fp=from;
 	REG STRING *	pp=np;
 
-	np->doluse=1;	/* use count */
-	np=np->dolarg;
+	((DOLPTR)np)->doluse=1;	/* use count */
+	np=(STRING *)((DOLPTR)np)->dolarg;
 	dolv=np;
 
 	WHILE n--

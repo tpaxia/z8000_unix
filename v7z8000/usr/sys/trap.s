@@ -47,13 +47,13 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	default_epu	! PC low: offset of EPU handler
 
 ! --- TRAP vector (offset 0x10) - privilege violation ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	default_priv	! PC low: offset of priv handler
 
 ! --- SYSCALL vector (offset 0x18) ---
 	.word	0x0000		! reserved
@@ -65,13 +65,13 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	default_seg	! PC low: offset of seg handler
 
 ! --- NMI vector (offset 0x28) ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	default_nmi	! PC low: offset of NMI handler
 
 ! --- NVI vector (offset 0x30) ---
 	.word	0x0000		! reserved
@@ -93,8 +93,16 @@
 ! Trap Handler Stubs (starting at offset 0x0040)
 ! =============================================================================
 
-! --- Default trap handler: just halt ---
+! --- Default trap handlers: halt with distinguishable PCs ---
 default_trap:
+	halt
+default_epu:
+	halt
+default_priv:
+	halt
+default_seg:
+	halt
+default_nmi:
 	halt
 
 ! =============================================================================
@@ -171,9 +179,9 @@ syscall_entry:
 	! Clean up pushed arguments (2 words = 4 bytes)
 	add	r15, #4
 
-	! Write C handler return value (R0) into the saved-R0 slot on
-	! the system stack, so it gets restored by pop r0 below.
-	ld	0(r15), r0	! saved_regs[0] = return value
+	! NOTE: Do NOT overwrite saved-R0 here.
+	! The C trap handler (trap.c) already wrote the correct return
+	! values into regs[0] and regs[1] on the stack.
 
 	! Switch assembler back to segmented mode
 	.segm
