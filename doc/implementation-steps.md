@@ -153,7 +153,7 @@ The toolchain produces b.out format objects which are converted to:
 ROM (`rom.s`) and trap table (`trap.s`) remain assembled with `z8k-coff-as` in Z8001 segmented mode, as they contain segmented-mode instructions that az8 does not handle.
 
 Key differences from ACK:
-- Frame pointer changed from R13 to R14 (PCC convention)
+- Frame pointer R13 (same as ACK convention, chosen for Z8001 RR14 compatibility)
 - `krt.s` rewritten for az8 syntax (`.globl` instead of `.define`, `#` instead of `$` for immediates, `@sp` instead of `*SP`, named labels instead of numeric)
 - User-space assembly (crt0, syscalls, setjmp) rewritten for PCC symbol naming and calling convention
 - 32-bit arithmetic library (`arith.az8`) provides `lmul`/`ldiv`/`lrem`/`ulmul`/`uldiv`/`ulrem` using Z8000 hardware `mult`/`div`
@@ -181,6 +181,26 @@ With the compiler fixes, the V7 Bourne shell (`/bin/sh`) runs:
 The shell sources (`v7z8000/usr/src/cmd/sh/`) are compiled with cz8 and linked with the user-space libc. The shell binary is installed into the root filesystem image via `tools/proto.small`.
 
 **Test:** Console output = "boot\nZ8000 Unix\n...\n# echo hello\nhello\n# exit\n", no panics. PASS.
+
+## Step 12: Change PCC Frame Pointer from R14 to R13
+
+Changed the PCC calling convention to use R13 as frame pointer instead of R14, for Z8001 segmented mode compatibility. In Z8001 SEG mode, RR14 (R14:R15) is the system stack pointer — using R14 as frame pointer would conflict if PCC is later extended to generate segmented code. R13 matches the ACK convention used in Steps 1-10.
+
+### Changes
+
+- Callee-saved register set changed from `{R4-R7, R10-R13}` (FP=R14) to `{R4-R7, R10-R12, R14}` (FP=R13). Same count (8 registers).
+- PCC backend (`cz8`): `STKREG`/`ARGREG` changed to 13, prologue/epilogue generation updated, `savemask` updated from `0x3CF0` to `0x5CF0`, `rstatus[]` marks R13 as non-allocatable.
+- Kernel assembly (`krt.s`): all function prologues/epilogues updated (17 functions). `save()`/`resume()` label_t layout: `[0-3]` R4-R7, `[4-6]` R10-R12, `[7]` R14, `[8]` caller's R13 (FP), `[9]` retaddr, `[10]` SP, `[11]` unused. `retu()` unchanged — it uses R14 for the architectural SEG mode stack pointer, not the calling convention.
+- User-space `setjmp.az8`: jmp_buf layout updated to match label_t.
+- `label_t` and `jmp_buf` comments updated in `param.h`.
+
+### PCC Register Allocation Bug Fixed
+
+The initial change caused a kernel boot failure: PCC's pointer register variable allocator in `pftn.c` assigned R13 for the first pointer register variable. The initialization `regvar = MAXRVAR | ((MAXRVAR-2)<<8)` set the address register counter to 5, mapping to R13 (5+8=13) — clobbering the frame pointer.
+
+Fixed by changing `(MAXRVAR-2)` to `(MAXRVAR-3)` so pointer register variables start at R12 (4+8=12). Added safety guards in `setregs()` to force `rstatus[13]=SBREG` and `rstatus[15]=SBREG`. This reduces available pointer register variables from 2 to 1, which is acceptable.
+
+**Test:** Kernel boots, shell runs, `echo hello` succeeds. PASS.
 
 ## Current State
 
