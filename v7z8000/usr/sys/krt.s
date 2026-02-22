@@ -48,6 +48,7 @@
 	jr	boot_entry		! 0x0202: boot entry
 	jr	nvi_dispatch		! 0x0204: NVI handler entry (clock)
 	jr	vi_dispatch		! 0x0206: VI handler entry (devices)
+	nop				! 0x0208: reserved
 
 ! --- Syscall dispatch entry ---
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
@@ -120,22 +121,8 @@ boot_entry:
 	ld	r0, #0x5000
 	ldctl	fcw, r0
 	calr	main
-	! debug: did main() return?
-	ld	r0, #0x4000		! NONSEG+SYS, no VIE/NVIE
-	ldctl	fcw, r0			! disable all interrupts
-	ld	r0, #0x004D		! 'M'
-	outb	rl0, #0x00F0
-	ld	r0, #0x0031		! '1'
-	outb	rl0, #0x00F0
-	ld	r0, #0x0032		! '2'
-	outb	rl0, #0x00F0
-	ld	r0, #0x0033		! '3'
-	outb	rl0, #0x00F0
-	ld	r0, #0x000A		! '\n'
-	outb	rl0, #0x00F0
 	! After main returns in child process, enter user mode
 	jp	retu
-	halt
 
 ! --- void putchar(int ch) ---
 putchar:
@@ -401,11 +388,6 @@ copyout:
 ! Must avoid BA/DA mode instructions while in SEG mode.
 ! =============================================================================
 retu:
-	outb	rl0, #0x00F0		! debug: 'R' marker (r0 still has old value)
-	ld	r0, #0x0052		! 'R'
-	outb	rl0, #0x00F0
-	ld	r0, #0x000A		! '\n'
-	outb	rl0, #0x00F0
 	! Set up registers for the NONSEG+SYS to SEG+SYS transition.
 	! CHANGE_FCW swaps R14 with NSPSEG when the SEG bit changes.
 	! We want R14=0x8100 (kernel seg) after the swap so the system

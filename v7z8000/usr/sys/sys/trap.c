@@ -82,3 +82,34 @@ unsigned *regs;
 
 	set_usp(saved_usp);
 }
+
+/*
+ * SEGTRAP handler.
+ * Called when a segmentation trap occurs.
+ * fcw = interrupted FCW, pc_hi = PC segment, pc_lo = PC offset.
+ */
+segtrap_handler(fcw, pc_hi, pc_lo)
+{
+	int pi;
+	pi = u.u_procp - proc;
+	putchar('X');
+	putchar('0' + pi);
+	putchar(':');
+	/* print pc_hi as 4 hex digits */
+	putchar("0123456789ABCDEF"[(pc_hi >> 12) & 0xF]);
+	putchar("0123456789ABCDEF"[(pc_hi >> 8) & 0xF]);
+	putchar("0123456789ABCDEF"[(pc_hi >> 4) & 0xF]);
+	putchar("0123456789ABCDEF"[pc_hi & 0xF]);
+	putchar('.');
+	putchar("0123456789ABCDEF"[(pc_lo >> 12) & 0xF]);
+	putchar("0123456789ABCDEF"[(pc_lo >> 8) & 0xF]);
+	putchar("0123456789ABCDEF"[(pc_lo >> 4) & 0xF]);
+	putchar("0123456789ABCDEF"[pc_lo & 0xF]);
+	if ((fcw & 0x4000) == 0) {
+		/* user mode trap: send SIGSEG */
+		psignal(u.u_procp, SIGSEG);
+	} else {
+		/* kernel mode trap: panic */
+		panic("segtrap");
+	}
+}

@@ -500,20 +500,32 @@ int main(int argc, char* argv[]) {
     // and delayed console input for testing read()
     const int CYCLES_PER_TICK = 5000;
     int tick_count = 0;
-    const char *console_input = "echo hello\nexit\n";
+    const char *console_input = "echo hello | cat\nexit\n";
     int input_idx = 0;
+
+    bool input_started = false;
+    int idle_after_input = 0;
 
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
         // Always deliver NVI clock tick (wakes CPU from HALT)
         cpu.assert_nvi();
         tick_count++;
-        // Deliver console input after shell has had time to start (1500 ticks)
-        if (tick_count >= 1500 && console_input[input_idx]) {
-            io.queue_console_char(console_input[input_idx++]);
+        // Deliver console input after shell prompt "# " appears
+        if (console_input[input_idx]) {
+            if (!input_started && io.console_output().find("# ") != std::string::npos) {
+                input_started = true;
+            }
+            if (input_started) {
+                io.queue_console_char(console_input[input_idx++]);
+            }
         }
-        // Stop if halted AND no more input to deliver AND enough ticks past last input
-        if (cpu.is_halted() && !console_input[input_idx] && tick_count > 2000) {
+        // After all input delivered, count idle ticks
+        if (!console_input[input_idx]) {
+            idle_after_input++;
+        }
+        // Stop if halted AND all input delivered AND enough time for pipe to finish
+        if (cpu.is_halted() && !console_input[input_idx] && idle_after_input > 500) {
             break;
         }
     }
@@ -547,6 +559,8 @@ int main(int argc, char* argv[]) {
     printf("\nConsole output: \"");
     for (char c : output) {
         if (c == '\n') printf("\\n");
+        else if (c == '\r') printf("\\r");
+        else if (c < 0x20) printf("\\x%02x", (unsigned char)c);
         else putchar(c);
     }
     printf("\"\n\n");

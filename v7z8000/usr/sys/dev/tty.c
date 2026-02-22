@@ -98,7 +98,6 @@ register struct tty *tp;
 ttyclose(tp)
 register struct tty *tp;
 {
-
 	tp->t_pgrp = 0;
 	wflushtty(tp);
 	tp->t_state = 0;

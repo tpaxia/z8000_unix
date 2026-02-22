@@ -78,7 +78,7 @@ seg_free(segno)
  * Frames 0 through (NPROC+1)*32-1 are reserved for identity-mapped
  * segments (seg 0=ROM, seg 1=kernel, seg 2..NPROC=user processes).
  */
-static char frame_used[4096];	/* 4096 frames in 8MB */
+static char frame_bmap[512];	/* 4096 frames, 1 bit each */
 static int frame_next = (NPROC+1)*32;	/* reserve all segment frames */
 
 /*
@@ -90,18 +90,20 @@ frame_alloc()
 	register int i;
 
 	for (i = frame_next; i < 4095; i += 2) {
-		if (frame_used[i] == 0 && frame_used[i+1] == 0) {
-			frame_used[i] = 1;
-			frame_used[i+1] = 1;
+		if ((frame_bmap[i>>3] & (1 << (i&7))) == 0 &&
+		    (frame_bmap[(i+1)>>3] & (1 << ((i+1)&7))) == 0) {
+			frame_bmap[i>>3] |= (1 << (i&7));
+			frame_bmap[(i+1)>>3] |= (1 << ((i+1)&7));
 			frame_next = i + 2;
 			return(i);
 		}
 	}
 	/* wrap around */
 	for (i = (NPROC+1)*32; i < frame_next; i += 2) {
-		if (frame_used[i] == 0 && frame_used[i+1] == 0) {
-			frame_used[i] = 1;
-			frame_used[i+1] = 1;
+		if ((frame_bmap[i>>3] & (1 << (i&7))) == 0 &&
+		    (frame_bmap[(i+1)>>3] & (1 << ((i+1)&7))) == 0) {
+			frame_bmap[i>>3] |= (1 << (i&7));
+			frame_bmap[(i+1)>>3] |= (1 << ((i+1)&7));
 			frame_next = i + 2;
 			return(i);
 		}
@@ -115,8 +117,8 @@ frame_alloc()
 frame_free(f)
 {
 	if (f >= (NPROC+1)*32 && f < 4096) {
-		frame_used[f] = 0;
-		frame_used[f+1] = 0;
+		frame_bmap[f>>3] &= ~(1 << (f&7));
+		frame_bmap[(f+1)>>3] &= ~(1 << ((f+1)&7));
 	}
 }
 
@@ -147,29 +149,25 @@ clearseg(segno)
  * source and destination pages. Copies 2 pages (4KB) per iteration.
  * Identity mapping: segment S page P = frame S*32+P.
  */
-static char copybuf[4096];
-
 copyseg(from_seg, to_seg)
 {
 	register int i;
-	int s;
+	int s, j;
+	char buf[256];	/* stack buffer — safe during window remap */
 
 	/*
-	 * Disable interrupts: BSS extends into the copy window region
-	 * (0xE000-0xEFFF). While the window is remapped, variables like
-	 * callout[] and cfree[] would read as garbage. A clock interrupt
-	 * during this window would crash.
+	 * Disable interrupts: while the copy window is remapped,
+	 * any BSS in the 0xE000 region would read as garbage.
 	 */
 	s = spl7();
 	for (i = 0; i < 32; i += 2) {
-		/* Map window to source page pair */
-		outw(0x00B4, from_seg * 32 + i);
-		bcopy(0xE000, copybuf, 4096);
-		/* Map window to dest page pair */
-		outw(0x00B4, to_seg * 32 + i);
-		bcopy(copybuf, 0xE000, 4096);
+		for (j = 0; j < 4096; j += 256) {
+			outw(0x00B4, from_seg * 32 + i);
+			bcopy(0xE000 + j, buf, 256);
+			outw(0x00B4, to_seg * 32 + i);
+			bcopy(buf, 0xE000 + j, 256);
+		}
 	}
-	/* Restore window identity mapping */
 	outw(0x00B4, WPAGE_IDENTITY);
 	splx(s);
 }

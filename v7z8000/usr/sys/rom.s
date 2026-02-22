@@ -69,12 +69,12 @@ init_start:
 	! Stack grows downward, so we push in reverse order:
 	!   First push PC (4 bytes), then FCW (2 bytes), then tag (2 bytes)
 	!
-	! We want to jump to segment 1, offset 0x0180 (where boot code starts)
+	! We want to jump to segment 1, offset 0x01F0 (where boot code starts)
 	! with FCW = 0x4000 (NONSEG + SYS)
 
-	! Push segmented PC (4 bytes): segment 1, offset 0x0180
+	! Push segmented PC (4 bytes): segment 1, offset 0x01F0
 	! High word first (push decrements then stores)
-	ld	r0, #0x0180	! offset of boot entry in segment 1
+	ld	r0, #0x01F0	! offset of boot entry in segment 1
 	push	@rr14, r0	! push PC low word (offset)
 	ld	r0, #0x8100	! segment 1 encoding
 	push	@rr14, r0	! push PC high word (segment)

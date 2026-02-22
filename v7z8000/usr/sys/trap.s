@@ -10,7 +10,7 @@
 ! Memory layout within segment 1 (offset from segment base):
 !   0x0000 - 0x003F: PSA table (8 entries x 8 bytes = 64 bytes)
 !   0x0040 - 0x017F: Trap handler stubs (syscall, NVI clock, VI device)
-!   0x0180+:         Boot entry
+!   0x01C0+:         Boot entry
 ! =============================================================================
 
 	.segm
@@ -99,9 +99,73 @@ default_trap:
 default_epu:
 	halt
 default_priv:
+	! Privilege violation handler: print 'P' + faulting PC, then halt.
+	! IRET frame on system stack: tag(+0), FCW(+2), PC_high(+4), PC_low(+6).
+	! Switch to NONSEG+SYS so we can use BA-mode addressing on R15.
+	ld	r1, #0x4000
+	ldctl	fcw, r1		! NONSEG + SYS
+	.unsegm
+	ld	r0, #0x00F0	! console port
+	ld	r1, #0x0050	! 'P'
+	outb	@r0, rl1
+	ld	r2, 4(r15)	! PC high (segment)
+	calr	.Lhex4
+	ld	r1, #0x002E	! '.'
+	outb	@r0, rl1
+	ld	r2, 6(r15)	! PC low (offset)
+	calr	.Lhex4
+	ld	r1, #0x003A	! ':'
+	outb	@r0, rl1
+	ld	r2, 0(r15)	! tag (faulting opcode)
+	calr	.Lhex4
+	ld	r1, #0x002F	! '/'
+	outb	@r0, rl1
+	ld	r2, 2(r15)	! FCW
+	calr	.Lhex4
 	halt
+
+! Print r2 as 4 hex digits via port @r0. Clobbers r1,r2,r3.
+.Lhex4:
+	ld	r3, r2
+	srl	r2, #4
+	srl	r2, #4
+	srl	r2, #4
+	calr	.Lhexnib
+	ld	r2, r3
+	srl	r2, #4
+	srl	r2, #4
+	calr	.Lhexnib
+	ld	r2, r3
+	srl	r2, #4
+	calr	.Lhexnib
+	ld	r2, r3
+	calr	.Lhexnib
+	ret
+
+! Print low nibble of r2 as hex char via port @r0. Clobbers r1.
+.Lhexnib:
+	ld	r1, r2
+	and	r1, #0x000F
+	add	r1, #0x0030	! + '0'
+	cp	r1, #0x003A
+	jr	lt, .Lhn1
+	add	r1, #0x0007	! A-F offset
+.Lhn1:
+	outb	@r0, rl1
+	ret
+
+	.segm
 default_seg:
+	! Minimal SEGTRAP handler: switch to NONSEG+SYS, print 'X', halt.
+	! Avoid stack operations that could double-fault.
+	ld	r1, #0x4000
+	ldctl	fcw, r1		! NONSEG + SYS
+	.unsegm
+	ld	r1, #0x0058		! 'X'
+	ld	r0, #0x00F0
+	outb	@r0, rl1
 	halt
+	.segm
 default_nmi:
 	halt
 
@@ -375,12 +439,12 @@ vi_entry:
 
 
 ! =============================================================================
-! Boot entry (at offset 0x0180)
+! Boot entry (at offset 0x01F0)
 ! This runs in NONSEG+SYS mode in segment 1.
 ! Calls the C handler entry point at 0x0200 which calls main().
 ! =============================================================================
 	.unsegm
-	.org	0x0180
+	.org	0x01F0
 
 _start:
 	ld	r2, #0x0202

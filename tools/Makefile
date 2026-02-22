@@ -21,7 +21,7 @@ SHELL_OBJS = $(SHELL_SRCS:.c=.b)
 
 .PHONY: all clean
 
-all: v7mkfs init echo sh root.img
+all: v7mkfs init echo cat sh root.img
 
 # =============================================================================
 # Host tools
@@ -94,6 +94,21 @@ echo: echo.bout bout2v7.py
 	python3 bout2v7.py $< $@
 
 # =============================================================================
+# cat - /bin/cat
+# =============================================================================
+cat.az8: cat.c
+	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
+
+cat.b: cat.az8
+	$(AZ8) -o $@ $<
+
+cat.bout: $(LIBC_DIR)/crt0.b cat.b arith.b libc.a
+	$(LDZ8) -x -R 0 $^ -o $@
+
+cat: cat.bout bout2v7.py
+	python3 bout2v7.py $< $@
+
+# =============================================================================
 # sh - /bin/sh (V7 Bourne shell)
 # =============================================================================
 %.az8: $(SHELL_SRC)/%.c
@@ -111,7 +126,7 @@ sh: sh.bout bout2v7.py
 # =============================================================================
 # Filesystem image
 # =============================================================================
-root.img: v7mkfs proto.small init echo sh
+root.img: v7mkfs proto.small init echo cat sh
 	./v7mkfs root.img proto.small
 
 # =============================================================================
@@ -121,6 +136,7 @@ clean:
 	rm -f v7mkfs root.img
 	rm -f init init.b init.az8 init.bout
 	rm -f echo echo.b echo.az8 echo.bout
+	rm -f cat cat.b cat.az8 cat.bout
 	rm -f sh sh.bout $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
 	rm -f arith.b arith.az8
 	rm -f libc.a $(LIBC_DIR)/*.b

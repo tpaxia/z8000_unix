@@ -202,11 +202,50 @@ Fixed by changing `(MAXRVAR-2)` to `(MAXRVAR-3)` so pointer register variables s
 
 **Test:** Kernel boots, shell runs, `echo hello` succeeds. PASS.
 
+## Step 13: Pipes, cat, and PCC Indirect Call Fix
+
+Added pipes and the `cat` command, enabling `echo hello | cat` — the first shell pipeline. This required fixing a critical PCC codegen bug for indirect function calls through global/static variables.
+
+### PCC Indirect Function Call Bug
+
+The shell crashed with a privilege violation when running `echo hello | cat`. The crash occurred at address 0x6F2E in the shell's DATA section — the CPU was executing from a data address instead of code.
+
+Investigation traced the bug through several layers:
+
+1. **Watchpoint blind spot**: The emulator's memory watchpoints did not trigger on the write that corrupted 0x6F2E. The Z8000 CPU's `WRMEM_B` (byte write) converts byte writes to masked word writes via `write_word(addr, val, mask)`, and only the non-masked `write_word` had watchpoint checks. Since `bcopy()` copies byte-by-byte, all `copyseg()` writes (and any other byte writes) bypassed the watchpoint. Fixed by adding the watchpoint check to the masked `write_word` override.
+
+2. **The corrupting write**: With the fixed watchpoint, the write was found: `namscan(exname)` in the shell's `service.c` stores `exname`'s address (0x3A58) to the static function pointer `namfn` at 0x6F2E. This is correct — the bug is in what happens next.
+
+3. **Root cause in PCC**: `namwalk()` calls `(*namfn)(np)` — an indirect call through a global function pointer variable. PCC represents direct function calls as ICON nodes and indirect calls through variables as NAME nodes. The `zzzcode()` 'C' case in `local2.c` treated both identically, generating `call fnptr` (direct call to the variable's address) instead of `ld r8, fnptr; call @r8` (load the pointer value, then indirect call). The CPU jumped to address 0x6F2E (the location of `namfn`) instead of 0x3A58 (the value stored in `namfn`), executing data as code.
+
+4. **Fix**: Separated NAME from ICON in `zzzcode()` case 'C'. NAME now generates `ld r8, <name>; call @r8` (indirect), while ICON still generates `call <name>` (direct).
+
+### PCC INCR/DECR Byte-Width Bug
+
+The INCR/DECR templates in `table.c` used `inc`/`dec` (always word-width) instead of `incZB`/`decZB` (width-aware via the ZB escape). This caused byte post-increment expressions like `*p++` to generate word-width `inc` instructions, incrementing the pointer by the wrong amount.
+
+### Kernel Changes
+
+- **NPROC increased from 4 to 8**: Pipes require additional process slots (parent shell + two children for `cmd1 | cmd2`).
+- **`copyseg()` rewritten**: Replaced the 4KB static `copybuf[]` with a 256-byte stack buffer, copying in 256-byte chunks. The stack buffer is safe during copy window remaps because it lives below 0xE000.
+- **`frame_used[4096]` → `frame_bmap[512]`**: Physical frame allocator changed from a byte-per-frame array to a bitmap, saving 3.5KB of BSS.
+- **Trap handlers improved**: Added a privilege violation handler in `trap.s` that prints the faulting PC, opcode, and FCW before halting (instead of silent halt). Added a minimal SEGTRAP handler. Added `segtrap_handler()` in `trap.c` for kernel-mode diagnostic output and user-mode SIGSEG delivery.
+- **Boot entry relocated**: Moved from 0x0180 to 0x01F0 to accommodate the larger trap handler stubs (privilege violation hex printing).
+- **Removed debug instrumentation**: Cleaned up all debug putchar markers from `krt.s` (retu, main-return), `slp.c` (context switch, fork), `sys1.c` (exec), and `trap.c` (syscall tracing).
+
+### cat Command and Test Driver
+
+- Added `/bin/cat` to the filesystem image (`tools/cat.c`, `tools/Makefile`, `tools/proto.small`).
+- Test driver (`test_driver.cpp`): input is now `echo hello | cat\nexit\n`. Input delivery waits for the shell prompt (`# `) instead of a fixed tick count. Better termination logic with idle-after-input counter. Console output escapes `\r` and control characters.
+
+**Test:** Console output = "boot\nZ8000 Unix\n# echo hello | cat\nhello\n# exit\n". PASS.
+
 ## Current State
 
-The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands:
+The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
 - All V7 C source compiled with PCC (cz8) in Z8002 mode, K&R style unchanged
-- Bourne shell running with fork/exec/wait
+- Bourne shell running with fork/exec/wait/pipe
+- Shell pipelines work (`echo hello | cat`)
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
 - V7-style context switching (save/resume/swtch) — no bcopy of u-areas, no per-process kernel stacks
 - Process creation via fork (newproc) with u-area copy through MMU window
@@ -220,15 +259,16 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 - V7 TTY subsystem: line discipline (echo, erase, kill), clist buffering, canon
 - Console input via VI interrupt (consrint → ttyinput → sleep/wakeup)
 - Console output through ttwrite → ttyoutput → consstart → putchar → outb
-- read() and write() syscalls for character devices
+- read() and write() syscalls for character and block devices
+- Pipes (pipe.c) for inter-process communication
 - Clock interrupts via NVI with timeout() callouts
 - Cross-segment user memory access (copyin/copyout) via SEG mode toggle
 - SPL functions controlling VIE/NVIE enable/disable
+- Trap diagnostic handlers (privilege violation, segmentation trap)
 
 ## Planned Steps
 
-- **Pipes**: inter-process communication (pipe.c exists, untested with shell)
-- **Shell pipelines**: `ls | wc` requires working pipes + fork+exec in shell
 - **stty/ioctl**: terminal parameter control
-- **More commands**: ls, cat, cp, etc.
+- **More commands**: ls, cp, wc, etc.
+- **Multi-stage pipelines**: `ls | grep foo | wc`
 - **Self-hosting**: PCC compiling itself on Z8000 Unix
