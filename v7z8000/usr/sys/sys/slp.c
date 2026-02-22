@@ -303,9 +303,6 @@ retry:
 	/*
 	 * When resumed, child returns here with save() returning 1.
 	 */
-	/*
-	 * When resumed, child returns here with save() returning 1.
-	 */
 	if (save(u.u_ssav)) {
 		sureg();
 		return(1);

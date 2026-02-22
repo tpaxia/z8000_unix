@@ -120,8 +120,21 @@ boot_entry:
 	ld	r0, #0x5000
 	ldctl	fcw, r0
 	calr	main
+	! debug: did main() return?
+	ld	r0, #0x4000		! NONSEG+SYS, no VIE/NVIE
+	ldctl	fcw, r0			! disable all interrupts
+	ld	r0, #0x004D		! 'M'
+	outb	rl0, #0x00F0
+	ld	r0, #0x0031		! '1'
+	outb	rl0, #0x00F0
+	ld	r0, #0x0032		! '2'
+	outb	rl0, #0x00F0
+	ld	r0, #0x0033		! '3'
+	outb	rl0, #0x00F0
+	ld	r0, #0x000A		! '\n'
+	outb	rl0, #0x00F0
 	! After main returns in child process, enter user mode
-	calr	retu
+	jp	retu
 	halt
 
 ! --- void putchar(int ch) ---
@@ -139,9 +152,8 @@ inb:
 	push	@sp, r14
 	ld	r14, sp
 	ld	r2, 4(r14)
-	inb	rl7, @r2
-	and	r7, #0x00FF
-	ld	r0, r7
+	inb	rl0, @r2
+	and	r0, #0x00FF
 	ld	sp, r14
 	pop	r14, @sp
 	ret
@@ -151,14 +163,21 @@ outb:
 	push	@sp, r14
 	ld	r14, sp
 	ld	r2, 4(r14)
-	ld	r4, 6(r14)
-	outb	rl4, @r2
+	ld	r3, 6(r14)
+	outb	rl3, @r2
 	ld	sp, r14
 	pop	r14, @sp
 	ret
 
 ! --- void idle(void) ---
+! Called from swtch() with interrupts disabled (spl6).
+! Enable VIE+NVIE so clock/device interrupts can wake us from HALT.
+! After interrupt handler returns via IRET, we resume here with
+! the FCW restored (interrupts enabled), then return to swtch().
 idle:
+	ldctl	r0, fcw
+	or	r0, #0x1800		! set VIE+NVIE
+	ldctl	fcw, r0
 	halt
 	ret
 
@@ -271,10 +290,10 @@ subyte:
 	ld	r14, sp
 	ld	r2, useg
 	ld	r3, 4(r14)		! user offset
-	ld	r4, 6(r14)		! value
-	ld	r0, #0xC000
-	ldctl	fcw, r0			! SEG+SYS
-	ldb	@r2, rl4		! store byte to seg:off
+	ld	r0, 6(r14)		! value in R0 (rl0 for byte)
+	ld	r1, #0xC000
+	ldctl	fcw, r1			! SEG+SYS
+	ldb	@r2, rl0		! store byte to seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldk	r0, #0
@@ -303,10 +322,10 @@ suword:
 	ld	r14, sp
 	ld	r2, useg
 	ld	r3, 4(r14)
-	ld	r4, 6(r14)
+	ld	r8, 6(r14)		! value (R8 caller-saved)
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
-	ld	@r2, r4			! store word to seg:off
+	ld	@r2, r8			! store word to seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldk	r0, #0
@@ -322,9 +341,9 @@ copyin:
 	ld	r14, sp
 	ld	r2, useg		! user segment encoding
 	ld	r3, 4(r14)		! from: user offset
-	ld	r4, 6(r14)		! to: kernel address
-	ld	r5, 8(r14)		! count
-	cp	r5, #0
+	ld	r8, 6(r14)		! to: kernel address (R8 caller-saved)
+	ld	r9, 8(r14)		! count (R9 caller-saved)
+	cp	r9, #0
 	jr eq,	.Lcidone
 .Lciloop:
 	ld	r0, #0xC000
@@ -332,10 +351,10 @@ copyin:
 	ldb	rl0, @r2		! load byte from user space
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
-	ldb	@r4, rl0		! store byte to kernel
+	ldb	@r8, rl0		! store byte to kernel
 	inc	r3, #1			! advance user offset
-	inc	r4, #1			! advance kernel pointer
-	dec	r5, #1
+	inc	r8, #1			! advance kernel pointer
+	dec	r9, #1
 	jr ne,	.Lciloop
 .Lcidone:
 	ldk	r0, #0
@@ -349,26 +368,28 @@ copyin:
 copyout:
 	push	@sp, r14
 	ld	r14, sp
+	push	@sp, r4			! save R4 (callee-saved, used for FCW)
 	ld	r2, 4(r14)		! from: kernel address
 	ld	r3, 6(r14)		! to: user offset
-	ld	r5, 8(r14)		! count
-	cp	r5, #0
+	ld	r1, 8(r14)		! count (R1 caller-saved)
+	ld	r8, useg		! R8 = segment (R8 caller-saved, constant)
+	cp	r1, #0
 	jr eq,	.Lcodone
 .Lcoloop:
 	ldb	rl0, @r2		! load byte from kernel
 	inc	r2, #1			! advance kernel pointer
-	ld	r6, useg		! user segment encoding
-	ld	r7, r3			! user offset
+	ld	r9, r3			! R9 = user offset copy
 	ld	r4, #0xC000
 	ldctl	fcw, r4			! SEG+SYS
-	ldb	@r6, rl0		! store byte to user space
+	ldb	@r8, rl0		! store byte to user space via @RR8
 	ld	r4, #0x4000
 	ldctl	fcw, r4			! NONSEG+SYS
 	inc	r3, #1			! advance user offset
-	dec	r5, #1
+	dec	r1, #1
 	jr ne,	.Lcoloop
 .Lcodone:
 	ldk	r0, #0
+	pop	r4, @sp			! restore R4
 	ld	sp, r14
 	pop	r14, @sp
 	ret
@@ -380,6 +401,11 @@ copyout:
 ! Must avoid BA/DA mode instructions while in SEG mode.
 ! =============================================================================
 retu:
+	outb	rl0, #0x00F0		! debug: 'R' marker (r0 still has old value)
+	ld	r0, #0x0052		! 'R'
+	outb	rl0, #0x00F0
+	ld	r0, #0x000A		! '\n'
+	outb	rl0, #0x00F0
 	! Set up registers for the NONSEG+SYS to SEG+SYS transition.
 	! CHANGE_FCW swaps R14 with NSPSEG when the SEG bit changes.
 	! We want R14=0x8100 (kernel seg) after the swap so the system
@@ -464,15 +490,15 @@ insw:
 	push	@sp, r14
 	ld	r14, sp
 	ld	r2, 4(r14)		! port
-	ld	r4, 6(r14)		! addr
-	ld	r5, 8(r14)		! count (words)
-	cp	r5, #0
+	ld	r8, 6(r14)		! addr (R8 caller-saved)
+	ld	r9, 8(r14)		! count (R9 caller-saved)
+	cp	r9, #0
 	jr eq,	.Liswdone
 .Liswloop:
 	in	r0, @r2			! read word from port
-	ld	@r4, r0			! store to memory
-	inc	r4, #2			! advance pointer by word
-	dec	r5, #1
+	ld	@r8, r0			! store to memory
+	inc	r8, #2			! advance pointer by word
+	dec	r9, #1
 	jr ne,	.Liswloop
 .Liswdone:
 	ld	sp, r14
@@ -485,15 +511,15 @@ outsw:
 	push	@sp, r14
 	ld	r14, sp
 	ld	r2, 4(r14)		! port
-	ld	r4, 6(r14)		! addr
-	ld	r5, 8(r14)		! count (words)
-	cp	r5, #0
+	ld	r8, 6(r14)		! addr (R8 caller-saved)
+	ld	r9, 8(r14)		! count (R9 caller-saved)
+	cp	r9, #0
 	jr eq,	.Loswdone
 .Loswloop:
-	ld	r0, @r4			! load word from memory
+	ld	r0, @r8			! load word from memory
 	out	r0, @r2			! write word to port
-	inc	r4, #2			! advance pointer by word
-	dec	r5, #1
+	inc	r8, #2			! advance pointer by word
+	dec	r9, #1
 	jr ne,	.Loswloop
 .Loswdone:
 	ld	sp, r14
@@ -506,8 +532,8 @@ outw:
 	push	@sp, r14
 	ld	r14, sp
 	ld	r2, 4(r14)		! port
-	ld	r4, 6(r14)		! value
-	out	r4, @r2
+	ld	r3, 6(r14)		! value (R3 caller-saved)
+	out	r3, @r2
 	ld	sp, r14
 	pop	r14, @sp
 	ret
@@ -567,4 +593,30 @@ splx:
 ! --- void display(void) ---
 ! PDP-11 front panel display -- no-op on Z8000.
 display:
+	ret
+
+! --- int test_slal_rl(void) ---
+! Test SLAL + RL instructions.
+! SLAL rr2 with MSB=1 should set carry.
+! RL r1 should shift carry into bit 0.
+! Returns 1 if working, 0 if broken.
+	.globl	test_slal_rl
+test_slal_rl:
+	ld	r2, #0x8000		! RR2 = 0x80000000
+	ld	r3, #0x0000
+	clr	r0
+	clr	r1
+	slal	rr2, #1			! MSB was 1 -> carry=1, RR2=0x00000000
+	rl	r1, #1			! carry(1) -> bit 0 of R1: R1=1
+	ld	r0, r1			! return R1
+	ret
+
+! --- int test_div_hw(void) ---
+! Test hardware div instruction: 42 / 10 = 4
+	.globl	test_div_hw
+test_div_hw:
+	clr	r0
+	ld	r1, #42
+	div	rr0, #10		! R1=quotient=4, R0=remainder=2
+	ld	r0, r1			! return quotient
 	ret

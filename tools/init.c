@@ -8,22 +8,13 @@
 
 main()
 {
-	int fd;
 	int pid;
 
-	/* Open console as stdin */
-	fd = open("/dev/console", 2);	/* O_RDWR */
-	if (fd < 0)
-		_exit(1);
-	/* Close any inherited fd 0 */
-	close(0);
-	dup(fd);		/* fd 0 = stdin */
-	close(1);
-	dup(fd);		/* fd 1 = stdout */
-	close(2);
-	dup(fd);		/* fd 2 = stderr */
-	if (fd > 2)
-		close(fd);
+	/* Set up fd 0/1/2 on console */
+	close(0); close(1); close(2);
+	open("/dev/console", 2);	/* fd 0 = stdin */
+	dup(0);				/* fd 1 = stdout */
+	dup(0);				/* fd 2 = stderr */
 
 	for (;;) {
 		pid = fork();

@@ -8,12 +8,11 @@
 
 	.text
 	.globl	_start
-	.globl	_main
-	.globl	__crtinit
+	.globl	main
+	.globl	_crtinit
 	.globl	_edata
 	.globl	_end
 	.globl	_exit
-	.globl	__exit
 
 ! --- Entry point (first instruction in text segment) ---
 _start:
@@ -35,16 +34,22 @@ _start:
 	sub	sp, #4		! allocate space for 2 args
 	ld	2(sp), r2	! arg 2: argv
 	ld	0(sp), r1	! arg 1: argc
-	call	__crtinit	! set environ = &argv[argc+1]
-	call	_main
+	call	_crtinit	! set environ = &argv[argc+1]
+	call	main
 	! main() returned; call _exit(retval)
 	ld	0(sp), r0	! arg 1: return value
-	call	__exit
+	call	_exit
 	halt
 
-! --- _exit(status) / exit(status) --- syscall #1
-__exit:
+! --- _exit(status) --- syscall #1
 _exit:
 	ld	r1, 2(sp)	! status
 	sc	#1
 	halt			! should not return
+
+! --- BSS: global variables always needed ---
+	.bss
+	.globl	errno
+	.globl	environ
+errno:	.zerow	1
+environ: .zerow	1

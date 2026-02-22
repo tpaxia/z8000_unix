@@ -503,15 +503,18 @@ int main(int argc, char* argv[]) {
     const char *console_input = "echo hello\nexit\n";
     int input_idx = 0;
 
-    while (!cpu.is_halted() && cpu.get_cycles() < max_cycles) {
+    while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
-        if (!cpu.is_halted()) {
-            cpu.assert_nvi();  // clock tick
-            tick_count++;
-            // Deliver console input after shell prompt appears (1500 ticks)
-            if (tick_count >= 1500 && console_input[input_idx]) {
-                io.queue_console_char(console_input[input_idx++]);
-            }
+        // Always deliver NVI clock tick (wakes CPU from HALT)
+        cpu.assert_nvi();
+        tick_count++;
+        // Deliver console input after shell has had time to start (1500 ticks)
+        if (tick_count >= 1500 && console_input[input_idx]) {
+            io.queue_console_char(console_input[input_idx++]);
+        }
+        // Stop if halted AND no more input to deliver AND enough ticks past last input
+        if (cpu.is_halted() && !console_input[input_idx] && tick_count > 2000) {
+            break;
         }
     }
 

@@ -39,7 +39,7 @@ CPPFLAGS = -Dz8000 -Dz8002
 # libc - Z8002 user-space C library
 # =============================================================================
 LIBC_ASM_OBJS = $(LIBC_DIR)/syscalls.b $(LIBC_DIR)/setjmp.b
-LIBC_C_OBJS = $(LIBC_DIR)/errno.b $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/crtinit.b
+LIBC_C_OBJS = $(LIBC_DIR)/errno.b $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/crtinit.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/end.b
 
 $(LIBC_DIR)/crt0.b: $(LIBC_DIR)/crt0.az8
 	$(AZ8) -o $@ $<
@@ -55,6 +55,15 @@ libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS)
 	ar cr $@ $(LIBC_ASM_OBJS) $(LIBC_C_OBJS)
 
 # =============================================================================
+# arith - 32-bit arithmetic library (ldiv, lrem, aldiv)
+# =============================================================================
+arith.az8: $(PCC_ROOT)/lib/arith.az8
+	cp $< $@
+
+arith.b: arith.az8
+	$(AZ8) -o $@ $<
+
+# =============================================================================
 # init - /etc/init
 # =============================================================================
 init.az8: init.c
@@ -63,7 +72,7 @@ init.az8: init.c
 init.b: init.az8
 	$(AZ8) -o $@ $<
 
-init.bout: $(LIBC_DIR)/crt0.b init.b libc.a
+init.bout: $(LIBC_DIR)/crt0.b init.b arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
 
 init: init.bout bout2v7.py
@@ -78,7 +87,7 @@ echo.az8: echo.c
 echo.b: echo.az8
 	$(AZ8) -o $@ $<
 
-echo.bout: $(LIBC_DIR)/crt0.b echo.b libc.a
+echo.bout: $(LIBC_DIR)/crt0.b echo.b arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
 
 echo: echo.bout bout2v7.py
@@ -93,7 +102,7 @@ echo: echo.bout bout2v7.py
 %.b: %.az8
 	$(AZ8) -o $@ $<
 
-sh.bout: $(LIBC_DIR)/crt0.b $(SHELL_OBJS) libc.a
+sh.bout: $(LIBC_DIR)/crt0.b $(SHELL_OBJS) arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
 
 sh: sh.bout bout2v7.py
@@ -113,5 +122,6 @@ clean:
 	rm -f init init.b init.az8 init.bout
 	rm -f echo echo.b echo.az8 echo.bout
 	rm -f sh sh.bout $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
+	rm -f arith.b arith.az8
 	rm -f libc.a $(LIBC_DIR)/*.b
-	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/end.az8
+	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/end.az8

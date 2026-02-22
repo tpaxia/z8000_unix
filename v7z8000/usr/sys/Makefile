@@ -164,7 +164,7 @@ test: all disk_image
 	@echo ""
 	@echo "=== Running kernel boot test ==="
 	@echo ""
-	cd $(B) && ./test_driver
+	cd $(B) && ./test_driver -c 200000000
 
 # =============================================================================
 # Clean
