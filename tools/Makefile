@@ -113,5 +113,5 @@ clean:
 	rm -f init init.b init.az8 init.bout
 	rm -f echo echo.b echo.az8 echo.bout
 	rm -f sh sh.bout $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
-	rm -f libc.a $(LIBC_DIR)/*.b $(LIBC_DIR)/*.az8
-	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8
+	rm -f libc.a $(LIBC_DIR)/*.b
+	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/end.az8
