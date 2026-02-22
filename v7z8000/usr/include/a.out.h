@@ -5,8 +5,8 @@ struct	exec {	/* a.out header */
 	unsigned	a_bss;  	/* size of unitialized data */
 	unsigned	a_syms; 	/* size of symbol table */
 	unsigned	a_entry; 	/* entry point */
-	unsigned	a_unused;	/* not used */
-	unsigned	a_flag; 	/* relocation info stripped */
+	unsigned	a_trsize;	/* text relocation size */
+	unsigned	a_drsize;	/* data relocation size */
 };
 
 #define	A_MAGIC1	0407       	/* normal */

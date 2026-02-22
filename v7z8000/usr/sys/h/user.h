@@ -65,8 +65,8 @@ struct	user
 		unsigned ux_bsize;	/* bss size */
 		unsigned ux_ssize;	/* symbol table size */
 		unsigned ux_entloc;	/* entry location */
-		unsigned ux_unused;
-		unsigned ux_relflg;
+		unsigned ux_trsize;
+		unsigned ux_drsize;
 	} u_exdata;
 	char	u_comm[DIRSIZ];
 	time_t	u_start;

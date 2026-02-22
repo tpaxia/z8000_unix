@@ -240,10 +240,51 @@ The INCR/DECR templates in `table.c` used `inc`/`dec` (always word-width) instea
 
 **Test:** Console output = "boot\nZ8000 Unix\n# echo hello | cat\nhello\n# exit\n". PASS.
 
+## Step 14: Switch PCC Toolchain from b.out to a.out Object Format
+
+Switched the PCC cross-toolchain (az8 assembler, ldz8 linker) from the custom b.out object format to standard V7 a.out format. This eliminates the host-side `bout2v7.py` conversion script and is a prerequisite for self-hosting PCC on Z8000 Unix.
+
+### a.out Format (Z8000)
+
+16-byte header with 8 x 16-bit big-endian words, matching Z8000's native `int` size:
+
+| Offset | Field | Description |
+|--------|-------|-------------|
+| 0 | a_magic | 0407 (OMAGIC) or 0410 (NMAGIC) |
+| 2 | a_text | text segment size |
+| 4 | a_data | data segment size |
+| 6 | a_bss | BSS size |
+| 8 | a_syms | symbol table size |
+| 10 | a_entry | entry point |
+| 12 | a_trsize | text relocation size |
+| 14 | a_drsize | data relocation size |
+
+Section order: header → text → data → text relocation → data relocation → symbols. This differs from b.out which had symbols before relocation.
+
+Symbol entries are 12-byte `struct nlist` (8-byte name + 2-byte n_type + 2-byte n_value), replacing b.out's variable-length format (2-byte type + 4-byte value + NUL-terminated name).
+
+### Changes
+
+- **az8 assembler** (`az8/rel.c`, `az8/sym.c`): Writes 16-byte header with 2-byte fields. `Sym_Write()` produces 12-byte nlist entries with type conversion `stype >> 8`. Symbols written after relocation (deferred from `Rel_Header()` to `Fix_Rel()`).
+- **ldz8 linker** (`ldz8.c`): Reads 16-byte headers via `short tmp` + 2-byte `get68()`. `getsym()` reads 12-byte nlist with `n_type << 8` conversion. `finishout()` writes 12-byte nlist at correct SYMPOS. Default output changed from `b.out` to `a.out`.
+- **b.out.h**: Renamed to reflect a.out layout. `HDRSIZE=16` (was 32), `NLIST_DISKSIZE=12` (was variable), position macros reordered for a.out section order.
+- **a.out.h**: `a_unused` → `a_trsize`, `a_flag` → `a_drsize`.
+- **user.h**: `ux_unused` → `ux_trsize`, `ux_relflg` → `ux_drsize` (cosmetic, exec() doesn't use these fields).
+- **tools/Makefile**: Removed `bout2v7.py` conversion steps — ldz8 now produces a.out directly.
+- **bout2bin.py**: Updated for 16-byte a.out header (kernel handler.bin extraction).
+- **bout2v7.py**: Deleted (no longer needed).
+
+### Bug Fixed
+
+The initial implementation had a linker bug: `finishout()` used the `SYMPOS` macro (which references `filhdr` struct fields) to seek to the symbol table position. But by the time `finishout()` runs, `filhdr` has been overwritten with the last input file's header during pass 2, causing symbols to be written within the text segment. Fixed by using global accumulated size variables (`tsize`, `dsize`, `rtsize`, `rdsize`) instead of the macro.
+
+**Test:** handler.bin matches reference binary byte-for-byte. Console output = "boot\nZ8000 Unix\n# echo hello | cat\nhello\n# exit\n". PASS.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
 - All V7 C source compiled with PCC (cz8) in Z8002 mode, K&R style unchanged
+- PCC toolchain produces native a.out binaries directly (no conversion scripts)
 - Bourne shell running with fork/exec/wait/pipe
 - Shell pipelines work (`echo hello | cat`)
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping

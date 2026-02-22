@@ -72,11 +72,8 @@ init.az8: init.c
 init.b: init.az8
 	$(AZ8) -o $@ $<
 
-init.bout: $(LIBC_DIR)/crt0.b init.b arith.b libc.a
+init: $(LIBC_DIR)/crt0.b init.b arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
-
-init: init.bout bout2v7.py
-	python3 bout2v7.py $< $@
 
 # =============================================================================
 # echo - /bin/echo
@@ -87,11 +84,8 @@ echo.az8: echo.c
 echo.b: echo.az8
 	$(AZ8) -o $@ $<
 
-echo.bout: $(LIBC_DIR)/crt0.b echo.b arith.b libc.a
+echo: $(LIBC_DIR)/crt0.b echo.b arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
-
-echo: echo.bout bout2v7.py
-	python3 bout2v7.py $< $@
 
 # =============================================================================
 # cat - /bin/cat
@@ -102,11 +96,8 @@ cat.az8: cat.c
 cat.b: cat.az8
 	$(AZ8) -o $@ $<
 
-cat.bout: $(LIBC_DIR)/crt0.b cat.b arith.b libc.a
+cat: $(LIBC_DIR)/crt0.b cat.b arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
-
-cat: cat.bout bout2v7.py
-	python3 bout2v7.py $< $@
 
 # =============================================================================
 # sh - /bin/sh (V7 Bourne shell)
@@ -117,11 +108,8 @@ cat: cat.bout bout2v7.py
 %.b: %.az8
 	$(AZ8) -o $@ $<
 
-sh.bout: $(LIBC_DIR)/crt0.b $(SHELL_OBJS) arith.b libc.a
+sh: $(LIBC_DIR)/crt0.b $(SHELL_OBJS) arith.b libc.a
 	$(LDZ8) -x -R 0 $^ -o $@
-
-sh: sh.bout bout2v7.py
-	python3 bout2v7.py $< $@
 
 # =============================================================================
 # Filesystem image
@@ -134,10 +122,10 @@ root.img: v7mkfs proto.small init echo cat sh
 # =============================================================================
 clean:
 	rm -f v7mkfs root.img
-	rm -f init init.b init.az8 init.bout
-	rm -f echo echo.b echo.az8 echo.bout
-	rm -f cat cat.b cat.az8 cat.bout
-	rm -f sh sh.bout $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
+	rm -f init init.b init.az8
+	rm -f echo echo.b echo.az8
+	rm -f cat cat.b cat.az8
+	rm -f sh $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
 	rm -f arith.b arith.az8
 	rm -f libc.a $(LIBC_DIR)/*.b
 	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/end.az8
