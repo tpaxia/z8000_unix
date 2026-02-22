@@ -193,13 +193,13 @@ cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 | Aspect | Convention |
 |--------|-----------|
 | Stack pointer | R15 |
-| Frame pointer | R14 |
+| Frame pointer | R13 |
 | Return value | R0 (int/pointer), RR0 (long) |
 | Arguments | Pushed right-to-left onto R15 stack |
-| Callee-saved | R4-R14 |
-| Function prologue | `push @sp, r14; ld r14, sp; sub sp, #N` |
-| Function epilogue | `ld sp, r14; pop r14, @sp; ret` |
+| Callee-saved | R4-R7, R10-R12, R14 |
+| Function prologue | `push @sp, r13; ld r13, sp; sub sp, #N` |
+| Function epilogue | `ld sp, r13; pop r13, @sp; ret` |
 
-Assembly functions called from C must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve R4-R14 and the return address in `label_t`.
+Assembly functions called from C must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
-Note: Steps 1-10 used ACK which has a similar convention but with R13 as frame pointer.
+Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).

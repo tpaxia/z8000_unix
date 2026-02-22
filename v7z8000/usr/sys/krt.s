@@ -8,11 +8,11 @@
 !   0x0206: jr vi_dispatch        (2 bytes) - VI handler calls here
 !
 ! PCC calling convention:
-!   Frame pointer: R14
+!   Frame pointer: R13
 !   Stack pointer: R15
-!   Callee-saved:  R4-R7, R10-R13
-!   Prologue: push @sp, r14 / ld r14, sp
-!   Args at:  4(r14), 6(r14), ...
+!   Callee-saved:  R4-R7, R10-R12, R14
+!   Prologue: push @sp, r13 / ld r13, sp
+!   Args at:  4(r13), 6(r13), ...
 
 	.text
 	.globl	putchar
@@ -53,17 +53,17 @@
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
 ! C-callable wrapper around trap().
 syscall_dispatch:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r0, 4(r14)		! num
-	ld	r1, 6(r14)		! regs
+	push	@sp, r13
+	ld	r13, sp
+	ld	r0, 4(r13)		! num
+	ld	r1, 6(r13)		! regs
 	sub	sp, #4
 	ld	2(sp), r1
 	ld	0(sp), r0
 	calr	trap
 	add	sp, #4
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- NVI dispatch entry (clock) ---
@@ -71,8 +71,8 @@ syscall_dispatch:
 ! R0 = interrupted FCW (passed by nvi_entry from IRET frame).
 ! Calls clock(ps) where ps = interrupted FCW.
 nvi_dispatch:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	sub	sp, #2
 	ld	0(sp), r0		! push argument: ps = interrupted FCW
 	calr	clock
@@ -84,8 +84,8 @@ nvi_dispatch:
 	ldctl	r1, fcw
 	and	r1, #0xE7FF		! clear VIE+NVIE
 	ldctl	fcw, r1
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- VI dispatch entry (device interrupts) ---
@@ -94,12 +94,12 @@ nvi_dispatch:
 ! All devices share VI vector 0.  Each handler guards itself:
 !   hdintr checks hd_bp==0, consrint checks RX-ready status.
 vi_dispatch:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	calr	hdintr
 	calr	consrint
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- Boot entry ---
@@ -139,34 +139,34 @@ boot_entry:
 
 ! --- void putchar(int ch) ---
 putchar:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r1, 4(r14)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r1, 4(r13)
 	outb	rl1, #0x00F0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- int inb(int port) ---
 inb:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)
 	inb	rl0, @r2
 	and	r0, #0x00FF
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- void outb(int port, int byte) ---
 outb:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)
-	ld	r3, 6(r14)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)
+	ld	r3, 6(r13)
 	outb	rl3, @r2
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- void idle(void) ---
@@ -185,16 +185,16 @@ idle:
 ! save(label) -- Save context, return 0
 ! int save(label_t label);
 !
-! PCC callee-saved: R4-R7, R10-R13.  Frame pointer: R14.
-! Saves all callee-saved regs + caller's R14 + ret addr + caller's SP
+! PCC callee-saved: R4-R7, R10-R12, R14.  Frame pointer: R13.
+! Saves all callee-saved regs + caller's R13 (FP) + ret addr + caller's SP
 ! into label_t[12].  resume() restores entirely from the label_t without
 ! depending on the stack contents -- so the u-area copy in newproc()
 ! can safely clobber save()'s old stack frame.
 ! =============================================================================
 save:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r1, 4(r14)		! r1 = label_t pointer (argument)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r1, 4(r13)		! r1 = label_t pointer (argument)
 	ld	0(r1), r4		! label[0] = r4
 	ld	2(r1), r5		! label[1] = r5
 	ld	4(r1), r6		! label[2] = r6
@@ -202,20 +202,20 @@ save:
 	ld	8(r1), r10		! label[4] = r10
 	ld	10(r1), r11		! label[5] = r11
 	ld	12(r1), r12		! label[6] = r12
-	ld	14(r1), r13		! label[7] = r13
-	! Save caller's R14 (pushed on stack by our prologue)
-	ld	r0, 0(r14)		! r0 = caller's r14
-	ld	16(r1), r0		! label[8] = caller's r14
+	ld	14(r1), r14		! label[7] = r14 (callee-saved)
+	! Save caller's R13 (FP, pushed on stack by our prologue)
+	ld	r0, 0(r13)		! r0 = caller's r13 (FP)
+	ld	16(r1), r0		! label[8] = caller's r13 (FP)
 	! Save return address (pushed by calr)
-	ld	r0, 2(r14)		! r0 = return address
+	ld	r0, 2(r13)		! r0 = return address
 	ld	18(r1), r0		! label[9] = return address
-	! Save caller's SP: r14 + 6 (skip pushed r14 + ret addr + argument)
-	ld	r0, r14
+	! Save caller's SP: r13 + 6 (skip pushed r13 + ret addr + argument)
+	ld	r0, r13
 	add	r0, #6
 	ld	20(r1), r0		! label[10] = caller's SP
 	clr	r0			! return 0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! =============================================================================
@@ -223,7 +223,7 @@ save:
 ! void resume(int p_addr, label_t label);
 !
 ! Writes KDSA6 (out 0x00B0) to remap the u-area + kernel stack,
-! then restores ALL state from label_t (registers, R14, SP, return addr).
+! then restores ALL state from label_t (registers, R13 FP, SP, return addr).
 ! Does NOT depend on stack contents -- stack may have been clobbered
 ! by bcopy between save() and resume().
 !
@@ -238,11 +238,11 @@ resume:
 	ld	r5, 2(r1)
 	ld	r6, 4(r1)
 	ld	r7, 6(r1)
-	ld	r10, 8(r1)		! restore r10-r13
+	ld	r10, 8(r1)		! restore r10-r12
 	ld	r11, 10(r1)
 	ld	r12, 12(r1)
-	ld	r13, 14(r1)
-	ld	r14, 16(r1)		! restore caller's r14
+	ld	r14, 14(r1)		! restore r14 (callee-saved)
+	ld	r13, 16(r1)		! restore caller's r13 (FP)
 	ld	sp, 20(r1)		! restore caller's SP
 	! Push the return address onto the (now correct) stack and return.
 	! This writes 2 bytes below the restored SP -- safe dead zone.
@@ -268,81 +268,81 @@ resume:
 
 ! --- int fubyte(addr) ---
 fubyte:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	ld	r2, useg		! user segment encoding
-	ld	r3, 4(r14)		! user offset
+	ld	r3, 4(r13)		! user offset
 	ld	r0, #0xC000
-	ldctl	fcw, r0			! SEG+SYS: r14 swapped
+	ldctl	fcw, r0			! SEG+SYS
 	! --- SEG mode: only IR/reg/imm instructions ---
 	ldb	rl0, @r2		! load byte from seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	! --- back to NONSEG mode ---
 	and	r0, #0x00FF		! zero-extend
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- int subyte(addr, val) ---
 subyte:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	ld	r2, useg
-	ld	r3, 4(r14)		! user offset
-	ld	r0, 6(r14)		! value in R0 (rl0 for byte)
+	ld	r3, 4(r13)		! user offset
+	ld	r0, 6(r13)		! value in R0 (rl0 for byte)
 	ld	r1, #0xC000
 	ldctl	fcw, r1			! SEG+SYS
 	ldb	@r2, rl0		! store byte to seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldk	r0, #0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- int fuword(addr) ---
 fuword:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	ld	r2, useg
-	ld	r3, 4(r14)
+	ld	r3, 4(r13)
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	r0, @r2			! load word from seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- int suword(addr, val) ---
 suword:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	ld	r2, useg
-	ld	r3, 4(r14)
-	ld	r8, 6(r14)		! value (R8 caller-saved)
+	ld	r3, 4(r13)
+	ld	r8, 6(r13)		! value (R8 caller-saved)
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	@r2, r8			! store word to seg:off
 	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldk	r0, #0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! =============================================================================
 ! copyin(from_user, to_kernel, count)
 ! =============================================================================
 copyin:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	ld	r2, useg		! user segment encoding
-	ld	r3, 4(r14)		! from: user offset
-	ld	r8, 6(r14)		! to: kernel address (R8 caller-saved)
-	ld	r9, 8(r14)		! count (R9 caller-saved)
+	ld	r3, 4(r13)		! from: user offset
+	ld	r8, 6(r13)		! to: kernel address (R8 caller-saved)
+	ld	r9, 8(r13)		! count (R9 caller-saved)
 	cp	r9, #0
 	jr eq,	.Lcidone
 .Lciloop:
@@ -358,20 +358,20 @@ copyin:
 	jr ne,	.Lciloop
 .Lcidone:
 	ldk	r0, #0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! =============================================================================
 ! copyout(from_kernel, to_user, count)
 ! =============================================================================
 copyout:
-	push	@sp, r14
-	ld	r14, sp
+	push	@sp, r13
+	ld	r13, sp
 	push	@sp, r4			! save R4 (callee-saved, used for FCW)
-	ld	r2, 4(r14)		! from: kernel address
-	ld	r3, 6(r14)		! to: user offset
-	ld	r1, 8(r14)		! count (R1 caller-saved)
+	ld	r2, 4(r13)		! from: kernel address
+	ld	r3, 6(r13)		! to: user offset
+	ld	r1, 8(r13)		! count (R1 caller-saved)
 	ld	r8, useg		! R8 = segment (R8 caller-saved, constant)
 	cp	r1, #0
 	jr eq,	.Lcodone
@@ -390,8 +390,8 @@ copyout:
 .Lcodone:
 	ldk	r0, #0
 	pop	r4, @sp			! restore R4
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! =============================================================================
@@ -459,12 +459,12 @@ retu:
 ! --- void set_usp(int value) ---
 ! Set user stack pointer (NSPOFF control register).
 set_usp:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r0, 4(r14)		! user SP value
+	push	@sp, r13
+	ld	r13, sp
+	ld	r0, 4(r13)		! user SP value
 	ldctl	nspoff, r0
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- int get_usp(void) ---
@@ -476,22 +476,22 @@ get_usp:
 ! --- int inw(int port) ---
 ! Word-width I/O input, used for ATA data register.
 inw:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)		! port
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)		! port
 	in	r0, @r2
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- void insw(int port, char *addr, int count) ---
 ! Block word input: read count words from I/O port to memory.
 insw:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)		! port
-	ld	r8, 6(r14)		! addr (R8 caller-saved)
-	ld	r9, 8(r14)		! count (R9 caller-saved)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)		! port
+	ld	r8, 6(r13)		! addr (R8 caller-saved)
+	ld	r9, 8(r13)		! count (R9 caller-saved)
 	cp	r9, #0
 	jr eq,	.Liswdone
 .Liswloop:
@@ -501,18 +501,18 @@ insw:
 	dec	r9, #1
 	jr ne,	.Liswloop
 .Liswdone:
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- void outsw(int port, char *addr, int count) ---
 ! Block word output: write count words from memory to I/O port.
 outsw:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)		! port
-	ld	r8, 6(r14)		! addr (R8 caller-saved)
-	ld	r9, 8(r14)		! count (R9 caller-saved)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)		! port
+	ld	r8, 6(r13)		! addr (R8 caller-saved)
+	ld	r9, 8(r13)		! count (R9 caller-saved)
 	cp	r9, #0
 	jr eq,	.Loswdone
 .Loswloop:
@@ -522,20 +522,20 @@ outsw:
 	dec	r9, #1
 	jr ne,	.Loswloop
 .Loswdone:
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! --- void outw(int port, int value) ---
 ! Word-width I/O output, used for KDSA6 and WPAGE ports.
 outw:
-	push	@sp, r14
-	ld	r14, sp
-	ld	r2, 4(r14)		! port
-	ld	r3, 6(r14)		! value (R3 caller-saved)
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, 4(r13)		! port
+	ld	r3, 6(r13)		! value (R3 caller-saved)
 	out	r3, @r2
-	ld	sp, r14
-	pop	r14, @sp
+	ld	sp, r13
+	pop	r13, @sp
 	ret
 
 ! =============================================================================
