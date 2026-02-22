@@ -188,16 +188,18 @@ cdevsw[0] = { consopen, consclose, consread, conswrite } — console
 cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 ```
 
-## ACK Calling Convention (Z8002)
+## PCC Calling Convention (Z8002)
 
 | Aspect | Convention |
 |--------|-----------|
 | Stack pointer | R15 |
-| Frame pointer | R13 |
-| Return value | R0 (int/pointer) |
+| Frame pointer | R14 |
+| Return value | R0 (int/pointer), RR0 (long) |
 | Arguments | Pushed right-to-left onto R15 stack |
-| Callee-saved | R4-R13 |
-| Function prologue | `push *SP, R13; ld R13, R15; sub R15, $N` |
-| Function epilogue | `ldk R14, $0; ld R15, R13; pop R13, *SP; ret` |
+| Callee-saved | R4-R14 |
+| Function prologue | `push @sp, r14; ld r14, sp; sub sp, #N` |
+| Function epilogue | `ld sp, r14; pop r14, @sp; ret` |
 
-The `push *SP` / `pop *SP` syntax resolves to R15 in z8002 mode (R14/RR14 in z8001 mode). Assembly functions called from C must return values in R0.
+Assembly functions called from C must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve R4-R14 and the return address in `label_t`.
+
+Note: Steps 1-10 used ACK which has a similar convention but with R13 as frame pointer.

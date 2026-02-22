@@ -36,11 +36,11 @@ See [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) for the full 
 
 System calls use the Z8000 `sc` instruction. The syscall number is encoded in the tag word, arguments are passed in registers (R1-R3), and the return value comes back in R0. Dispatch uses a V7-style `sysent[]` function-pointer table.
 
-### Compiler: ACK
+### Compiler: PCC
 
-The Amsterdam Compiler Kit was chosen because it already has a Z8000 code generator backend and its ANSI C frontend compiles V7 K&R C source unchanged. The original backend only supported Z8001 segmented mode; we extended the assembler, code generator, and runtime libraries to generate non-segmented code, and changed the default build to compile all libraries in non-segmented mode.
+The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing b.out object files. Conversion scripts translate b.out to V7 a.out for user programs and flat binary for the kernel.
 
-See [doc/ack-compiler.md](doc/ack-compiler.md) for details.
+Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11. ACK remains as a submodule for reference. See [doc/ack-compiler.md](doc/ack-compiler.md) for ACK details and [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
 ### Emulator
 
@@ -50,15 +50,15 @@ See [doc/z8000-emulator.md](doc/z8000-emulator.md) for details.
 
 ## Building and Testing
 
-Prerequisites: z8k-coff binutils, ACK built with Z8000 support, C++17 compiler.
+Prerequisites: z8k-coff binutils (for rom.s/trap.s), PCC-z8000 toolchain (cz8/az8/ldz8), C++17 compiler, Python 3.
 
 ```sh
-cd ack && gmake HOSTCC=cc CC=cc -j8 NINJA='ninja -k0'   # build ACK
-cd tools && make                                          # build v7mkfs, create root.img
-cd v7z8000/usr/sys && make test                               # build + run kernel test
+cd PCC-z8000/z8000 && make                                # build PCC toolchain
+cd tools && make                                          # build user programs + filesystem images
+cd v7z8000/usr/sys && make test                           # build + run kernel test
 ```
 
-The test verifies the CPU halted, console output contains "Z8000 Unix" and echoed input, and no panics occurred.
+The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hello` produces correct output, and no panics occurred.
 
 ## Files
 
@@ -88,11 +88,14 @@ The test verifies the CPU halted, console output contains "Z8000 Unix" and echoe
 | `v7z8000/usr/sys/test_driver.cpp` | Emulator-based test driver with DMA controller |
 | `v7z8000/usr/sys/Makefile` | Build rules for all components |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
-| `tools/proto.small` | Filesystem prototype (minimal root with /dev/console) |
-| `tests/run_test.sh` | ACK C test runner for standalone programs |
+| `tools/proto.small` | Filesystem prototype (root with /dev/console, /etc/init, /bin/sh, /bin/echo) |
+| `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
+| `tools/bout2v7.py` | b.out → V7 a.out converter (for user programs) |
+| `tools/bout2bin.py` | b.out → flat binary converter (for kernel handler.bin) |
 | `v7z8000/` | V7 source tree adapted for Z8000 (kernel, libc, commands, man pages) |
 | `v7unix/` | V7 Unix source tree (from TUHS, pristine reference) |
-| `ack/` | ACK submodule (tpaxia/ack fork, z8000unix branch) |
+| `PCC-z8000/` | PCC compiler submodule with Z8000 backend (cz8/az8/ldz8) |
+| `ack/` | ACK submodule (used for Steps 1-10, kept for reference) |
 | `z8000_emu/` | Z8000 emulator submodule |
 
 ## Documentation

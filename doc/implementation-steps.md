@@ -133,11 +133,62 @@ Added the V7 TTY subsystem for console input — line discipline (echo, erase, k
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\nhi\nhi\n", no panics. PASS. The first "hi\n" is echo from `ttyinput()` (ECHO+CRMOD flags), the second is the write-back from init's read+write.
 
+## Step 11: Switch from ACK to PCC, Bourne Shell Running
+
+Replaced the ACK (Amsterdam Compiler Kit) toolchain with a PCC (Portable C Compiler) port for Z8000, and brought up the Bourne shell (`/bin/sh`) running `echo hello` end-to-end.
+
+### PCC Toolchain Switch
+
+ACK was used for Steps 1-10 but has several limitations: it is not self-hosting on the target, its code generator is table-driven with a custom DSL that is difficult to debug, and it has no path to running on Z8000 Unix itself. PCC is the historical V7 Unix compiler and was designed to be self-hosting, making it the natural choice for a V7 port.
+
+The PCC-z8000 toolchain consists of:
+- **cz8** — PCC code generator backend for Z8000 (non-segmented mode)
+- **az8** — Z8000 assembler (b.out object format)
+- **ldz8** — Linker for b.out objects
+
+The toolchain produces b.out format objects which are converted to:
+- V7 a.out (0407 magic) for user programs via `bout2v7.py`
+- Flat binary for kernel `handler.bin` via `bout2bin.py`
+
+ROM (`rom.s`) and trap table (`trap.s`) remain assembled with `z8k-coff-as` in Z8001 segmented mode, as they contain segmented-mode instructions that az8 does not handle.
+
+Key differences from ACK:
+- Frame pointer changed from R13 to R14 (PCC convention)
+- `krt.s` rewritten for az8 syntax (`.globl` instead of `.define`, `#` instead of `$` for immediates, `@sp` instead of `*SP`, named labels instead of numeric)
+- User-space assembly (crt0, syscalls, setjmp) rewritten for PCC symbol naming and calling convention
+- 32-bit arithmetic library (`arith.az8`) provides `lmul`/`ldiv`/`lrem`/`ulmul`/`uldiv`/`ulrem` using Z8000 hardware `mult`/`div`
+
+### PCC Compiler Bugs Fixed
+
+Three cz8 code generation bugs were found and fixed during kernel bring-up:
+
+1. **MUL/DIV/MOD writeback** — The `mult`/`div` instruction templates did not write the result back to the destination register when it wasn't already R1. Fixed by adding `ld AL,r1` after each `mult`/`div` sequence. This caused kernel buffer cache corruption (incorrect block numbers from `bmap()`).
+
+2. **Big-endian byte access (INT→CHAR conversion)** — The SCONV template for truncating a word to a byte from memory operands (SNAME/SOREG) used the word offset directly. On big-endian Z8000, the low byte of a word at address N is at N+1, not N. Added a new template with `ZT` escape that invokes `local2.c`'s type-adjustment code to add +1 for CHAR. This caused `putc()` in the clist code to store NUL bytes instead of actual characters, breaking all tty output.
+
+3. **incode() shift for data initialization** — The `incode()` function used `SZINT` (16) as the shift base, but the emission code extracted bits 16-31 of a 32-bit `long`. Changed to shift by `(32 - sz - inwd)` so initialized data lands in the correct bits. This caused corrupted static data (e.g., `sysent[]` function pointers, device switch tables).
+
+Additionally, the `cbranch()` zero-elision optimization was excluding signed comparisons (GT/GE/LT/LE) which only works for unsigned ops, and `rl` was corrected to `rlc` in the unsigned long division routine.
+
+### Bourne Shell
+
+With the compiler fixes, the V7 Bourne shell (`/bin/sh`) runs:
+- init exec's `/bin/sh`
+- Shell prints `# ` prompt
+- `echo hello` produces `hello` output
+- `exit` terminates cleanly
+
+The shell sources (`v7z8000/usr/src/cmd/sh/`) are compiled with cz8 and linked with the user-space libc. The shell binary is installed into the root filesystem image via `tools/proto.small`.
+
+**Test:** Console output = "boot\nZ8000 Unix\n...\n# echo hello\nhello\n# exit\n", no panics. PASS.
+
 ## Current State
 
-The kernel boots to process 0 with a working V7 filesystem stack, forks process 1, exec's /etc/init from the HD, and runs user-mode code that reads from and writes to the console:
+The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands:
+- All V7 C source compiled with PCC (cz8) in Z8002 mode, K&R style unchanged
+- Bourne shell running with fork/exec/wait
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
-- V7-style context switching (save/resume/swtch) -- no bcopy of u-areas, no per-process kernel stacks
+- V7-style context switching (save/resume/swtch) — no bcopy of u-areas, no per-process kernel stacks
 - Process creation via fork (newproc) with u-area copy through MMU window
 - sleep/wakeup, run queue management, priority scheduling
 - Buffer cache (bio.c) with 8 buffers
@@ -145,7 +196,7 @@ The kernel boots to process 0 with a working V7 filesystem stack, forks process 
 - Root filesystem mounted from HD image via ATA PIO
 - exec() syscall loading binaries from filesystem
 - Directory traversal (namei) and inode management (iget/iput)
-- File descriptor table (falloc) and device open (openi -> cdevsw)
+- File descriptor table (falloc) and device open (openi → cdevsw)
 - V7 TTY subsystem: line discipline (echo, erase, kill), clist buffering, canon
 - Console input via VI interrupt (consrint → ttyinput → sleep/wakeup)
 - Console output through ttwrite → ttyoutput → consstart → putchar → outb
@@ -153,10 +204,11 @@ The kernel boots to process 0 with a working V7 filesystem stack, forks process 
 - Clock interrupts via NVI with timeout() callouts
 - Cross-segment user memory access (copyin/copyout) via SEG mode toggle
 - SPL functions controlling VIE/NVIE enable/disable
-- All V7 C source compiled with ACK in Z8002 mode, K&R style unchanged
 
 ## Planned Steps
 
-- **Pipes**: inter-process communication
-- **Shell**: /bin/sh with fork/exec/wait/pipe
+- **Pipes**: inter-process communication (pipe.c exists, untested with shell)
+- **Shell pipelines**: `ls | wc` requires working pipes + fork+exec in shell
 - **stty/ioctl**: terminal parameter control
+- **More commands**: ls, cat, cp, etc.
+- **Self-hosting**: PCC compiling itself on Z8000 Unix
