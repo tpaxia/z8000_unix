@@ -38,7 +38,7 @@ System calls use the Z8000 `sc` instruction. The syscall number is encoded in th
 
 ### Compiler: PCC
 
-The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing b.out object files. Conversion scripts translate b.out to V7 a.out for user programs and flat binary for the kernel.
+The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing V7 a.out object files natively.
 
 Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11. ACK remains as a submodule for reference. See [doc/ack-compiler.md](doc/ack-compiler.md) for ACK details and [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
@@ -55,7 +55,9 @@ Prerequisites: z8k-coff binutils (for rom.s/trap.s), PCC-z8000 toolchain (cz8/az
 ```sh
 cd PCC-z8000/z8000 && make                                # build PCC toolchain
 cd tools && make                                          # build user programs + filesystem images
-cd v7z8000/usr/sys && make test                           # build + run kernel test
+cd v7z8000/usr/sys && cmake -S . -B build                 # configure kernel build
+cmake --build build                                       # build kernel
+cmake --build build --target test                         # run kernel boot test
 ```
 
 The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hello` produces correct output, and no panics occurred.
@@ -86,12 +88,11 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hell
 | `v7z8000/usr/sys/dev/partab.c` | Character type/parity table for TTY |
 | `v7z8000/usr/sys/dev/conf.c` | Device switch tables (bdevsw, cdevsw) |
 | `v7z8000/usr/sys/test_driver.cpp` | Emulator-based test driver with DMA controller |
-| `v7z8000/usr/sys/Makefile` | Build rules for all components |
+| `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
 | `tools/proto.small` | Filesystem prototype (root with /dev/console, /etc/init, /bin/sh, /bin/echo) |
 | `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
-| `tools/bout2v7.py` | b.out → V7 a.out converter (for user programs) |
-| `tools/bout2bin.py` | b.out → flat binary converter (for kernel handler.bin) |
+| `tools/bout2bin.py` | a.out → flat binary converter (for kernel handler.bin) |
 | `v7z8000/` | V7 source tree adapted for Z8000 (kernel, libc, commands, man pages) |
 | `v7unix/` | V7 Unix source tree (from TUHS, pristine reference) |
 | `PCC-z8000/` | PCC compiler submodule with Z8000 backend (cz8/az8/ldz8) |

@@ -280,6 +280,37 @@ The initial implementation had a linker bug: `finishout()` used the `SYMPOS` mac
 
 **Test:** handler.bin matches reference binary byte-for-byte. Console output = "boot\nZ8000 Unix\n# echo hello | cat\nhello\n# exit\n". PASS.
 
+## Step 15: Convert Kernel Build System from Makefile to CMake
+
+Converted the kernel build system (`v7z8000/usr/sys/Makefile`) to CMake (`CMakeLists.txt`) for consistency with the z8000_emu submodule which already uses CMake.
+
+### Challenge
+
+The kernel uses two non-standard cross-toolchains — neither is a CMake-native compiler:
+1. **Z8K GNU toolchain** (`z8k-coff-as/ld/objcopy`) for `rom.s` and `trap.s` (segmented mode)
+2. **PCC toolchain** (`cpp → cz8 → az8 → ldz8`) for all kernel C code and `krt.s`
+
+The entire build uses `add_custom_command` + `add_custom_target`, except for the test driver which uses native `add_executable` + `target_link_libraries`. The z8000_emu library is pulled in via `add_subdirectory`.
+
+### Issues Solved
+
+1. **Shell quoting**: The PCC pipeline includes `grep -v '^"'` to filter cz8 warnings. The double-quote character cannot be properly nested in CMake's `sh -c "..."` strings due to layered escaping (CMake → Makefile → shell). Fixed by generating a `pcc_compile.sh` helper script at configure time using CMake's `[=[...]=]` bracket syntax, which avoids all escape processing.
+
+2. **az8 buffer overflow**: The PCC assembler (`az8`) has a 32-byte filename buffer (`STR_MAX` in `mical.h`). CMake's absolute paths (80+ characters for this project) cause a silent buffer overflow, corrupting the `Source_name` pointer and breaking the fallback path that handles `.az8` extensions. Fixed by using relative paths in all COMMAND arguments to PCC tools (e.g., `sys/main.az8` instead of `/Users/.../build/sys/main.az8`).
+
+3. **CMake DEPENDS resolution**: CMake resolves relative paths in `DEPENDS` relative to the *source* directory, but `OUTPUT` relative to the *binary* directory. With stale build artifacts in the source tree (from the old Makefile era), the dependency chain was silently satisfied by wrong files. Fixed by using `${CMAKE_CURRENT_BINARY_DIR}/` prefix on all `OUTPUT` and `DEPENDS` paths.
+
+### Build Commands
+
+```sh
+cd v7z8000/usr/sys
+cmake -S . -B build          # configure
+cmake --build build           # build all targets
+cmake --build build --target test   # run boot test
+```
+
+**Test:** PASS — identical output to the Makefile build.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
