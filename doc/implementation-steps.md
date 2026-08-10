@@ -371,9 +371,37 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 - SPL functions controlling VIE/NVIE enable/disable
 - Trap diagnostic handlers (privilege violation, segmentation trap)
 
+## Divergence from Pristine V7
+
+`v7unix/` holds the pristine TUHS V7 tree, so divergence is measurable at any time by diffing it against `v7z8000/`. As of Step 16, the 47 kernel files with a V7 ancestor total 6,835 lines with 3,438 diff lines (that metric double counts, since a modified line is one delete plus one add). Twelve files are byte-identical to V7: `prim.c`, `partab.c`, `buf.h`, `callo.h`, `conf.h`, `dir.h`, `fblk.h`, `filsys.h`, `ino.h`, `mount.h`, `stat.h`, `timeb.h`. Four have no V7 ancestor at all — `cons.c`, `hd.c`, `md.c`, and `conf.c` (V7 generates that one with `mkconf`).
+
+The divergence falls into three kinds, only two of which should shrink:
+
+1. **Machine dependent** — `machdep.c`, `trap.c` and `slp.c` are rewrites because V7's are PDP-11; `iget.c` carries big-endian 3-byte inode addresses; `param.h`, `seg.h`, `reg.h`, `user.h` and `proc.h` carry the `label_t` layout and MMU model; much of `sys1.c` is `exec()`. This is the port. It stays.
+2. **Amputated features** — these files are short because functionality is missing, not rewritten: `sig.c` lacks `psignal`, `core`, `fsig`, `grow`, `ptrace`, `procxmt`, `stop`; `tty.c` lacks `ioctl`, `stty`, `gtty`, `ttioccomm`; `bio.c` lacks `physio` and `swap`; `sysent.c` is mostly `nosys`; `main.c` is a cut-down startup. Restoring these moves the files back toward pristine.
+3. **Toolchain workarounds** — introduced for ACK, which is gone. These are candidates for removal.
+
+### Restoring the ACK-era header workarounds
+
+`tty.h` and `inode.h` diverge only because ACK's frontend rejected the PDP-11 C extension of unnamed struct members inside a union. PCC accepts it, via V7's pre-ANSI global member namespace, where member names live in one namespace across all structs and resolve by name to the right offset.
+
+This was verified, not assumed. Reverting `tty.h` to the pristine V7 form makes it byte-identical to V7, and the kernel builds and boots to the shell in 39,258,572 cycles — the same count as with the adapted header, so behaviour is bit-identical. Offsets were checked independently on a standalone case: `t_intrc` at +2, `t_quitc` at +3, and for the `inode.h` form `i_rdev` at +2 and `i_lastr` at +56 (low word of the long, correct for big-endian).
+
+It was reverted again rather than kept, for one reason: `cz8` warns while doing it, 19 lines for `tty.c` alone —
+
+```
+tty.h, line 59: warning: structure typed union member must be named
+tty.c, line 85: warning: illegal member use: t_intrc
+```
+
+and the build pipeline (`cpp | cz8 2>&1 | grep -v '^"'`) merges `cz8`'s stderr into the assembly stream and strips every line starting with `"`. The warnings are therefore invisible, and so would a genuine error be — the build would carry on with truncated assembly. Making the diagnostics visible first, so the noise can be told apart from real failures, is the prerequisite for taking this change.
+
+`inode.h` is a weaker case: ours flattens the union to `i_addr[NADDR]` plus `#define i_rdev i_addr[0]`, which is semantically identical and clearer, and most of its diff is the removal of `struct group` for the mpx multiplexer — a feature amputation, not a toolchain workaround.
+
 ## Planned Steps
 
 - **stty/ioctl**: terminal parameter control
 - **More commands**: ls, cp, wc, etc.
 - **Multi-stage pipelines**: `ls | grep foo | wc`
+- **Surface cz8 diagnostics**: stop the build pipeline swallowing compiler warnings and errors, then drop the ACK-era header workarounds and return `tty.h` (and possibly `inode.h`) to pristine V7 — see Divergence from Pristine V7 above
 - **Self-hosting**: PCC compiling itself on Z8000 Unix
