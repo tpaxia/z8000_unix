@@ -185,6 +185,7 @@ add_subdirectory("${EMU_DIR}" "${B}/z8000_emu" EXCLUDE_FROM_ALL)
 # =============================================================================
 add_executable(test_driver "${CMAKE_SOURCE_DIR}/test_driver.cpp")
 target_link_libraries(test_driver PRIVATE z8000)
+target_include_directories(test_driver PRIVATE "${EMU_DIR}/src")
 
 # =============================================================================
 # Top-level targets

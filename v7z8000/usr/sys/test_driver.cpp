@@ -20,7 +20,7 @@
 #include <vector>
 #include <queue>
 #include <getopt.h>
-#include "z8000.h"
+#include <z8000/z8000.h>
 #include "memory.h"
 
 // Paged MMU: 128 segments x 32 pages x 2KB pages
@@ -109,7 +109,7 @@ public:
 
     void queue_console_char(uint8_t c) {
         m_console_rx.push(c);
-        m_cpu->assert_vi(0);
+        m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
     }
 
     bool load_disk(const char *filename) {
@@ -346,7 +346,7 @@ private:
             m_ata_writing = false;
             m_ata_status = 0x48;  // DRDY + DRQ
             m_ata_error = 0;
-            m_cpu->assert_vi(0);
+            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
         } else if (cmd == 0x30) {
             // WRITE SECTORS: set DRQ, driver fills buffer
             memset(m_ata_buf, 0, 512);
@@ -371,7 +371,7 @@ private:
         m_ata_active = false;
         m_ata_status = 0x40;  // DRDY, clear DRQ
         m_ata_error = 0;
-        m_cpu->assert_vi(0);
+        m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
     }
 
     bool m_trace;
@@ -509,7 +509,7 @@ int main(int argc, char* argv[]) {
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
         // Always deliver NVI clock tick (wakes CPU from HALT)
-        cpu.assert_nvi();
+        cpu.pulse_input_line(z8002_device::NVI_LINE);
         tick_count++;
         // Deliver console input after shell prompt "# " appears
         if (console_input[input_idx]) {
