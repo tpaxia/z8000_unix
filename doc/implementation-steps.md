@@ -108,7 +108,7 @@ Added exec() syscall, an IDE hard drive driver, and converted the HD driver to i
 - SPL functions: spl0/spl1/spl4/spl5/spl6/spl7/splx implemented in assembly (krt.s), controlling the NVIE bit (0x0800) in the FCW. Replaced the C no-op stubs in machdep.c.
 - NVIE enabled at boot: boot_entry sets FCW to 0x4800 (NONSEG+SYS+NVIE) before calling main().
 - idle() fixed: added ret after halt so NVI can wake the CPU from HALT and return to swtch().
-- Emulator: added assert_nvi() method to z8002_device. KernelIOPorts takes a CPU pointer and asserts NVI on ATA read completion and write flush.
+- Emulator: added an `assert_nvi()` method to z8002_device. KernelIOPorts takes a CPU pointer and asserts NVI on ATA read completion and write flush. (Superseded in Step 16 by the emulator's own `pulse_input_line()`.)
 - Build system: all build artifacts now go into build/ subdirectory.
 - Directory restructure: moved kernel/ to v7z8000/usr/sys/ to mirror the V7 directory layout. The V7 import commit now seeds the full V7 user-space tree (libc, commands, man pages, include headers, etc.) under v7z8000/, and the kernel dev/ files (conf.c, cons.c) with their V7 originals. This ensures all future modifications show as diffs from the V7 baseline.
 
@@ -310,6 +310,39 @@ cmake --build build --target test   # run boot test
 ```
 
 **Test:** PASS — identical output to the Makefile build.
+
+## Step 16: Remove ACK, Update the Emulator, Separate the Machine Model
+
+Housekeeping step: retired the dead ACK toolchain, moved to the current emulator, and moved the host-side machine model out of the V7 source tree.
+
+### ACK removed
+
+ACK was replaced by PCC in Step 11 but was still carried as a 68MB submodule and still described in the present tense, so a cold read gave the wrong compiler. Removed the submodule, `doc/ack-compiler.md`, `tools/ack2v7.py`, and `tests/` — the latter was entirely ACK bound (`run_test.sh` hard requires `$ACK/.obj/staging/bin/ack`; the rest are its inputs) and had been superseded by the kernel boot test. The ACK history in the Steps 1–11 journals is left intact; only the dangling links and present-tense claims were repaired.
+
+### Emulator updated
+
+The pinned emulator was 12 commits behind, and the `assert_nvi()`/`assert_vi()` methods the front end depended on existed only as an uncommitted local edit — a fresh clone could not build. Moved to upstream `f376c54`.
+
+Upstream restructured into a library layout, so `z8000.h` is now `<z8000/z8000.h>` and `memory.h` moved from the public `include/` to the driver's `src/`, reached via an explicit include directory. The `z8000` target name is unchanged, so the link line is untouched.
+
+The emulator gained a committed interrupt line API (`set_input_line`, `set_input_line_and_vector`, `pulse_input_line`), filling in the `NVI_LINE`/`VI_LINE`/`NMI_LINE` enum it had declared but never wired up.
+
+### Interrupt delivery: pulse, not level
+
+Interrupt injection now uses `pulse_input_line()`. The clock tick, ATA completion and console receive are momentary events, not held lines. Driving them with the level-sensitive `set_input_line()` re-latches the request in `CHANGE_FCW` every time the handler's `IRET` re-enables NVIE:
+
+```c
+if (!(m_fcw & F_NVIE) && (fcw & F_NVIE) && (m_irq_state[0] != CLEAR_LINE))
+    m_irq_req |= Z8000_NVI;
+```
+
+which re-enters the handler forever. The symptom was a kernel that printed `boot`, then ran exactly 38 instructions of `main()` — as far as `clkstart()` → `spl0()`, where interrupts are first enabled — and never resumed. `cinit()`, `binit()` and `iinit()` never ran. Diagnosed by tracing the same kernel binary on both emulators and diffing the instruction streams: identical for 21,457 instructions, then the working one returns from `iret` to the interrupted code while the broken one re-enters `nvi_entry`.
+
+### Machine model moved out of the V7 tree
+
+`test_driver.cpp` is host C++ modelling the machine — MMU, IDE/ATA controller, console, RAM disk DMA — not Unix source, so keeping it in `v7z8000/usr/sys/` diluted the property that everything under `v7z8000/` is a diff against the V7 baseline. Moved to `emu/test_driver.cpp`, reached from the kernel build through a `DRIVER_DIR` cache variable in the same style as the existing `EMU_DIR` and `TOOLS_DIR`.
+
+**Test:** PASS at 39,258,572 cycles — identical to the previous emulator, so none of the 12 upstream fixes changes behaviour for this kernel.
 
 ## Current State
 

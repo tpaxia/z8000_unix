@@ -20,6 +20,7 @@ set(LDZ8 "${PCC_ROOT}/ldz8")
 
 set(EMU_DIR "${CMAKE_SOURCE_DIR}/../../../z8000_emu" CACHE PATH "z8000_emu directory")
 set(TOOLS_DIR "${CMAKE_SOURCE_DIR}/../../../tools" CACHE PATH "Tools directory")
+set(DRIVER_DIR "${CMAKE_SOURCE_DIR}/../../../emu" CACHE PATH "Emulator front end directory")
 
 # --- Generate PCC compile helper script (avoids shell quoting issues) ---
 set(PCC_COMPILE_SH "${B}/pcc_compile.sh")
@@ -183,7 +184,7 @@ add_subdirectory("${EMU_DIR}" "${B}/z8000_emu" EXCLUDE_FROM_ALL)
 # =============================================================================
 # Test driver — native C++ linked against emulator
 # =============================================================================
-add_executable(test_driver "${CMAKE_SOURCE_DIR}/test_driver.cpp")
+add_executable(test_driver "${DRIVER_DIR}/test_driver.cpp")
 target_link_libraries(test_driver PRIVATE z8000)
 target_include_directories(test_driver PRIVATE "${EMU_DIR}/src")
 

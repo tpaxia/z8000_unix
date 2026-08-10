@@ -44,7 +44,7 @@ Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step
 
 ### Emulator
 
-The Z8000 software emulator is used as a library with a custom front end (`v7z8000/usr/sys/test_driver.cpp`) that can simulate I/O and load code segments and data from files at arbitrary physical addresses without needing bootstrap code. This simplifies development considerably — the full kernel trap round-trip can be tested without a real boot ROM or hardware.
+The Z8000 software emulator is used as a library with a custom front end (`emu/test_driver.cpp`, kept outside the V7 tree since it is host code, not Unix source) that can simulate I/O and load code segments and data from files at arbitrary physical addresses without needing bootstrap code. This simplifies development considerably — the full kernel trap round-trip can be tested without a real boot ROM or hardware.
 
 See [doc/z8000-emulator.md](doc/z8000-emulator.md) for details.
 
@@ -100,8 +100,8 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeli
 | `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |
 | `v7z8000/usr/sys/dev/partab.c` | Character type/parity table for TTY |
 | `v7z8000/usr/sys/dev/conf.c` | Device switch tables (bdevsw, cdevsw) |
-| `v7z8000/usr/sys/test_driver.cpp` | Emulator-based test driver with DMA controller |
 | `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
+| `emu/test_driver.cpp` | Emulated machine: MMU, IDE/ATA, console, RAM disk DMA, interrupt injection |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
 | `tools/proto.small` | Filesystem prototype (/dev/console, /dev/tty, /etc/init, /bin/sh, /bin/echo, /bin/cat, /tmp) |
 | `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
