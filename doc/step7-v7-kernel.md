@@ -30,7 +30,7 @@ See [kernel-technical-reference.md](kernel-technical-reference.md) for the DMA p
 
 ## Key Bugs Fixed
 
-Eight ACK compiler/assembler/runtime bugs were uncovered by compiling real V7 code. See [ack-compiler.md](ack-compiler.md) for details.
+Eight ACK compiler/assembler/runtime bugs were uncovered by compiling real V7 code. (ACK was the toolchain for Steps 1-10; it was replaced by PCC in Step 11 and has since been removed from the tree.)
 
 1. **Assembler relocation bug**: `relonami` not reset between instruction operands, causing incorrect relocations in combined address+immediate instructions.
 2. **`ldb` encoding**: assembler generated wrong opcodes for byte-register load instructions.

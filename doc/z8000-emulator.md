@@ -14,15 +14,16 @@ Rather than using the emulator as a standalone tool, the project links it as a l
 
 This approach simplifies development considerably — the full kernel trap round-trip can be tested without a real boot sequence or hardware.
 
-## Standalone C Tests
+## Building
 
-The `tests/run_test.sh` script provides a simpler path for testing ACK-compiled C programs. It compiles a C source file with ACK, prepends a reset vector, and runs the result on the emulator:
+The emulator uses CMake and produces two targets: a static library `z8000` (linked into test drivers) and a standalone executable `z8000emu`.
 
 ```sh
-cd tests
-./run_test.sh test_add.c                  # Z8001 (default)
-./run_test.sh test_add.c -p z8002         # Z8002 non-segmented
-./run_test.sh test_add.c -p z8002 -t      # with instruction trace
+cd z8000_emu
+cmake -S . -B build
+cmake --build build
 ```
 
-Programs exit via `halt`. The return value from `main()` is in R0 at halt time.
+The kernel build does not require this step separately — `v7z8000/usr/sys/CMakeLists.txt` pulls the emulator in with `add_subdirectory(z8000_emu)` and links the `z8000` library into `test_driver`. The submodule does need to be initialised first (`git submodule update --init --recursive`).
+
+Programs run under the emulator exit via `halt`. The return value from `main()` is in R0 at halt time.

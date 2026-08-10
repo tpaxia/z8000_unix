@@ -9,7 +9,7 @@ Set up the project structure, imported dependencies, and verified the cross-comp
 - Added ACK (Amsterdam Compiler Kit) as a submodule from a fork with Z8000 cross-compilation support. This required wiring the existing Z8000 machine support (assembler, code generator, runtime library) into ACK's modern Python-based build system, and fixing the assembler's separate `as`/`led` mode (it had only worked in combined `asld` mode).
 - Added the Z8000 software emulator as a submodule.
 - Imported the V7 Unix source tree from the TUHS archive as a baseline for the port.
-- Created a test infrastructure (`tests/run_test.sh`) that compiles C with ACK, prepends a Z8001 reset vector, and runs the binary on the emulator.
+- Created a test infrastructure (`tests/run_test.sh`) that compiles C with ACK, prepends a Z8001 reset vector, and runs the binary on the emulator. (Removed with ACK after Step 11; the kernel boot test under `v7z8000/usr/sys` superseded it.)
 - Verified with a simple C test program (`test_add.c`: 3+4=7, result in R0).
 
 ## Step 2: Z8002 Non-Segmented Mode
@@ -75,7 +75,7 @@ Replaced the test syscall handler with a real V7 kernel that boots to process 0,
 - Created device drivers: RAM disk (`md.c`, I/O port DMA), console (`cons.c`), device switch tables (`conf.c`).
 - Extended `krt.s` with BSS zeroing, `inb()`/`outb()`/`putchar()`/`idle()`.
 - Extended `test_driver.cpp` with a DMA controller and disk image loading.
-- Fixed 8 ACK compiler/assembler/runtime bugs uncovered by compiling real V7 code (assembler relocations, `ldb` encoding, libem return addresses and `*SP` register encoding, `inb()` return register, BSS zeroing). Details in [ack-compiler.md](ack-compiler.md).
+- Fixed 8 ACK compiler/assembler/runtime bugs uncovered by compiling real V7 code (assembler relocations, `ldb` encoding, libem return addresses and `*SP` register encoding, `inb()` return register, BSS zeroing).
 
 **Test:** CPU halted, console output = "boot\nZ8000 Unix\n", no panics. PASS.
 

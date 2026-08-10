@@ -40,7 +40,7 @@ System calls use the Z8000 `sc` instruction. The syscall number is encoded in th
 
 The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing V7 a.out object files natively.
 
-Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11. ACK remains as a submodule for reference. See [doc/ack-compiler.md](doc/ack-compiler.md) for ACK details and [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
+Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
 ### Emulator
 
@@ -53,6 +53,7 @@ See [doc/z8000-emulator.md](doc/z8000-emulator.md) for details.
 Prerequisites: z8k-coff binutils (for rom.s/trap.s), PCC-z8000 toolchain (cz8/az8/ldz8), C++17 compiler, Python 3.
 
 ```sh
+git submodule update --init --recursive                   # PCC-z8000 + z8000_emu
 cd PCC-z8000/z8000 && make                                # build PCC toolchain
 cd tools && make                                          # build user programs + filesystem images
 cd v7z8000/usr/sys && cmake -S . -B build                 # configure kernel build
@@ -60,7 +61,9 @@ cmake --build build                                       # build kernel
 cmake --build build --target test                         # run kernel boot test
 ```
 
-The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hello` produces correct output, and no panics occurred.
+The kernel build pulls the emulator in via `add_subdirectory(z8000_emu)`, so the submodule must be initialised before configuring.
+
+The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeline `echo hello | cat` produces correct output, and no panics occurred.
 
 ## Files
 
@@ -81,6 +84,16 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hell
 | `v7z8000/usr/sys/sys/prf.c` | printf, panic |
 | `v7z8000/usr/sys/sys/machdep.c` | Machine-dependent stubs (segment/frame allocators, sureg, etc.) |
 | `v7z8000/usr/sys/sys/prim.c` | V7 clist character buffering (getc, putc, b_to_q, cinit) |
+| `v7z8000/usr/sys/sys/slp.c` | Scheduler: sleep/wakeup, run queues, setpri, swtch, newproc |
+| `v7z8000/usr/sys/sys/sys1.c` | Process syscalls: fork, exec, exit, wait, setregs |
+| `v7z8000/usr/sys/sys/sys2.c` | File syscalls: read, write, open, creat, close, seek, link, mknod |
+| `v7z8000/usr/sys/sys/sys3.c` | stat/fstat, dup, mount/umount |
+| `v7z8000/usr/sys/sys/sys4.c` | Misc syscalls: time, uid/gid, unlink, chdir, chmod, kill, alarm, pause |
+| `v7z8000/usr/sys/sys/sysent.c` | Syscall dispatch table (`sysent[]`) |
+| `v7z8000/usr/sys/sys/trap.c` | C trap handlers: syscall dispatch, segmentation trap |
+| `v7z8000/usr/sys/sys/sig.c` | Signals: psignal, signal, issig, psig |
+| `v7z8000/usr/sys/sys/pipe.c` | Pipes: pipe syscall, readp/writep, plock/prele |
+| `v7z8000/usr/sys/sys/clock.c` | Clock interrupt handler and `timeout()` callouts |
 | `v7z8000/usr/sys/dev/md.c` | RAM disk driver (I/O port DMA) |
 | `v7z8000/usr/sys/dev/hd.c` | IDE hard drive driver (ATA PIO, interrupt-driven) |
 | `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
@@ -90,13 +103,12 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hell
 | `v7z8000/usr/sys/test_driver.cpp` | Emulator-based test driver with DMA controller |
 | `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
-| `tools/proto.small` | Filesystem prototype (root with /dev/console, /etc/init, /bin/sh, /bin/echo) |
+| `tools/proto.small` | Filesystem prototype (/dev/console, /dev/tty, /etc/init, /bin/sh, /bin/echo, /bin/cat, /tmp) |
 | `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
 | `tools/bout2bin.py` | a.out → flat binary converter (for kernel handler.bin) |
 | `v7z8000/` | V7 source tree adapted for Z8000 (kernel, libc, commands, man pages) |
 | `v7unix/` | V7 Unix source tree (from TUHS, pristine reference) |
 | `PCC-z8000/` | PCC compiler submodule with Z8000 backend (cz8/az8/ldz8) |
-| `ack/` | ACK submodule (used for Steps 1-10, kept for reference) |
 | `z8000_emu/` | Z8000 emulator submodule |
 
 ## Documentation
@@ -105,7 +117,6 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, `echo hell
 |----------|----------|
 | [doc/implementation-steps.md](doc/implementation-steps.md) | Step-by-step implementation journal |
 | [doc/kernel-technical-reference.md](doc/kernel-technical-reference.md) | Kernel internals: PSA table, CPU modes, SYSCALL flow, stack layout |
-| [doc/ack-compiler.md](doc/ack-compiler.md) | ACK compiler: Z8000 backend, Z8002 extensions, known limitations |
 | [doc/z8000-emulator.md](doc/z8000-emulator.md) | Z8000 software emulator and its use in the project |
 | [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) | Custom paged MMU design using Z8001 segment numbers as map set selectors |
 | [doc/PCC-Research.md](doc/PCC-Research.md) | Compiler research: PCC history, ACK assessment, Z8000 Unix history |
