@@ -8,13 +8,13 @@
 !   [8] r13  [9] sp   [10] return_addr  [11] (unused)
 
 	.text
-	.globl	setjmp
-	.globl	longjmp
+	.globl	_setjmp
+	.globl	_longjmp
 
 ! int setjmp(jmp_buf env)
 ! Save callee-saved registers, SP, and return address.
 ! Returns 0.
-setjmp:
+_setjmp:
 	ld	r2, 2(sp)	! r2 = env pointer (first arg)
 	ld	0(r2), r4	! env[0] = r4
 	ld	2(r2), r5	! env[1] = r5
@@ -38,7 +38,7 @@ setjmp:
 ! void longjmp(jmp_buf env, int val)
 ! Restore saved state and return val to setjmp callsite.
 ! If val is 0, returns 1 instead.
-longjmp:
+_longjmp:
 	ld	r2, 2(sp)	! r2 = env pointer
 	ld	r0, 4(sp)	! r0 = val
 	cp	r0, #0

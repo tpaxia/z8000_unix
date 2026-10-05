@@ -39,7 +39,11 @@ CPPFLAGS = -Dz8000 -Dz8002
 # libc - Z8002 user-space C library
 # =============================================================================
 LIBC_ASM_OBJS = $(LIBC_DIR)/syscalls.b $(LIBC_DIR)/setjmp.b
-LIBC_C_OBJS = $(LIBC_DIR)/errno.b $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/crtinit.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/end.b
+# errno.b holds only uninitialized data (errno, environ). The linker loads an
+# archive member only if it defines something, and such data does not count,
+# so it must come after every member that refers to those names.
+# There is no end.b: C's "end" is now the linker's own _end, as on the PDP-11.
+LIBC_C_OBJS = $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/crtinit.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/errno.b
 
 $(LIBC_DIR)/crt0.b: $(LIBC_DIR)/crt0.az8
 	$(AZ8) -o $@ $<
@@ -128,4 +132,4 @@ clean:
 	rm -f sh $(SHELL_OBJS) $(SHELL_SRCS:.c=.az8)
 	rm -f arith.b arith.az8
 	rm -f libc.a $(LIBC_DIR)/*.b
-	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/end.az8
+	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8

@@ -197,9 +197,10 @@ cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 | Return value | R0 (int/pointer), RR0 (long) |
 | Arguments | Pushed right-to-left onto R15 stack |
 | Callee-saved | R4-R7, R10-R12, R14 |
+| C symbol names | Leading underscore, eight characters in all (`main` → `_main`), as on the PDP-11. Runtime support routines (`lmul`, `ldiv`, `fadd`, ...) have no underscore |
 | Function prologue | `push @sp, r13; ld r13, sp; sub sp, #N` |
 | Function epilogue | `ld sp, r13; pop r13, @sp; ret` |
 
-Assembly functions called from C must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
+Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
 Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).

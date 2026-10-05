@@ -15,51 +15,51 @@
 !  10(sp) = arg4
 
 	.text
-	.globl	fork
-	.globl	read
-	.globl	write
-	.globl	open
-	.globl	close
-	.globl	wait
-	.globl	creat
-	.globl	link
-	.globl	unlink
-	.globl	execve
-	.globl	chdir
-	.globl	time
-	.globl	chmod
-	.globl	chown
-	.globl	brk
-	.globl	stat
-	.globl	lseek
-	.globl	getpid
-	.globl	setuid
-	.globl	getuid
-	.globl	alarm
-	.globl	fstat
-	.globl	pause
-	.globl	utime
-	.globl	stty
-	.globl	gtty
-	.globl	access
-	.globl	nice
-	.globl	sync
-	.globl	kill
-	.globl	dup
-	.globl	pipe
-	.globl	times
-	.globl	setgid
-	.globl	getgid
-	.globl	signal
-	.globl	ioctl
-	.globl	umask
+	.globl	_fork
+	.globl	_read
+	.globl	_write
+	.globl	_open
+	.globl	_close
+	.globl	_wait
+	.globl	_creat
+	.globl	_link
+	.globl	_unlink
+	.globl	_execve
+	.globl	_chdir
+	.globl	_time
+	.globl	_chmod
+	.globl	_chown
+	.globl	_brk
+	.globl	_stat
+	.globl	_lseek
+	.globl	_getpid
+	.globl	_setuid
+	.globl	_getuid
+	.globl	_alarm
+	.globl	_fstat
+	.globl	_pause
+	.globl	_utime
+	.globl	_stty
+	.globl	_gtty
+	.globl	_access
+	.globl	_nice
+	.globl	_sync
+	.globl	_kill
+	.globl	_dup
+	.globl	_pipe
+	.globl	_times
+	.globl	_setgid
+	.globl	_getgid
+	.globl	_signal
+	.globl	_ioctl
+	.globl	_umask
 
 ! ======================================================================
 ! Common error handler
 ! R0 = -1, R1 = errno code
 ! ======================================================================
 cerror:
-	ld	errno, r1	! store errno
+	ld	_errno, r1	! store errno
 	ret			! return with r0 = -1
 
 ! ======================================================================
@@ -67,7 +67,7 @@ cerror:
 ! Returns: child pid in parent (R0), 0 in child.
 ! Kernel sets R1=0 (parent) or R1=1 (child).
 ! ======================================================================
-fork:
+_fork:
 	sc	#2
 	cp	r0, #0xFFFF
 	jr eq,	cerror
@@ -79,7 +79,7 @@ fork:
 ! ======================================================================
 ! int read(fd, buf, count) -- syscall #3
 ! ======================================================================
-read:
+_read:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! buf
 	ld	r3, 6(sp)	! count
@@ -91,7 +91,7 @@ read:
 ! ======================================================================
 ! int write(fd, buf, count) -- syscall #4
 ! ======================================================================
-write:
+_write:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! buf
 	ld	r3, 6(sp)	! count
@@ -103,7 +103,7 @@ write:
 ! ======================================================================
 ! int open(name, mode) -- syscall #5
 ! ======================================================================
-open:
+_open:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! mode
 	sc	#5
@@ -114,7 +114,7 @@ open:
 ! ======================================================================
 ! int close(fd) -- syscall #6
 ! ======================================================================
-close:
+_close:
 	ld	r1, 2(sp)	! fd
 	sc	#6
 	cp	r0, #0xFFFF
@@ -126,7 +126,7 @@ close:
 ! Returns child pid; writes exit status to *status if non-NULL.
 ! Kernel: R0 = child pid, R1 = status (or R0=-1 on error).
 ! ======================================================================
-wait:
+_wait:
 	sc	#7
 	cp	r0, #0xFFFF
 	jr eq,	cerror
@@ -139,7 +139,7 @@ wait:
 ! ======================================================================
 ! int creat(name, mode) -- syscall #8
 ! ======================================================================
-creat:
+_creat:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! mode
 	sc	#8
@@ -150,7 +150,7 @@ creat:
 ! ======================================================================
 ! int link(name1, name2) -- syscall #9
 ! ======================================================================
-link:
+_link:
 	ld	r1, 2(sp)	! name1
 	ld	r2, 4(sp)	! name2
 	sc	#9
@@ -161,7 +161,7 @@ link:
 ! ======================================================================
 ! int unlink(name) -- syscall #10
 ! ======================================================================
-unlink:
+_unlink:
 	ld	r1, 2(sp)	! name
 	sc	#10
 	cp	r0, #0xFFFF
@@ -171,7 +171,7 @@ unlink:
 ! ======================================================================
 ! int execve(name, argv, envp) -- syscall #11
 ! ======================================================================
-execve:
+_execve:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! argv
 	ld	r3, 6(sp)	! envp
@@ -184,7 +184,7 @@ execve:
 ! ======================================================================
 ! int chdir(path) -- syscall #12
 ! ======================================================================
-chdir:
+_chdir:
 	ld	r1, 2(sp)	! path
 	sc	#12
 	cp	r0, #0xFFFF
@@ -195,14 +195,14 @@ chdir:
 ! long time(0) -- syscall #13
 ! Returns time in R0:R1 (high:low).
 ! ======================================================================
-time:
+_time:
 	sc	#13
 	ret
 
 ! ======================================================================
 ! int chmod(name, mode) -- syscall #15
 ! ======================================================================
-chmod:
+_chmod:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! mode
 	sc	#15
@@ -213,7 +213,7 @@ chmod:
 ! ======================================================================
 ! int chown(name, uid, gid) -- syscall #16
 ! ======================================================================
-chown:
+_chown:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! uid
 	ld	r3, 6(sp)	! gid
@@ -225,7 +225,7 @@ chown:
 ! ======================================================================
 ! int brk(addr) -- syscall #17
 ! ======================================================================
-brk:
+_brk:
 	ld	r1, 2(sp)	! addr
 	sc	#17
 	cp	r0, #0xFFFF
@@ -235,7 +235,7 @@ brk:
 ! ======================================================================
 ! int stat(name, buf) -- syscall #18
 ! ======================================================================
-stat:
+_stat:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! buf
 	sc	#18
@@ -249,7 +249,7 @@ stat:
 ! Args: R1=fd, R2=off_hi, R3=off_lo, R4=whence.
 ! Returns off_t in R0:R1.
 ! ======================================================================
-lseek:
+_lseek:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! offset high word
 	ld	r3, 6(sp)	! offset low word
@@ -259,21 +259,21 @@ lseek:
 	jr eq,	.Llserr
 	ret
 .Llserr:
-	ld	errno, r1
+	ld	_errno, r1
 	ld	r1, #0xFFFF	! return (off_t)-1 = 0xFFFF:0xFFFF
 	ret
 
 ! ======================================================================
 ! int getpid(void) -- syscall #20
 ! ======================================================================
-getpid:
+_getpid:
 	sc	#20
 	ret
 
 ! ======================================================================
 ! int setuid(uid) -- syscall #23
 ! ======================================================================
-setuid:
+_setuid:
 	ld	r1, 2(sp)	! uid
 	sc	#23
 	cp	r0, #0xFFFF
@@ -283,14 +283,14 @@ setuid:
 ! ======================================================================
 ! int getuid(void) -- syscall #24
 ! ======================================================================
-getuid:
+_getuid:
 	sc	#24
 	ret
 
 ! ======================================================================
 ! unsigned alarm(secs) -- syscall #27
 ! ======================================================================
-alarm:
+_alarm:
 	ld	r1, 2(sp)	! seconds
 	sc	#27
 	ret
@@ -298,7 +298,7 @@ alarm:
 ! ======================================================================
 ! int fstat(fd, buf) -- syscall #28
 ! ======================================================================
-fstat:
+_fstat:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! buf
 	sc	#28
@@ -309,14 +309,14 @@ fstat:
 ! ======================================================================
 ! int pause(void) -- syscall #29
 ! ======================================================================
-pause:
+_pause:
 	sc	#29
 	ret
 
 ! ======================================================================
 ! int utime(name, times) -- syscall #30
 ! ======================================================================
-utime:
+_utime:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! times
 	sc	#30
@@ -327,7 +327,7 @@ utime:
 ! ======================================================================
 ! int stty(fd, buf) -- syscall #31
 ! ======================================================================
-stty:
+_stty:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! buf
 	sc	#31
@@ -338,7 +338,7 @@ stty:
 ! ======================================================================
 ! int gtty(fd, buf) -- syscall #32
 ! ======================================================================
-gtty:
+_gtty:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! buf
 	sc	#32
@@ -349,7 +349,7 @@ gtty:
 ! ======================================================================
 ! int access(name, mode) -- syscall #33
 ! ======================================================================
-access:
+_access:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! mode
 	sc	#33
@@ -360,7 +360,7 @@ access:
 ! ======================================================================
 ! int nice(incr) -- syscall #34
 ! ======================================================================
-nice:
+_nice:
 	ld	r1, 2(sp)	! incr
 	sc	#34
 	ret
@@ -368,14 +368,14 @@ nice:
 ! ======================================================================
 ! sync(void) -- syscall #36
 ! ======================================================================
-sync:
+_sync:
 	sc	#36
 	ret
 
 ! ======================================================================
 ! int kill(pid, sig) -- syscall #37
 ! ======================================================================
-kill:
+_kill:
 	ld	r1, 2(sp)	! pid
 	ld	r2, 4(sp)	! sig
 	sc	#37
@@ -387,7 +387,7 @@ kill:
 ! int dup(fd [, fd2]) -- syscall #41
 ! Two-arg form: dup(fd|0100, fd2) for dup2.
 ! ======================================================================
-dup:
+_dup:
 	ld	r1, 2(sp)	! fd (possibly OR'd with 0100)
 	ld	r2, 4(sp)	! fd2 (for dup2, ignored otherwise)
 	sc	#41
@@ -400,7 +400,7 @@ dup:
 ! Kernel returns: R0=read_fd, R1=write_fd.
 ! Wrapper writes to fildes[0] and fildes[1].
 ! ======================================================================
-pipe:
+_pipe:
 	sc	#42
 	cp	r0, #0xFFFF
 	jr eq,	cerror
@@ -413,7 +413,7 @@ pipe:
 ! ======================================================================
 ! int times(buf) -- syscall #43
 ! ======================================================================
-times:
+_times:
 	ld	r1, 2(sp)	! buf
 	sc	#43
 	ret
@@ -421,7 +421,7 @@ times:
 ! ======================================================================
 ! int setgid(gid) -- syscall #46
 ! ======================================================================
-setgid:
+_setgid:
 	ld	r1, 2(sp)	! gid
 	sc	#46
 	cp	r0, #0xFFFF
@@ -431,7 +431,7 @@ setgid:
 ! ======================================================================
 ! int getgid(void) -- syscall #47
 ! ======================================================================
-getgid:
+_getgid:
 	sc	#47
 	ret
 
@@ -440,7 +440,7 @@ getgid:
 ! Sets signal handler, returns old handler.
 ! Kernel: R0 = old handler (or -1 on error).
 ! ======================================================================
-signal:
+_signal:
 	ld	r1, 2(sp)	! sig
 	ld	r2, 4(sp)	! func
 	sc	#48
@@ -451,7 +451,7 @@ signal:
 ! ======================================================================
 ! int ioctl(fd, cmd, arg) -- syscall #54
 ! ======================================================================
-ioctl:
+_ioctl:
 	ld	r1, 2(sp)	! fd
 	ld	r2, 4(sp)	! cmd
 	ld	r3, 6(sp)	! arg
@@ -463,7 +463,7 @@ ioctl:
 ! ======================================================================
 ! int umask(mask) -- syscall #61
 ! ======================================================================
-umask:
+_umask:
 	ld	r1, 2(sp)	! mask
 	sc	#61
 	ret

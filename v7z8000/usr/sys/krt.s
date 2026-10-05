@@ -15,33 +15,33 @@
 !   Args at:  4(r13), 6(r13), ...
 
 	.text
-	.globl	putchar
-	.globl	inb
-	.globl	inw
-	.globl	insw
-	.globl	outb
-	.globl	outw
-	.globl	outsw
-	.globl	idle
-	.globl	save
-	.globl	resume
-	.globl	retu
-	.globl	set_usp
-	.globl	get_usp
-	.globl	fubyte
-	.globl	subyte
-	.globl	fuword
-	.globl	suword
-	.globl	copyin
-	.globl	copyout
-	.globl	spl0
-	.globl	spl1
-	.globl	spl4
-	.globl	spl5
-	.globl	spl6
-	.globl	spl7
-	.globl	splx
-	.globl	display
+	.globl	_putchar
+	.globl	_inb
+	.globl	_inw
+	.globl	_insw
+	.globl	_outb
+	.globl	_outw
+	.globl	_outsw
+	.globl	_idle
+	.globl	_save
+	.globl	_resume
+	.globl	_retu
+	.globl	_set_usp
+	.globl	_get_usp
+	.globl	_fubyte
+	.globl	_subyte
+	.globl	_fuword
+	.globl	_suword
+	.globl	_copyin
+	.globl	_copyout
+	.globl	_spl0
+	.globl	_spl1
+	.globl	_spl4
+	.globl	_spl5
+	.globl	_spl6
+	.globl	_spl7
+	.globl	_splx
+	.globl	_display
 
 ! --- Jump table at offset 0x0000 (address 0x0200) ---
 	jr	syscall_dispatch	! 0x0200: syscall entry
@@ -61,7 +61,7 @@ syscall_dispatch:
 	sub	sp, #4
 	ld	2(sp), r1
 	ld	0(sp), r0
-	calr	trap
+	calr	_trap
 	add	sp, #4
 	ld	sp, r13
 	pop	r13, @sp
@@ -76,7 +76,7 @@ nvi_dispatch:
 	ld	r13, sp
 	sub	sp, #2
 	ld	0(sp), r0		! push argument: ps = interrupted FCW
-	calr	clock
+	calr	_clock
 	add	sp, #2
 	! clock() may have called spl1() which re-enabled NVIE.
 	! Disable VIE+NVIE before returning to trap.s epilog to prevent
@@ -97,8 +97,8 @@ nvi_dispatch:
 vi_dispatch:
 	push	@sp, r13
 	ld	r13, sp
-	calr	hdintr
-	calr	consrint
+	calr	_hdintr
+	calr	_consrint
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -120,12 +120,12 @@ boot_entry:
 	! NVIE (clock) enabled later by clkstart() after proc[0] setup.
 	ld	r0, #0x5000
 	ldctl	fcw, r0
-	calr	main
+	calr	_main
 	! After main returns in child process, enter user mode
-	jp	retu
+	jp	_retu
 
 ! --- void putchar(int ch) ---
-putchar:
+_putchar:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r1, 4(r13)
@@ -135,7 +135,7 @@ putchar:
 	ret
 
 ! --- int inb(int port) ---
-inb:
+_inb:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)
@@ -146,7 +146,7 @@ inb:
 	ret
 
 ! --- void outb(int port, int byte) ---
-outb:
+_outb:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)
@@ -161,7 +161,7 @@ outb:
 ! Enable VIE+NVIE so clock/device interrupts can wake us from HALT.
 ! After interrupt handler returns via IRET, we resume here with
 ! the FCW restored (interrupts enabled), then return to swtch().
-idle:
+_idle:
 	ldctl	r0, fcw
 	or	r0, #0x1800		! set VIE+NVIE
 	ldctl	fcw, r0
@@ -178,7 +178,7 @@ idle:
 ! depending on the stack contents -- so the u-area copy in newproc()
 ! can safely clobber save()'s old stack frame.
 ! =============================================================================
-save:
+_save:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r1, 4(r13)		! r1 = label_t pointer (argument)
@@ -215,10 +215,20 @@ save:
 ! by bcopy between save() and resume().
 !
 ! No prologue: arguments are read from SP before the stack is remapped.
+!
+! Interrupts are held off from the remap until SP is restored. In that
+! window SP still holds the old process's value but the stack pages already
+! belong to the new process, so an interrupt would push its frame over the
+! new process's live stack. (V7's PDP-11 resume does the same with
+! "bis $340,PS" around the KDSA6 write.)
 ! =============================================================================
-resume:
+_resume:
 	ld	r0, 2(sp)		! p_addr = u-area base frame (1st arg)
 	ld	r1, 4(sp)		! label_t pointer (2nd arg)
+	ldctl	r3, fcw			! r3 = caller's FCW, restored below
+	ld	r2, r3
+	and	r2, #0xE7FF		! clear VIE+NVIE
+	ldctl	fcw, r2
 	out	r0, #0x00B0		! *** KDSA6: remap u-area pages ***
 	! Now r1 points into the NEW process's label_t (in remapped u-area).
 	ld	r4, 0(r1)		! restore r4-r7
@@ -231,6 +241,7 @@ resume:
 	ld	r14, 14(r1)		! restore r14 (callee-saved)
 	ld	r13, 16(r1)		! restore caller's r13 (FP)
 	ld	sp, 20(r1)		! restore caller's SP
+	ldctl	fcw, r3			! stack is consistent again: allow interrupts
 	! Push the return address onto the (now correct) stack and return.
 	! This writes 2 bytes below the restored SP -- safe dead zone.
 	ld	r2, 18(r1)		! r2 = return address
@@ -254,10 +265,10 @@ resume:
 ! =============================================================================
 
 ! --- int fubyte(addr) ---
-fubyte:
+_fubyte:
 	push	@sp, r13
 	ld	r13, sp
-	ld	r2, useg		! user segment encoding
+	ld	r2, _useg		! user segment encoding
 	ld	r3, 4(r13)		! user offset
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
@@ -272,10 +283,10 @@ fubyte:
 	ret
 
 ! --- int subyte(addr, val) ---
-subyte:
+_subyte:
 	push	@sp, r13
 	ld	r13, sp
-	ld	r2, useg
+	ld	r2, _useg
 	ld	r3, 4(r13)		! user offset
 	ld	r0, 6(r13)		! value in R0 (rl0 for byte)
 	ld	r1, #0xC000
@@ -289,10 +300,10 @@ subyte:
 	ret
 
 ! --- int fuword(addr) ---
-fuword:
+_fuword:
 	push	@sp, r13
 	ld	r13, sp
-	ld	r2, useg
+	ld	r2, _useg
 	ld	r3, 4(r13)
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
@@ -304,10 +315,10 @@ fuword:
 	ret
 
 ! --- int suword(addr, val) ---
-suword:
+_suword:
 	push	@sp, r13
 	ld	r13, sp
-	ld	r2, useg
+	ld	r2, _useg
 	ld	r3, 4(r13)
 	ld	r8, 6(r13)		! value (R8 caller-saved)
 	ld	r0, #0xC000
@@ -323,10 +334,10 @@ suword:
 ! =============================================================================
 ! copyin(from_user, to_kernel, count)
 ! =============================================================================
-copyin:
+_copyin:
 	push	@sp, r13
 	ld	r13, sp
-	ld	r2, useg		! user segment encoding
+	ld	r2, _useg		! user segment encoding
 	ld	r3, 4(r13)		! from: user offset
 	ld	r8, 6(r13)		! to: kernel address (R8 caller-saved)
 	ld	r9, 8(r13)		! count (R9 caller-saved)
@@ -352,14 +363,14 @@ copyin:
 ! =============================================================================
 ! copyout(from_kernel, to_user, count)
 ! =============================================================================
-copyout:
+_copyout:
 	push	@sp, r13
 	ld	r13, sp
 	push	@sp, r4			! save R4 (callee-saved, used for FCW)
 	ld	r2, 4(r13)		! from: kernel address
 	ld	r3, 6(r13)		! to: user offset
 	ld	r1, 8(r13)		! count (R1 caller-saved)
-	ld	r8, useg		! R8 = segment (R8 caller-saved, constant)
+	ld	r8, _useg		! R8 = segment (R8 caller-saved, constant)
 	cp	r1, #0
 	jr eq,	.Lcodone
 .Lcoloop:
@@ -387,7 +398,7 @@ copyout:
 ! Builds an IRET frame to transition to NONSEG+NORM in the user segment.
 ! Must avoid BA/DA mode instructions while in SEG mode.
 ! =============================================================================
-retu:
+_retu:
 	! Set up registers for the NONSEG+SYS to SEG+SYS transition.
 	! CHANGE_FCW swaps R14 with NSPSEG when the SEG bit changes.
 	! We want R14=0x8100 (kernel seg) after the swap so the system
@@ -395,7 +406,7 @@ retu:
 	! in NSPSEG (it will be swapped INTO R14) and the user seg
 	! encoding in R14 (it will be swapped INTO NSPSEG for later
 	! use when IRET transitions to user mode).
-	ld	r1, useg		! user segment encoding (e.g. 0x8200)
+	ld	r1, _useg		! user segment encoding (e.g. 0x8200)
 	ld	r14, r1			! r14 = user seg (will go to NSPSEG)
 	ld	r0, #0x8100		! kernel segment encoding
 	ldctl	nspseg, r0		! NSPSEG = kernel seg (will go to R14)
@@ -440,7 +451,7 @@ retu:
 
 ! --- void set_usp(int value) ---
 ! Set user stack pointer (NSPOFF control register).
-set_usp:
+_set_usp:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r0, 4(r13)		! user SP value
@@ -451,13 +462,13 @@ set_usp:
 
 ! --- int get_usp(void) ---
 ! Read user stack pointer (NSPOFF control register).
-get_usp:
+_get_usp:
 	ldctl	r0, nspoff
 	ret
 
 ! --- int inw(int port) ---
 ! Word-width I/O input, used for ATA data register.
-inw:
+_inw:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)		! port
@@ -468,7 +479,7 @@ inw:
 
 ! --- void insw(int port, char *addr, int count) ---
 ! Block word input: read count words from I/O port to memory.
-insw:
+_insw:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)		! port
@@ -489,7 +500,7 @@ insw:
 
 ! --- void outsw(int port, char *addr, int count) ---
 ! Block word output: write count words from memory to I/O port.
-outsw:
+_outsw:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)		! port
@@ -510,7 +521,7 @@ outsw:
 
 ! --- void outw(int port, int value) ---
 ! Word-width I/O output, used for KDSA6 and WPAGE ports.
-outw:
+_outw:
 	push	@sp, r13
 	ld	r13, sp
 	ld	r2, 4(r13)		! port
@@ -532,8 +543,8 @@ outw:
 ! =============================================================================
 
 ! --- spl0/spl1: enable VIE+NVIE (allow all interrupts) ---
-spl0:
-spl1:
+_spl0:
+_spl1:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
 	or	r1, #0x1800		! set VIE+NVIE
@@ -543,8 +554,8 @@ spl1:
 ! --- spl4/spl5: enable VIE only (allow device interrupts, block clock NVI) ---
 ! On PDP-11, spl5 blocks clock (priority 6) but allows devices (priority 5).
 ! On Z8000, NVIE = clock, VIE = devices.
-spl4:
-spl5:
+_spl4:
+_spl5:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
 	and	r1, #0xF7FF		! clear NVIE (block clock)
@@ -553,8 +564,8 @@ spl5:
 	ret
 
 ! --- spl6/spl7: disable VIE+NVIE ---
-spl6:
-spl7:
+_spl6:
+_spl7:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
 	and	r1, #0xE7FF		! clear VIE+NVIE
@@ -562,7 +573,7 @@ spl7:
 	ret
 
 ! --- splx(s): restore VIE+NVIE from argument ---
-splx:
+_splx:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
 	and	r1, #0xE7FF		! clear VIE+NVIE in current
@@ -574,7 +585,7 @@ splx:
 
 ! --- void display(void) ---
 ! PDP-11 front panel display -- no-op on Z8000.
-display:
+_display:
 	ret
 
 ! --- int test_slal_rl(void) ---
@@ -582,8 +593,8 @@ display:
 ! SLAL rr2 with MSB=1 should set carry.
 ! RL r1 should shift carry into bit 0.
 ! Returns 1 if working, 0 if broken.
-	.globl	test_slal_rl
-test_slal_rl:
+	.globl	_test_slal_rl
+_test_slal_rl:
 	ld	r2, #0x8000		! RR2 = 0x80000000
 	ld	r3, #0x0000
 	clr	r0
@@ -595,8 +606,8 @@ test_slal_rl:
 
 ! --- int test_div_hw(void) ---
 ! Test hardware div instruction: 42 / 10 = 4
-	.globl	test_div_hw
-test_div_hw:
+	.globl	_test_div_hw
+_test_div_hw:
 	clr	r0
 	ld	r1, #42
 	div	rr0, #10		! R1=quotient=4, R0=remainder=2

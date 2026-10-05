@@ -8,11 +8,11 @@
 
 	.text
 	.globl	_start
-	.globl	main
-	.globl	_crtinit
+	.globl	_main
+	.globl	__crtinit
 	.globl	_edata
 	.globl	_end
-	.globl	_exit
+	.globl	__exit
 
 ! --- Entry point (first instruction in text segment) ---
 _start:
@@ -34,15 +34,15 @@ _start:
 	sub	sp, #4		! allocate space for 2 args
 	ld	2(sp), r2	! arg 2: argv
 	ld	0(sp), r1	! arg 1: argc
-	call	_crtinit	! set environ = &argv[argc+1]
-	call	main
+	call	__crtinit	! set environ = &argv[argc+1]
+	call	_main
 	! main() returned; call _exit(retval)
 	ld	0(sp), r0	! arg 1: return value
-	call	_exit
+	call	__exit
 	halt
 
 ! --- _exit(status) --- syscall #1
-_exit:
+__exit:
 	ld	r1, 2(sp)	! status
 	sc	#1
 	halt			! should not return
