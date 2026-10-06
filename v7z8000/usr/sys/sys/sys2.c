@@ -273,7 +273,7 @@ mknod()
 	ip = maknode(uap->fmode);
 	if (ip == NULL)
 		return;
-	ip->i_rdev = (dev_t)uap->dev;
+	ip->i_un.i_rdev = (dev_t)uap->dev;
 
 out:
 	iput(ip);

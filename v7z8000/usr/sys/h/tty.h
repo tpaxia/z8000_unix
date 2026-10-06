@@ -56,12 +56,12 @@ struct tty
 	char	t_ispeed;	/* input speed */
 	char	t_ospeed;	/* output speed */
 	union {
-		struct tc t_tc;
+		struct tc;
 		struct clist t_ctlq;
 	} t_un;
 };
 
-#define	tun	tp->t_un.t_tc
+#define	tun	tp->t_un
 
 /*
  * structure of arg for ioctl

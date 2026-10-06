@@ -71,7 +71,7 @@ off_t pipeadj;
 	ds.st_nlink = ip->i_nlink;
 	ds.st_uid = ip->i_uid;
 	ds.st_gid = ip->i_gid;
-	ds.st_rdev = (dev_t)ip->i_rdev;
+	ds.st_rdev = (dev_t)ip->i_un.i_rdev;
 	ds.st_size = ip->i_size - pipeadj;
 	/*
 	 * next the dates in the disk
@@ -246,7 +246,7 @@ getmdev()
 		return(NODEV);
 	if((ip->i_mode&IFMT) != IFBLK)
 		u.u_error = ENOTBLK;
-	dev = (dev_t)ip->i_rdev;
+	dev = (dev_t)ip->i_un.i_rdev;
 	if(major(dev) >= nblkdev)
 		u.u_error = ENXIO;
 	iput(ip);

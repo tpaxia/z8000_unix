@@ -586,7 +586,7 @@ ioctl()
 		u.u_error = ENOTTY;
 		return;
 	}
-	dev = ip->i_rdev;
+	dev = (dev_t)ip->i_un.i_rdev;
 	ttioccomm(cmd, cdevsw[major(dev)].d_ttys, u.u_arg[1], dev);
 }
 

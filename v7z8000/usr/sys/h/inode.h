@@ -12,6 +12,17 @@
 #define	NADDR	13
 #define	NINDEX	15
 
+struct group {
+	short	g_state;
+	char	g_index;
+	char	g_rot;
+	struct	group	*g_group;
+	struct	inode	*g_inode;
+	struct	file	*g_file;
+	short	g_rotmask;
+	short	g_datq;
+	struct	chan *g_chans[NINDEX];
+};
 struct	inode
 {
 	char	i_flag;
@@ -23,14 +34,21 @@ struct	inode
 	short	i_uid;		/* owner */
 	short	i_gid;		/* group of owner */
 	off_t	i_size;		/* size of file */
-	daddr_t	i_addr[NADDR];	/* if normal file/directory */
-	daddr_t	i_lastr;	/* last logical block read (for read-ahead) */
+	union {
+		struct {
+			daddr_t i_addr[NADDR];	/* if normal file/directory */
+			daddr_t	i_lastr;	/* last logical block read (for read-ahead) */
+		};
+		struct	{
+			daddr_t	i_rdev;			/* i_addr[0] */
+			struct	group	i_group;	/*  multiplexor group file */
+		};
+	} i_un;
 };
 
 
-#define	i_rdev	i_addr[0]	/* overlapping: device number for specials */
-
 extern struct inode inode[];	/* The inode table itself */
+struct inode *mpxip;		/* mpx virtual inode */
 
 /* flags */
 #define	ILOCK	01		/* inode is locked */

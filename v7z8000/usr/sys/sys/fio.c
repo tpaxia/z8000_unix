@@ -58,7 +58,7 @@ register struct file *fp;
 	}
 	ip = fp->f_inode;
 	flag = fp->f_flag;
-	dev = (dev_t)ip->i_rdev;
+	dev = (dev_t)ip->i_un.i_rdev;
 	mode = ip->i_mode;
 
 	plock(ip);
@@ -102,7 +102,7 @@ register struct inode *ip;
 	dev_t dev;
 	register unsigned int maj;
 
-	dev = (dev_t)ip->i_rdev;
+	dev = (dev_t)ip->i_un.i_rdev;
 	maj = major(dev);
 	switch(ip->i_mode&IFMT) {
 

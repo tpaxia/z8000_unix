@@ -395,6 +395,10 @@ Both were latent; the new compiler shifted instruction timing enough to hit them
 
 `tools/libctest.c` runs 33 checks under the kernel: strings, `ctype`, `malloc`, `qsort`, `sprintf` with ints, longs and doubles, `atof`, `sscanf`, and file I/O with `fopen`/`fgets`/`fclose`.
 
+### Emulator
+
+`z8000_emu` moved from `f376c54` to `193db6f`. Upstream now counts cycles in 64 bits, so `get_cycles()` returns `uint64_t`; `emu/test_driver.cpp` prints and compares it as such and `-c` accepts limits above 2^31. Upstream also changed how bit 15 of the PC segment word is carried and restored the EPU trap for extended instructions; neither affects this kernel, whose boot test runs in exactly the same number of cycles as before. The compiler repository's own copy of the emulator moved to the same commit.
+
 ### Tests
 
 ```sh
@@ -439,34 +443,36 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 
 ## Divergence from Pristine V7
 
-`v7unix/` holds the pristine TUHS V7 tree, so divergence is measurable at any time by diffing it against `v7z8000/`. As of Step 16, the 47 kernel files with a V7 ancestor total 6,835 lines with 3,438 diff lines (that metric double counts, since a modified line is one delete plus one add). Twelve files are byte-identical to V7: `prim.c`, `partab.c`, `buf.h`, `callo.h`, `conf.h`, `dir.h`, `fblk.h`, `filsys.h`, `ino.h`, `mount.h`, `stat.h`, `timeb.h`. Four have no V7 ancestor at all — `cons.c`, `hd.c`, `md.c`, and `conf.c` (V7 generates that one with `mkconf`).
+`v7unix/` holds the pristine TUHS V7 tree, so divergence is measurable at any time by diffing it against `v7z8000/`. As of Step 16, the 47 kernel files with a V7 ancestor total 6,835 lines with 3,438 diff lines (that metric double counts, since a modified line is one delete plus one add). Fifteen files are byte-identical to V7: `alloc.c`, `prim.c`, `partab.c`, `buf.h`, `callo.h`, `conf.h`, `dir.h`, `fblk.h`, `filsys.h`, `ino.h`, `inode.h`, `mount.h`, `stat.h`, `timeb.h`, `tty.h` (twelve as of Step 16; the other three since the header workarounds were removed). Four have no V7 ancestor at all — `cons.c`, `hd.c`, `md.c`, and `conf.c` (V7 generates that one with `mkconf`).
 
 The divergence falls into three kinds, only two of which should shrink:
 
 1. **Machine dependent** — `machdep.c`, `trap.c` and `slp.c` are rewrites because V7's are PDP-11; `iget.c` carries big-endian 3-byte inode addresses; `param.h`, `seg.h`, `reg.h`, `user.h` and `proc.h` carry the `label_t` layout and MMU model; much of `sys1.c` is `exec()`. This is the port. It stays.
 2. **Amputated features** — these files are short because functionality is missing, not rewritten: `sig.c` lacks `psignal`, `core`, `fsig`, `grow`, `ptrace`, `procxmt`, `stop`; `tty.c` lacks `ioctl`, `stty`, `gtty`, `ttioccomm`; `bio.c` lacks `physio` and `swap`; `sysent.c` is mostly `nosys`; `main.c` is a cut-down startup. Restoring these moves the files back toward pristine.
-3. **Toolchain workarounds** — introduced for ACK, which is gone. These are candidates for removal.
+3. **Toolchain workarounds** — introduced for ACK, which is gone. The two header workarounds have been removed, see below.
 
-### Restoring the ACK-era header workarounds
+### The ACK-era header workarounds are gone
 
-`tty.h` and `inode.h` diverge only because ACK's frontend rejected the PDP-11 C extension of unnamed struct members inside a union. PCC accepts it, via V7's pre-ANSI global member namespace, where member names live in one namespace across all structs and resolve by name to the right offset.
+`tty.h` and `inode.h` used to diverge because ACK's frontend rejected the PDP-11 C extension of unnamed struct members inside a union. Both are now byte-identical to V7.
 
-This was verified, not assumed. Reverting `tty.h` to the pristine V7 form makes it byte-identical to V7, and the kernel builds and boots to the shell in 39,258,572 cycles — the same count as with the adapted header, so behaviour is bit-identical. Offsets were checked independently on a standalone case: `t_intrc` at +2, `t_quitc` at +3, and for the `inode.h` form `i_rdev` at +2 and `i_lastr` at +56 (low word of the long, correct for big-endian).
+- **`tty.h`**: `struct tc;` inside the union is unnamed again and `tun` is `tp->t_un`.
+- **`inode.h`**: the union `i_un` with its two unnamed structs is back, along with `struct group` and `mpxip` for the multiplexor (declared, still unused). The workaround had not been confined to the header: 21 accesses in eight C files had been rewritten from `ip->i_un.i_addr` to `ip->i_addr` (and likewise `i_rdev`, `i_lastr`). Those are restored to the V7 form, which also made `alloc.c` byte-identical.
 
-It was reverted again rather than kept, for one reason: `cz8` warns while doing it, 19 lines for `tty.c` alone —
+The header and the accesses have to change together. PCC resolves a member of an unnamed struct relative to the union that contains it, so `ip->i_un.i_rdev` is right and a bare `ip->i_rdev` against the pristine header silently reads offset 0 of the inode. Restoring only the header gave `panic: no fs` at boot. (An earlier note here said the bare form had been checked and found correct. It had not: the old and the current compiler both get it wrong.)
+
+Verified by compiling every kernel file before and after: the generated assembly is identical apart from label numbers and the new `_mpxip` common. Boot test and `test-libc` pass.
+
+The cost is noise. `cz8` warns about the idiom, as V7's own PCC source does, 73 lines per full kernel build:
 
 ```
 tty.h, line 59: warning: structure typed union member must be named
 tty.c, line 85: warning: illegal member use: t_intrc
 ```
 
-At the time the build pipeline swallowed all compiler output, so that noise could not be told apart from a real failure. Since Step 17 diagnostics are visible and errors fail the build, so this change is no longer blocked. What remains is deciding what to do with the warnings: accept 19 lines of noise per file, or teach `cz8` that this V7 idiom is not worth a warning.
-
-`inode.h` is a weaker case: ours flattens the union to `i_addr[NADDR]` plus `#define i_rdev i_addr[0]`, which is semantically identical and clearer, and most of its diff is the removal of `struct group` for the mpx multiplexer — a feature amputation, not a toolchain workaround.
+They are left on. "illegal member use" is exactly what flagged the header and source being out of step, and the compiler repository's ratchet records the exact set, so a new one is noticed.
 
 ## Planned Steps
 
-- **Pristine `tty.h`**: now unblocked, see Divergence from Pristine V7 above
 - **`trap.c` line 31**: look at the one remaining kernel compiler warning
 - **V7 startup code**: have `crt0` define and set `environ` as V7's does, and take `errno` from a `cerror` with its own `.comm`, which removes the archive-ordering dependency in `tools/libc`
 - **stty/ioctl**: terminal parameter control

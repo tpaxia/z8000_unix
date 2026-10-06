@@ -72,7 +72,7 @@ loop:
 	ip->i_number = ino;
 	ip->i_flag = ILOCK;
 	ip->i_count++;
-	ip->i_lastr = 0;
+	ip->i_un.i_lastr = 0;
 	bp = bread(dev, itod(ino));
 	/*
 	 * Check I/O errors
@@ -109,7 +109,7 @@ register struct dinode *dp;
 	ip->i_uid = dp->di_uid;
 	ip->i_gid = dp->di_gid;
 	ip->i_size = dp->di_size;
-	p1 = (char *)ip->i_addr;
+	p1 = (char *)ip->i_un.i_addr;
 	p2 = (char *)dp->di_addr;
 	for(i=0; i<NADDR; i++) {
 		*p1++ = 0;		/* MSB = 0 (zero-extend) */
@@ -183,7 +183,7 @@ time_t *ta, *tm;
 		dp->di_gid = ip->i_gid;
 		dp->di_size = ip->i_size;
 		p1 = (char *)dp->di_addr;
-		p2 = (char *)ip->i_addr;
+		p2 = (char *)ip->i_un.i_addr;
 		for(i=0; i<NADDR; i++) {
 			if(*p2++ != 0)
 				printf("iaddress > 2^24\n");
@@ -223,10 +223,10 @@ register struct inode *ip;
 		return;
 	dev = ip->i_dev;
 	for(i=NADDR-1; i>=0; i--) {
-		bn = ip->i_addr[i];
+		bn = ip->i_un.i_addr[i];
 		if(bn == (daddr_t)0)
 			continue;
-		ip->i_addr[i] = (daddr_t)0;
+		ip->i_un.i_addr[i] = (daddr_t)0;
 		switch(i) {
 
 		default:

@@ -37,17 +37,17 @@ daddr_t bn;
 	 */
 	if(bn < NADDR-3) {
 		i = bn;
-		nb = ip->i_addr[i];
+		nb = ip->i_un.i_addr[i];
 		if(nb == 0) {
 			if(rwflg==B_READ || (bp = alloc(dev))==NULL)
 				return((daddr_t)-1);
 			nb = bp->b_blkno;
 			bdwrite(bp);
-			ip->i_addr[i] = nb;
+			ip->i_un.i_addr[i] = nb;
 			ip->i_flag |= IUPD|ICHG;
 		}
 		if(i < NADDR-4)
-			rablock = ip->i_addr[i+1];
+			rablock = ip->i_un.i_addr[i+1];
 		return(nb);
 	}
 
@@ -75,13 +75,13 @@ daddr_t bn;
 	/*
 	 * fetch the address from the inode
 	 */
-	nb = ip->i_addr[NADDR-j];
+	nb = ip->i_un.i_addr[NADDR-j];
 	if(nb == 0) {
 		if(rwflg==B_READ || (bp = alloc(dev))==NULL)
 			return((daddr_t)-1);
 		nb = bp->b_blkno;
 		bdwrite(bp);
-		ip->i_addr[NADDR-j] = nb;
+		ip->i_un.i_addr[NADDR-j] = nb;
 		ip->i_flag |= IUPD|ICHG;
 	}
 

@@ -437,7 +437,8 @@ int main(int argc, char* argv[]) {
     bool trace = false;
     bool reg_trace = false;
     bool mem_trace = false;
-    int max_cycles = 50000000;  // increased for shell startup overhead
+    // The emulator counts cycles in 64 bits, so a run is not limited to 2^31.
+    uint64_t max_cycles = 50000000;  // increased for shell startup overhead
 
     // Defaults are the boot test: the small root image, the pipeline typed
     // at the shell, and an exact transcript. -d, -i and -x run something
@@ -452,7 +453,7 @@ int main(int argc, char* argv[]) {
             case 't': trace = true; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
-            case 'c': max_cycles = atoi(optarg); break;
+            case 'c': max_cycles = strtoull(optarg, nullptr, 10); break;
             case 'd': disk_image = optarg; break;
             case 'i': {
                 // "\n" written as two characters stands for a newline, so the
@@ -523,7 +524,7 @@ int main(int argc, char* argv[]) {
     printf("\nReset state:\n");
     printf("  FCW: 0x%04X\n", cpu.get_fcw());
     printf("  PC:  0x%06X\n", cpu.get_pc());
-    printf("\nRunning (max %d cycles)...\n", max_cycles);
+    printf("\nRunning (max %llu cycles)...\n", static_cast<unsigned long long>(max_cycles));
     if (trace) printf("---\n");
 
     // Run CPU in chunks, delivering periodic NVI clock ticks
@@ -564,7 +565,7 @@ int main(int argc, char* argv[]) {
     // Dump final state
     printf("\nFinal state:\n");
     cpu.dump_regs();
-    printf("\nTotal cycles: %d\n", cpu.get_cycles());
+    printf("\nTotal cycles: %llu\n", static_cast<unsigned long long>(cpu.get_cycles()));
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
     // Dump system stack (IRET frame from trap handler)
