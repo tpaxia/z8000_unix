@@ -210,6 +210,8 @@ exec()
 	int c;
 	unsigned usp;
 	unsigned strbase;
+	long datasize, filesize;
+	int sep;
 
 	/*
 	 * Look up executable.
@@ -302,30 +304,42 @@ exec()
 	if (u.u_error)
 		goto bad;
 
-	/*
-	 * Validate magic number.
-	 */
-	if (u.u_exdata.ux_mag != 0407) {
+	/* Validate the entire layout before replacing the old image. */
+	sep = u.u_exdata.ux_mag == 0411;
+	datasize = (long)u.u_exdata.ux_dsize + u.u_exdata.ux_bsize;
+	filesize = (long)sizeof(u.u_exdata) + u.u_exdata.ux_tsize + u.u_exdata.ux_dsize;
+	if (!sep)
+		datasize += u.u_exdata.ux_tsize;
+	if (u.u_count || (!sep && u.u_exdata.ux_mag != 0407) ||
+	    !u.u_exdata.ux_tsize || (u.u_exdata.ux_tsize & 1) ||
+	    u.u_exdata.ux_entloc >= u.u_exdata.ux_tsize ||
+	    (u.u_exdata.ux_entloc & 1) || u.u_exdata.ux_trsize || u.u_exdata.ux_drsize ||
+	    filesize > ip->i_size || datasize + nc + (na+ne+3)*2L + 256 > 0xFFF0L) {
 		u.u_error = ENOEXEC;
 		goto bad;
 	}
 
-	/*
-	 * For 0407: merge text into data.
-	 */
-	u.u_exdata.ux_dsize += u.u_exdata.ux_tsize;
-	u.u_exdata.ux_tsize = 0;
-
-	/*
-	 * Load program into user segment.
-	 */
+	u.u_sep = sep;
+	sureg();
+	u.u_offset = sizeof(u.u_exdata);
+	if (sep) {
+		/* I-space helpers address the backing bank through the data bus. */
+		u.u_base = 0;
+		u.u_count = u.u_exdata.ux_tsize;
+		u.u_segflg = 2;
+		readi(ip);
+		if (u.u_error || u.u_count)
+			goto badimage;
+	} else {
+		u.u_exdata.ux_dsize += u.u_exdata.ux_tsize;
+		u.u_exdata.ux_tsize = 0;
+	}
 	u.u_base = 0;
-	u.u_offset = sizeof(u.u_exdata);	/* skip header */
 	u.u_count = u.u_exdata.ux_dsize;
-	u.u_segflg = 0;		/* user space (copyout) */
+	u.u_segflg = 0;
 	readi(ip);
-	if (u.u_error)
-		goto bad;
+	if (u.u_error || u.u_count)
+		goto badimage;
 
 	/*
 	 * Zero BSS in user segment.
@@ -400,6 +414,7 @@ exec()
 	/*
 	 * Set up u-area for new program.
 	 */
+	u.u_tsize = (u.u_exdata.ux_tsize + 63L) >> 6;
 	u.u_dsize = btoc(u.u_exdata.ux_dsize + u.u_exdata.ux_bsize);
 	u.u_ssize = 1;		/* minimal stack */
 
@@ -425,6 +440,10 @@ exec()
 	iput(ip);
 	return;
 
+badimage:
+	/* The old image has been overwritten; never return into it. */
+	psignal(u.u_procp, SIGKIL);
+	u.u_error = EIO;
 bad:
 	iput(ip);
 }
@@ -435,6 +454,9 @@ bad:
 setregs()
 {
 	register int i;
+	u.u_fpflag = 0;
+	bzero(u.u_fpe, sizeof(u.u_fpe));
+	u.u_fpe[93] = 1;
 
 	for (i = 0; i < NSIG; i++)
 		if ((u.u_signal[i] & 1) == 0)

@@ -46,8 +46,8 @@
 ! --- EPU vector (offset 0x08) ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
-	.word	0x8100		! PC high: segment 1
-	.word	default_epu	! PC low: offset of EPU handler
+	.word	0xFF00		! separate software EPU service, segment 127
+	.word	0x0000		! fpe_entry
 
 ! --- TRAP vector (offset 0x10) - privilege violation ---
 	.word	0x0000		! reserved

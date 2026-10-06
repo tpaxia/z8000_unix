@@ -50,7 +50,7 @@ $(LIBC_DIR)/crt0.b: $(LIBC_DIR)/crt0.az8
 $(LIBC_DIR)/%.b: $(LIBC_DIR)/%.az8
 	$(AZ8) -o $@ $<
 
-$(LIBC_DIR)/%.az8: $(LIBC_DIR)/%.c
+$(LIBC_DIR)/%.az8: $(LIBC_DIR)/%.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) Makefile
@@ -85,23 +85,27 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     sbrk execl
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
     $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
-    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b arith.b
+    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b
 
-$(LIBV7_DIR)/%.az8: $(V7LIBC)/stdio/%.c
+$(LIBV7_DIR)/%.az8: $(V7LIBC)/stdio/%.c $(CZ8)
 	@mkdir -p $(LIBV7_DIR)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(V7LIBC)/stdio -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
-$(LIBV7_DIR)/%.az8: $(V7LIBC)/gen/%.c
+$(LIBV7_DIR)/%.az8: $(V7LIBC)/gen/%.c $(CZ8)
 	@mkdir -p $(LIBV7_DIR)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
-$(LIBV7_DIR)/%.az8: $(LIBC_DIR)/%.c
+$(LIBV7_DIR)/%.az8: $(LIBC_DIR)/%.c $(CZ8)
 	@mkdir -p $(LIBV7_DIR)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
-$(LIBV7_DIR)/softfp.az8: $(PCC_ROOT)/lib/softfp.c
+$(LIBV7_DIR)/softfp.az8: fpe/glue.c $(CZ8)
 	@mkdir -p $(LIBV7_DIR)
 	$(CZ8) < $< > $@
+
+$(LIBV7_DIR)/epu.az8: fpe/wrappers.py
+	@mkdir -p $(LIBV7_DIR)
+	python3 $< $@
 
 $(LIBV7_DIR)/float.az8: $(PCC_ROOT)/lib/float.az8
 	@mkdir -p $(LIBV7_DIR)
@@ -117,7 +121,7 @@ libv7.a: $(LIBV7_OBJS) Makefile
 # =============================================================================
 # libctest - exercises libv7.a under the kernel; see libctest.c
 # =============================================================================
-libctest.az8: libctest.c
+libctest.az8: libctest.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 libctest.b: libctest.az8
@@ -130,7 +134,7 @@ root-libc.img: v7mkfs proto.libc init sh libctest
 	./v7mkfs root-libc.img proto.libc
 
 # CPU-bound scheduling and signal regression (no child syscalls in its loop).
-preempttest.az8: preempttest.c
+preempttest.az8: preempttest.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > preempttest.i
 	$(CZ8) < preempttest.i > $@
 
@@ -140,7 +144,7 @@ preempttest.b: preempttest.az8
 preempttest: $(LIBC_DIR)/crt0.b preempttest.b libv7.a
 	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b preempttest.b libv7.a -o $@
 
-signaltest.az8: signaltest.c
+signaltest.az8: signaltest.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > signaltest.i
 	$(CZ8) < signaltest.i > $@
 
@@ -168,7 +172,7 @@ arith.b: arith.az8
 # =============================================================================
 # init - /etc/init
 # =============================================================================
-init.az8: init.c
+init.az8: init.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 init.b: init.az8
@@ -180,7 +184,7 @@ init: $(LIBC_DIR)/crt0.b init.b arith.b libc.a
 # =============================================================================
 # echo - /bin/echo
 # =============================================================================
-echo.az8: echo.c
+echo.az8: echo.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 echo.b: echo.az8
@@ -192,7 +196,7 @@ echo: $(LIBC_DIR)/crt0.b echo.b arith.b libc.a
 # =============================================================================
 # cat - /bin/cat
 # =============================================================================
-cat.az8: cat.c
+cat.az8: cat.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 cat.b: cat.az8
@@ -204,7 +208,7 @@ cat: $(LIBC_DIR)/crt0.b cat.b arith.b libc.a
 # =============================================================================
 # sh - /bin/sh (V7 Bourne shell)
 # =============================================================================
-%.az8: $(SHELL_SRC)/%.c
+%.az8: $(SHELL_SRC)/%.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(SHELL_SRC) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 %.b: %.az8
@@ -232,5 +236,46 @@ clean:
 	rm -f libc.a $(LIBC_DIR)/*.b
 	rm -rf $(LIBV7_DIR) libv7.a libctest libctest.b libctest.az8 root-libc.img
 	rm -f preempttest preempttest.b preempttest.az8 preempttest.i root-preempt.img
+	rm -f splittest splittest.b splittest.az8 splittest.i splitpad.b root-split.img
+	rm -f idnext idnormal idnext.b idnext.az8 idnext.i libcid signalid
+	rm -f ttytest ttytest.b ttytest.az8 ttytest.i root-tty.img
 	rm -f signaltest signaltest.b signaltest.az8 signaltest.i sigregs.b
 	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/fakcu.az8
+
+# Terminal settings and interactive line discipline regression.
+ttytest.az8: ttytest.c $(USR_INCLUDE)/sgtty.h $(CZ8)
+	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > ttytest.i
+	$(CZ8) < ttytest.i > $@
+
+ttytest: $(LIBC_DIR)/crt0.b ttytest.b libv7.a
+	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b ttytest.b libv7.a -o $@
+
+root-tty.img: v7mkfs proto.tty init sh ttytest
+	./v7mkfs root-tty.img proto.tty
+
+# Separate instruction/data executables. Keep ordinary programs as 0407.
+splittest.az8: splittest.c $(CZ8)
+	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > splittest.i
+	$(CZ8) < splittest.i > $@
+
+idnext.az8: idnext.c $(CZ8)
+	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > idnext.i
+	$(CZ8) < idnext.i > $@
+
+splittest: $(LIBC_DIR)/crt0.b splitpad.b splittest.b libv7.a $(LDZ8)
+	$(LDZ8) -i -x -R 0 $(LIBC_DIR)/crt0.b splitpad.b splittest.b libv7.a -o $@
+
+idnext: $(LIBC_DIR)/crt0.b idnext.b libv7.a $(LDZ8)
+	$(LDZ8) -i -x -R 0 $(LIBC_DIR)/crt0.b idnext.b libv7.a -o $@
+
+idnormal: $(LIBC_DIR)/crt0.b idnext.b libv7.a $(LDZ8)
+	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b idnext.b libv7.a -o $@
+
+libcid: $(LIBC_DIR)/crt0.b libctest.b libv7.a $(LDZ8)
+	$(LDZ8) -i -x -R 0 $(LIBC_DIR)/crt0.b libctest.b libv7.a -o $@
+
+signalid: $(LIBC_DIR)/crt0.b signaltest.b sigregs.b libv7.a $(LDZ8)
+	$(LDZ8) -i -x -R 0 $(LIBC_DIR)/crt0.b signaltest.b sigregs.b libv7.a -o $@
+
+root-split.img: v7mkfs proto.split init sh splittest idnext idnormal libcid signalid
+	./v7mkfs root-split.img proto.split

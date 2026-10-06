@@ -28,10 +28,11 @@ extern int outw();
  * Used by fubyte/subyte/copyin/copyout in krt.s.
  */
 int useg;
+int iseg;
 
 /*
  * Segment allocation bitmap.
- * Segments 0 (ROM) and 1 (kernel) are reserved.
+ * Segments 0 (ROM), 1 (kernel), and 127 (software EPU) are reserved.
  * User processes get segments starting from 2.
  */
 static char seg_used[128];	/* 128 segments in 8MB */
@@ -45,7 +46,7 @@ seg_alloc()
 {
 	register int i;
 
-	for (i = seg_next; i < 128; i++) {
+	for (i = seg_next; i < 127; i++) {
 		if (seg_used[i] == 0) {
 			seg_used[i] = 1;
 			seg_next = i + 1;
@@ -68,18 +69,20 @@ seg_alloc()
  */
 seg_free(segno)
 {
-	if (segno >= 2 && segno < 128)
+	if (segno >= 2 && segno < 127)
 		seg_used[segno] = 0;
 }
 
 /*
  * Physical frame allocator for u-area pages.
  * Each u-area is 4KB = 2 frames (2KB pages).
- * Frames 0 through (NPROC+1)*32-1 are reserved for identity-mapped
- * segments (seg 0=ROM, seg 1=kernel, seg 2..NPROC=user processes).
+ * Frames 0 through (2*NPROC+1)*32-1 are reserved for identity-mapped
+ * segments: 0=ROM, 1=kernel, 2..NPROC=user data, and
+ * NPROC+2..2*NPROC=user instruction banks. Frames 4064..4095 belong
+ * to the reserved EPU service segment and are never allocated here.
  */
 static char frame_bmap[512];	/* 4096 frames, 1 bit each */
-static int frame_next = (NPROC+1)*32;	/* reserve all segment frames */
+static int frame_next = (2*NPROC+1)*32;	/* reserve all segment frames */
 
 /*
  * frame_alloc() - allocate a 2-frame pair for a u-area.
@@ -89,7 +92,7 @@ frame_alloc()
 {
 	register int i;
 
-	for (i = frame_next; i < 4095; i += 2) {
+	for (i = frame_next; i < 127*32; i += 2) {
 		if ((frame_bmap[i>>3] & (1 << (i&7))) == 0 &&
 		    (frame_bmap[(i+1)>>3] & (1 << ((i+1)&7))) == 0) {
 			frame_bmap[i>>3] |= (1 << (i&7));
@@ -99,7 +102,7 @@ frame_alloc()
 		}
 	}
 	/* wrap around */
-	for (i = (NPROC+1)*32; i < frame_next; i += 2) {
+	for (i = (2*NPROC+1)*32; i < frame_next; i += 2) {
 		if ((frame_bmap[i>>3] & (1 << (i&7))) == 0 &&
 		    (frame_bmap[(i+1)>>3] & (1 << ((i+1)&7))) == 0) {
 			frame_bmap[i>>3] |= (1 << (i&7));
@@ -116,14 +119,14 @@ frame_alloc()
  */
 frame_free(f)
 {
-	if (f >= (NPROC+1)*32 && f < 4096) {
+	if (f >= (2*NPROC+1)*32 && f < 127*32) {
 		frame_bmap[f>>3] &= ~(1 << (f&7));
 		frame_bmap[(f+1)>>3] &= ~(1 << ((f+1)&7));
 	}
 }
 
 /*
- * sureg() - set useg to current process's segment encoding.
+ * sureg() - select current process's data and instruction banks.
  * Segment number derived from proc index: proc[0]->seg 1, proc[1]->seg 2, etc.
  */
 sureg()
@@ -132,6 +135,8 @@ sureg()
 
 	segno = (u.u_procp - proc) + 1;
 	useg = (segno << 8) | 0x8000;
+	iseg = ((segno + (u.u_sep ? NPROC : 0)) << 8) | 0x8000;
+	outw(0x00B8, (segno << 8) | ((iseg >> 8) & 0177));
 }
 
 /*
@@ -143,13 +148,20 @@ clearseg(segno)
 }
 
 /*
- * copyseg(from_seg, to_seg) - copy a 64KB user segment.
+ * copyseg(from_seg, to_seg) - copy D space and, when split, I space.
  *
  * Uses the MMU copy window (pages 28-29 at 0xE000-0xEFFF) to access
  * source and destination pages. Copies 2 pages (4KB) per iteration.
  * Identity mapping: segment S page P = frame S*32+P.
  */
 copyseg(from_seg, to_seg)
+{
+	copyspace(from_seg, to_seg);
+	if (u.u_sep)
+		copyspace(from_seg + NPROC, to_seg + NPROC);
+}
+
+copyspace(from_seg, to_seg)
 {
 	register int i;
 	int s, j;
@@ -247,16 +259,6 @@ int count;
 	while (n--)
 		*p++ = 0;
 }
-
-/*
- * fuibyte/suibyte/copyiin/copyiout: instruction-space variants.
- * On Z8000 with no I/D separation, these are the same as
- * fubyte/subyte/copyin/copyout (implemented in krt.s).
- */
-fuibyte(addr) char *addr; { return(fubyte(addr)); }
-suibyte(addr, val) char *addr; { return(subyte(addr, val)); }
-copyiin(from, to, n) { return(copyin(from, to, n)); }
-copyiout(from, to, n) { return(copyout(from, to, n)); }
 
 /*
  * icode[] - Z8002 machine code for process 1's initial program.

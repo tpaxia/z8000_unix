@@ -16,6 +16,7 @@ extern int fstat(), getuid(), stime(), alarm(), pause(), utime();
 extern int stty(), gtty(), saccess(), nice(), ftime(), sync();
 extern int kill(), dup(), pipe(), times(), profil(), setgid();
 extern int getgid(), ssig(), ioctl(), umask(), chroot();
+extern int fprestore();
 
 nosys()
 {
@@ -75,7 +76,7 @@ struct sysent sysent[] = {
 	{ 0, 0, nosys },	/* 49 */
 	{ 0, 0, nosys },	/* 50 */
 	{ 0, 0, nosys },	/* 51 */
-	{ 0, 0, nosys },	/* 52 */
+	{ 1, 1, fprestore },	/* 52 = restore signal EPU state */
 	{ 0, 0, nosys },	/* 53 */
 	{ 3, 3, ioctl },	/* 54 = ioctl */
 	{ 0, 0, nosys },	/* 55 */

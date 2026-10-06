@@ -28,7 +28,7 @@ The ONIX operating system was a port of V7 Unix. Only about 60 lines of V7 C cod
 
 ## Proposed Design: Using Z8001 Segmentation to Select MMU Map Sets
 
-> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It does not implement split instruction/data maps, per-page protection bits or the normal-mode segment check described below, and only two page pairs of the kernel's segment are ever remapped (the u-area and a copy window). See `kernel-technical-reference.md`, Paged MMU.
+> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It supports split instruction/data spaces through an IMAP port selecting an instruction backing bank for each logical segment. It does not implement per-page protection bits or the normal-mode segment check described below. Two page pairs of the kernel's segment are remapped for the u-area and copy window. See `kernel-technical-reference.md`, Paged MMU.
 
 ### Core Concept
 
@@ -135,6 +135,15 @@ The SRAM approach is the same one used by Onyx for the C8002 and by Plexus Compu
 ---
 
 ## References and Resources
+
+### Implemented software EPU mapping
+
+The current emulated machine reserves segment 127 for the Zilog software EPU
+service. UPAGE updates pages 30/31 of both segment 1 and segment 127 to alias
+the current process's u-area and system stack. All other service pages retain
+their identity mapping. Physical frames 4064..4095 are excluded from allocation.
+An FPGA/hardware implementation must provide this alias and load the service
+image too; these changes have been tested on the paged-MMU emulator.
 
 ### Primary Documentation (bitsavers.org, /pdf/onyx/c8002/)
 

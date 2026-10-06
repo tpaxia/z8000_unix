@@ -485,8 +485,8 @@ _signal:
 	pop	r4, @sp
 	jp	cerror
 
-! Kernel entry frame: signo, saved FCW, saved R0, saved PC.
-! No privileged signal-return instruction or syscall is needed.
+! Kernel entry frame: signo, saved FCW, saved R0, saved PC, 96 EPU bytes.
+! Syscall 52 restores EPU state; CPU FLAGS/PC return stays unprivileged.
 .Lsigtramp:
 	push	@sp, r1
 	push	@sp, r2
@@ -511,6 +511,12 @@ _signal:
 	push	@sp, r0
 	call	@r2
 	add	sp, #2
+	! Preserve emulated EPU registers across an asynchronous C handler.
+	lda	r1, 36(sp)
+	sc	#52
+	! Move the return PC past the 96-byte EPU save area.
+	ld	r0, 34(sp)
+	ld	130(sp), r0
 	pop	r14, @sp
 	pop	r13, @sp
 	pop	r12, @sp
@@ -529,6 +535,7 @@ _signal:
 	pop	r0, @sp		! saved FCW
 	ldctlb	flags, rl0	! restore only unprivileged condition flags
 	pop	r0, @sp		! restore original R0 without changing flags
+	lda	sp, 96(sp)		! LDA preserves restored condition flags
 	ret			! restore PC and original SP
 	.bss
 .Lsigvec:

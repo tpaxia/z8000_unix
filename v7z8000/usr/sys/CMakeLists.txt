@@ -30,14 +30,16 @@ file(WRITE "${PCC_COMPILE_SH}" [=[#!/bin/sh
 # left on stderr so warnings are seen, and any preprocessor or compiler
 # failure fails the build instead of leaving truncated assembly behind.
 cpp -Dz8000 -Dz8002 -I"$1" "$2" > "$4.i" || { rm -f "$4.i" "$4"; exit 1; }
-"$3" < "$4.i" > "$4"
+"$3" < "$4.i" > "$4.raw"
 status=$?
 rm -f "$4.i"
 if [ $status -ne 0 ]; then
-	rm -f "$4"
+	rm -f "$4.raw" "$4"
 	echo "cz8 failed on $2" >&2
 	exit 1
 fi
+python3 "$5" < "$4.raw" > "$4" || exit 1
+rm -f "$4.raw"
 ]=])
 
 # =============================================================================
@@ -97,8 +99,8 @@ function(pcc_compile_c subdir name)
 
     add_custom_command(OUTPUT "${B}/${AZ8_REL}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${subdir}"
-        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}"
-        DEPENDS "${SRC}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}"
+        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}" "${PCC_ROOT}/c2z8.py"
+        DEPENDS "${SRC}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}" "${PCC_ROOT}/c2z8.py"
         COMMENT "PCC: ${subdir}/${name}.c → .az8"
     )
     add_custom_command(OUTPUT "${B}/${B_REL}"
@@ -149,6 +151,7 @@ pcc_compile_c(sys pipe)
 pcc_compile_c(sys sig)
 pcc_compile_c(sys sysent)
 pcc_compile_c(sys clock)
+pcc_compile_c(sys fpe)
 pcc_compile_c(sys prim)
 
 # Device driver C sources (dev/)
@@ -171,6 +174,11 @@ add_custom_command(OUTPUT ${B}/arith.b
     COMMENT "PCC: arith.az8 → arith.b"
 )
 list(APPEND HANDLER_B_FILES arith.b)
+add_custom_command(OUTPUT ${B}/csv.b
+    COMMAND ${CMAKE_COMMAND} -E copy ${PCC_ROOT}/lib/csv.az8 csv.az8
+    COMMAND ${AZ8} -o csv.b csv.az8
+    DEPENDS ${PCC_ROOT}/lib/csv.az8 ${AZ8})
+list(APPEND HANDLER_B_FILES csv.b)
 
 # Link all .b files → handler.bout → handler.bin
 # Convert relative .b paths to absolute for DEPENDS
@@ -206,7 +214,20 @@ target_include_directories(test_driver PRIVATE "${EMU_DIR}/src")
 # Top-level targets
 # =============================================================================
 add_custom_target(kernel ALL DEPENDS
-    ${B}/rom.bin ${B}/kernel.bin ${B}/handler.bin test_driver)
+    ${B}/rom.bin ${B}/kernel.bin ${B}/handler.bin ${B}/fpe.bin test_driver)
+
+add_custom_command(OUTPUT ${B}/fpe.bin
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${B}/fpe
+    COMMAND python3 ${TOOLS_DIR}/fpe/translate.py ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${B}/fpe/core.s
+    COMMAND ${Z8K_AS} -z8002 -o core.o core.s
+    COMMAND ${Z8K_AS} -z8001 -o unix.o ${CMAKE_SOURCE_DIR}/fpe/unix.s
+    COMMAND ${Z8K_LD} -m z8002 -T ${CMAKE_SOURCE_DIR}/fpe/service.ld -o fpe.coff unix.o core.o
+    COMMAND ${Z8K_OBJCOPY} -O binary fpe.coff ${B}/fpe.bin
+    WORKING_DIRECTORY ${B}/fpe
+    DEPENDS ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${CMAKE_SOURCE_DIR}/fpe/unix.s
+            ${CMAKE_SOURCE_DIR}/fpe/service.ld ${TOOLS_DIR}/fpe/translate.py
+    COMMENT "Building separate Zilog software EPU service")
+file(MAKE_DIRECTORY ${B}/fpe)
 
 add_custom_target(disk_image
     COMMAND make -C "${TOOLS_DIR}" v7mkfs init
@@ -281,3 +302,40 @@ set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     handler.bout handler.bin
     root.img hd.img
 )
+
+add_custom_target(tty_image
+    COMMAND make -C "${TOOLS_DIR}" root-tty.img
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root-tty.img" "${B}/hd-tty.img"
+    WORKING_DIRECTORY "${TOOLS_DIR}"
+    COMMENT "Building terminal test disk image"
+)
+
+add_custom_target(test-tty
+    COMMAND python3 "${TOOLS_DIR}/test-tty.py" "${B}"
+    DEPENDS kernel disk_image tty_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing terminal settings, echo, cooked, cbreak and raw input"
+    VERBATIM
+)
+
+add_custom_target(split_image
+    COMMAND make -C "${TOOLS_DIR}" root-split.img
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root-split.img" "${B}/hd-split.img"
+    WORKING_DIRECTORY "${TOOLS_DIR}"
+    COMMENT "Building separate instruction/data test disk"
+)
+
+add_custom_target(test-split
+    COMMAND python3 "${TOOLS_DIR}/test-split.py" "${B}"
+    DEPENDS kernel disk_image split_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing split I/D loading, data, fork, exec, libc and signals"
+    VERBATIM
+)
+
+add_custom_target(test-fpe
+    COMMAND python3 ${TOOLS_DIR}/test-fpe.py ${B}
+    DEPENDS kernel disk_image
+    WORKING_DIRECTORY ${B}
+    COMMENT "Testing separate software EPU, arithmetic and process state"
+    VERBATIM)

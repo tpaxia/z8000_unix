@@ -159,7 +159,7 @@ unsigned a, b;
  * Move n bytes at byte location
  * &bp->b_un.b_addr[o] to/from (flag) the
  * user/kernel (u.segflg) area starting at u.base.
- * Handles both kernel-space (u_segflg=1) and user-space (u_segflg=0).
+ * Handles kernel space (1), user data space (0), and user instruction space (2).
  */
 iomove(cp, n, flag)
 register caddr_t cp;
@@ -168,12 +168,17 @@ register n;
 
 	if (n==0)
 		return;
-	if (u.u_segflg) {
+	if (u.u_segflg == 1) {
 		/* kernel space: direct bcopy */
 		if (flag==B_WRITE)
 			bcopy(u.u_base, (caddr_t)cp, n);
 		else
 			bcopy((caddr_t)cp, u.u_base, n);
+	} else if (u.u_segflg == 2) {
+		if (flag==B_WRITE)
+			copyiin(u.u_base, (caddr_t)cp, n);
+		else
+			copyiout((caddr_t)cp, u.u_base, n);
 	} else {
 		/* user space: use copyin/copyout */
 		if (flag==B_WRITE)

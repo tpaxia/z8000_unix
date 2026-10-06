@@ -57,6 +57,13 @@ dev_t dev;
 	ttwrite(&cons_tty[0]);
 }
 
+consioctl(dev, cmd, addr, flag)
+dev_t dev;
+caddr_t addr;
+{
+	ttioccomm(cmd, &cons_tty[0], addr, dev);
+}
+
 /*
  * Console receive interrupt handler.
  * Called from vi_dispatch on VI(0).
@@ -86,7 +93,7 @@ register struct tty *tp;
 	register int c;
 
 	while ((c = getc(&tp->t_outq)) >= 0) {
-		if (c & 0200) {
+		if ((c & 0200) && (tp->t_flags & RAW) == 0) {
 			/* delay character — schedule restart */
 			tp->t_state |= TIMEOUT;
 			timeout(ttrstrt, (caddr_t)tp, c & 0177);

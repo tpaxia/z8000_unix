@@ -99,21 +99,24 @@ unsigned usp;
 		return(usp);
 	if ((handler = u.u_signal[n]) != 0 && (handler & 1) == 0) {
 		/*
-		 * Frame: signo, saved FCW, saved R0, saved PC offset.
+		 * Frame: signo, saved FCW, saved R0, saved PC offset, then
+		 * 96 bytes of EPU registers/control (scratch is not persistent).
 		 * libc saves R1-R14 before calling the C handler. Returning needs
 		 * only user FLAGS and PC; privileged FCW bits are never restored
 		 * from user memory. Reserve room for the trampoline's saves/call.
 		 */
-		if ((usp & 1) || usp < 40 ||
-		    usp - 40 < (unsigned)ctob(u.u_dsize)) {
+		if ((usp & 1) || usp < 136 ||
+		    usp - 136 < (unsigned)ctob(u.u_dsize)) {
 			n = SIGSEG;
 			goto die;
 		}
-		sp = usp - 8;
+		sp = usp - 104;
 		suword(sp, n);
 		suword(sp + 2, u.u_ar0[14]);
 		suword(sp + 4, u.u_ar0[0]);
 		suword(sp + 6, u.u_ar0[16]);
+		/* The trampoline restores these through syscall 52. */
+		copyout(u.u_fpe, sp + 8, 96);
 		u.u_ar0[16] = handler;
 		u.u_error = 0;
 		if (n != SIGINS && n != SIGTRC)

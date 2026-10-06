@@ -44,9 +44,12 @@ class MMU : public z8000_memory_bus {
 public:
     MMU(MemoryRegion *phys) : m_phys(phys), m_trace(false) {
         // Identity map: frame = seg * 32 + page
-        for (int seg = 0; seg < 128; seg++)
+        for (int seg = 0; seg < 128; seg++) {
+            m_iseg[seg] = seg;
             for (int page = 0; page < 32; page++)
                 m_pages[seg][page] = seg * 32 + page;
+        }
+        set_upage(62);
     }
 
     void set_trace(bool enable) { m_trace = enable; }
@@ -55,6 +58,9 @@ public:
     void set_upage(uint16_t frame) {
         m_pages[1][30] = frame;
         m_pages[1][31] = frame + 1;
+        // Software EPU service uses the same per-process system stack.
+        m_pages[127][30] = frame;
+        m_pages[127][31] = frame + 1;
         if (m_trace)
             printf("  MMU: UPAGE=%d (seg1 pages 30-31 -> frames %d,%d)\n",
                    frame, frame, frame + 1);
@@ -67,6 +73,15 @@ public:
         if (m_trace)
             printf("  MMU: WPAGE=%d (seg1 pages 28-29 -> frames %d,%d)\n",
                    frame, frame, frame + 1);
+    }
+
+    // Instruction map selects a backing bank; data/stack retain their map.
+    void set_imap(uint16_t value) {
+        m_iseg[(value >> 8) & 0x7f] = value & 0x7f;
+    }
+
+    uint32_t instruction_address(uint32_t addr) const {
+        return (uint32_t(m_iseg[(addr >> 16) & 0x7f]) << 16) | (addr & 0xffff);
     }
 
     uint32_t translate(uint32_t addr) {
@@ -101,7 +116,23 @@ public:
 private:
     MemoryRegion *m_phys;
     uint16_t m_pages[128][32];
+    uint8_t m_iseg[128];
     bool m_trace;
+};
+
+// All instruction-space accesses, including operands and PC-relative loads.
+class InstructionBus : public z8000_memory_bus {
+public:
+    explicit InstructionBus(MMU &mmu) : m_mmu(mmu) {}
+    u8 read_byte(u32 a) override { return m_mmu.read_byte(m_mmu.instruction_address(a)); }
+    u16 read_word(u32 a) override { return m_mmu.read_word(m_mmu.instruction_address(a)); }
+    void write_byte(u32 a, u8 v) override { m_mmu.write_byte(m_mmu.instruction_address(a), v); }
+    void write_word(u32 a, u16 v) override { m_mmu.write_word(m_mmu.instruction_address(a), v); }
+    void write_word(u32 a, u16 v, u16 mask) override {
+        m_mmu.write_word(m_mmu.instruction_address(a), v, mask);
+    }
+private:
+    MMU &m_mmu;
 };
 
 // Extended IOPorts with DMA controller for RAM disk
@@ -294,6 +325,9 @@ public:
         if (mode != 0) return;
 
         switch (addr) {
+            case 0x00B8:  // IMAP: logical segment in high byte, I backing bank in low
+                m_mmu->set_imap(val);
+                break;
             case 0x00B0:  // UPAGE: KDSA6 equivalent
                 m_mmu->set_upage(val);
                 break;
@@ -539,6 +573,8 @@ int main(int argc, char* argv[]) {
     // Load C handler at segment 1, offset 0x0200
     if (!load_file(memory, "handler.bin", 0x010200))
         return 1;
+    if (!load_file(memory, "fpe.bin", 0x7f0000))
+        return 1;
 
     // Load disk images
     if (!io.load_disk("root.img"))
@@ -546,7 +582,9 @@ int main(int argc, char* argv[]) {
     if (!io.load_hd(disk_image))
         return 1;
 
+    InstructionBus instructions(mmu);
     cpu.set_memory(&mmu);
+    cpu.set_program_memory(&instructions);
     cpu.set_io(&io);
     cpu.set_trace(trace);
     cpu.set_reg_trace(reg_trace);

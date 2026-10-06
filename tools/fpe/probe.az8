@@ -1,0 +1,61 @@
+! Raw EPA probes. CPU templates: Z8000 manual section 6.8;
+! EPU operation fields: Zilog fpe.z8k.
+	.text
+	.globl _fpseed
+_fpseed:
+	ld r8,2(sp)
+	ld r0,0(r8)
+	ld r1,2(r8)
+	ld r2,4(r8)
+	ld r3,6(r8)
+	.word 0x8f08,0x8003
+	ret
+	.globl _fpget
+_fpget:
+	.word 0x8f00,0x8003
+	ld r8,2(sp)
+	ld 0(r8),r0
+	ld 2(r8),r1
+	ld 4(r8),r2
+	ld 6(r8),r3
+	ret
+	.globl _fpmem
+_fpmem:
+	ld r8,4(sp)
+	.word 0x0f84,0x8003
+	ld r8,2(sp)
+	.word 0x0f8c,0x8003
+	ret
+	.globl _fpbad
+_fpbad:
+	.word 0x8ff8,0x8003
+	ret
+	.globl _fpedge
+_fpedge:
+	ld r8,4(sp)
+	.word 0x0f84,0x8003
+	.word 0x4f0c,0x8003,0xfff8
+	.word 0x4f04,0x8003,0xfff8
+	ld r8,2(sp)
+	.word 0x0f8c,0x8003
+	ret
+	.globl _fpbadmem
+_fpbadmem:
+	ld r8,#0xfffe
+	.word 0x0f84,0x8003
+	ret
+	.globl _fptrapdiv
+_fptrapdiv:
+	! USER control: affine mode; division-by-zero trap enabled.
+	ld r0,#1
+	ld r1,#0x0800
+	.word 0x8f58,0xc001
+	ld r0,#0x3ff0
+	ld r1,#0
+	ld r2,#0
+	ld r3,#0
+	.word 0x8f08,0x8003
+	ld r0,#0
+	.word 0x8f28,0x8003
+	.word 0x8e04,0x62a0
+	ret

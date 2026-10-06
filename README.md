@@ -24,6 +24,13 @@ See [doc/PCC-Research.md](doc/PCC-Research.md) for the full compiler research an
 
 The kernel and user processes run in NONSEG mode (16-bit pointers). The Z8001 CPU automatically maps non-segmented 16-bit addresses using the current PC's segment, so C code compiled for Z8002 works correctly without modification. This avoids the complexity of 32-bit segmented pointers, where `sizeof(char *) = 4` but `sizeof(int) = 2` — a mismatch that would require extensive changes to V7 code that conflates ints and pointers.
 
+The emulated machine also supports separate instruction/data spaces: `ldz8 -i` produces 0411 executables with up to 64 KB of instruction addresses and 64 KB for data, BSS, heap, and stack. Pointers remain 16-bit. Existing 0407 combined-space programs continue to work. See [the kernel reference](doc/kernel-technical-reference.md#separate-instruction-and-data-spaces).
+
+Floating-point arithmetic uses the historical Zilog software EPU engine from
+CP/M-8000, in reserved segment 127. User programs execute EPA instructions
+through PCC-compatible wrappers; the engine is not linked into each program.
+See [software EPU service](doc/kernel-technical-reference.md#software-epu-service).
+
 Trap handlers must briefly enter SEG+SYS mode (forced by CPU hardware on trap entry) to access the segmented system stack pointer (RR14), then switch to NONSEG+SYS for C code execution.
 
 ### MMU: Segment Numbers as Map Set Selectors

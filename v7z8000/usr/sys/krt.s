@@ -34,6 +34,10 @@
 	.globl	_suword
 	.globl	_copyin
 	.globl	_copyout
+	.globl	_fuibyte
+	.globl	_suibyte
+	.globl	_copyiin
+	.globl	_copyiout
 	.globl	_spl0
 	.globl	_spl1
 	.globl	_spl4
@@ -48,7 +52,18 @@
 	jr	boot_entry		! 0x0202: boot entry
 	jr	nvi_dispatch		! 0x0204: NVI handler entry (clock)
 	jr	vi_dispatch		! 0x0206: VI handler entry (devices)
-	nop				! 0x0208: reserved
+	jr	epu_dispatch		! 0x0208: SEG call from EPU service
+
+! EPU service supplies a full saved frame in R9. Entered by SEG CALL.
+epu_dispatch:
+	ld	r0, #0x5800
+	ldctl	fcw, r0
+	push	@sp, r9
+	call	_fptrap
+	add	sp, #2
+	ld	r0, #0xC000
+	ldctl	fcw, r0
+	ret
 
 ! --- Syscall dispatch entry ---
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
@@ -397,6 +412,102 @@ _copyout:
 	pop	r13, @sp
 	ret
 
+! Instruction-space user memory helpers (iseg selected by sureg).
+_fuibyte:
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, _iseg		! user segment encoding
+	ld	r3, 4(r13)		! user offset
+	ldctl	r9, fcw			! preserve caller interrupt state
+	ld	r0, #0xC000
+	ldctl	fcw, r0			! SEG+SYS
+	! --- SEG mode: only IR/reg/imm instructions ---
+	ldb	rl0, @r2		! load byte from seg:off
+	ldctl	fcw, r9			! NONSEG+SYS
+	! --- back to NONSEG mode ---
+	and	r0, #0x00FF		! zero-extend
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+! --- int suibyte(addr, val) ---
+_suibyte:
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, _iseg
+	ld	r3, 4(r13)		! user offset
+	ld	r0, 6(r13)		! value in R0 (rl0 for byte)
+	ldctl	r9, fcw			! preserve caller interrupt state
+	ld	r1, #0xC000
+	ldctl	fcw, r1			! SEG+SYS
+	ldb	@r2, rl0		! store byte to seg:off
+	ldctl	fcw, r9			! NONSEG+SYS
+	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+! --- copyiin(from_user, to_kernel, count) ---
+_copyiin:
+	push	@sp, r13
+	ld	r13, sp
+	ld	r2, _iseg		! user segment encoding
+	ld	r3, 4(r13)		! from: user offset
+	ld	r8, 6(r13)		! to: kernel address (R8 caller-saved)
+	ld	r9, 8(r13)		! count (R9 caller-saved)
+	cp	r9, #0
+	jr eq,	.Lcidone_i
+.Lciloop_i:
+	ldctl	r1, fcw			! restore caller state after each byte
+	ld	r0, #0xC000
+	ldctl	fcw, r0			! SEG+SYS
+	ldb	rl0, @r2		! load byte from user space
+	ldctl	fcw, r1			! NONSEG+SYS
+	ldb	@r8, rl0		! store byte to kernel
+	inc	r3, #1			! advance user offset
+	inc	r8, #1			! advance kernel pointer
+	dec	r9, #1
+	jr ne,	.Lciloop_i
+.Lcidone_i:
+	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+! =============================================================================
+! copyiout(from_kernel, to_user, count)
+! =============================================================================
+_copyiout:
+	push	@sp, r13
+	ld	r13, sp
+	push	@sp, r4			! save R4 (callee-saved, used for FCW)
+	push	@sp, r5
+	ldctl	r4, fcw			! caller state, restored after each byte
+	ld	r5, #0xC000
+	ld	r2, 4(r13)		! from: kernel address
+	ld	r3, 6(r13)		! to: user offset
+	ld	r1, 8(r13)		! count (R1 caller-saved)
+	ld	r8, _iseg		! R8 = segment (R8 caller-saved, constant)
+	cp	r1, #0
+	jr eq,	.Lcodone_i
+.Lcoloop_i:
+	ldb	rl0, @r2		! load byte from kernel
+	inc	r2, #1			! advance kernel pointer
+	ld	r9, r3			! R9 = user offset copy
+	ldctl	fcw, r5			! SEG+SYS
+	ldb	@r8, rl0		! store byte to user space via @RR8
+	ldctl	fcw, r4			! NONSEG+SYS
+	inc	r3, #1			! advance user offset
+	dec	r1, #1
+	jr ne,	.Lcoloop_i
+.Lcodone_i:
+	ldk	r0, #0
+	pop	r5, @sp
+	pop	r4, @sp			! restore R4
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
 ! =============================================================================
 ! retu() -- Enter user mode.
 !
@@ -625,4 +736,37 @@ _test_div_hw:
 	ld	r1, #42
 	div	rr0, #10		! R1=quotient=4, R0=remainder=2
 	ld	r0, r1			! return quotient
+	ret
+
+! fprun(frame, workspace, user-D, user-I): call segment 127 offset 0x80.
+	.globl _fprun
+_fprun:
+	push @sp,r13
+	ld r13,sp
+	push @sp,r4
+	push @sp,r5
+	push @sp,r6
+	push @sp,r7
+	push @sp,r10
+	push @sp,r11
+	push @sp,r12
+	push @sp,r14
+	ld r9,4(r13)
+	ld r10,8(r13)
+	ld r11,10(r13)
+	ld r13,6(r13)
+	ld r0,#0xC000
+	ldctl fcw,r0
+	.word 0x5f00,0xff00,0x0080
+	ld r1,#0x5800
+	ldctl fcw,r1
+	pop r14,@sp
+	pop r12,@sp
+	pop r11,@sp
+	pop r10,@sp
+	pop r7,@sp
+	pop r6,@sp
+	pop r5,@sp
+	pop r4,@sp
+	pop r13,@sp
 	ret

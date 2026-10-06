@@ -31,3 +31,12 @@ tools/root-libc.img
 tools/preempttest
 tools/signaltest
 tools/root-preempt.img
+tools/ttytest
+tools/root-tty.img
+!tools/splitpad.az8
+tools/splittest
+tools/idnext
+tools/idnormal
+tools/libcid
+tools/signalid
+tools/root-split.img

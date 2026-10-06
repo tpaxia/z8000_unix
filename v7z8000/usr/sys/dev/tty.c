@@ -543,21 +543,23 @@ register struct tty *tp;
  */
 stty()
 {
-	u.u_arg[2] = TIOCSETP;
+	u.u_arg[2] = u.u_arg[1];
+	u.u_arg[1] = TIOCSETP;
 	ioctl();
 }
 
 gtty()
 {
-	u.u_arg[2] = TIOCGETP;
+	u.u_arg[2] = u.u_arg[1];
+	u.u_arg[1] = TIOCGETP;
 	ioctl();
 }
 
 /*
  * ioctl system call.
  * u_arg[0] = fd
- * u_arg[1] = data pointer
- * u_arg[2] = ioctl cmd (set by stty/gtty, or from user for ioctl)
+ * u_arg[1] = ioctl command
+ * u_arg[2] = data pointer
  */
 ioctl()
 {
@@ -570,7 +572,7 @@ ioctl()
 	if (fp == NULL)
 		return;
 	ip = fp->f_inode;
-	cmd = u.u_arg[2];
+	cmd = u.u_arg[1];
 
 	/* FIOCLEX/FIONCLEX work on any fd */
 	if (cmd == FIOCLEX) {
@@ -587,7 +589,7 @@ ioctl()
 		return;
 	}
 	dev = (dev_t)ip->i_un.i_rdev;
-	ttioccomm(cmd, cdevsw[major(dev)].d_ttys, u.u_arg[1], dev);
+	(*cdevsw[major(dev)].d_ioctl)(dev, cmd, u.u_arg[2], fp->f_flag);
 }
 
 /*

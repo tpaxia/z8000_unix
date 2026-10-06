@@ -28,6 +28,9 @@ def main():
         print(f"error: bad magic {oct(magic)}, expected 0407", file=sys.stderr)
         sys.exit(1)
 
+    if sys.argv[1].endswith('handler.bout') and 0x200 + tsize + dsize + bsize > 0xe000:
+        sys.exit('error: kernel overlaps MMU copy window at 0xe000')
+
     content = data[16:16 + tsize + dsize]
 
     with open(sys.argv[2], 'wb') as f:

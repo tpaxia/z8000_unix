@@ -40,11 +40,19 @@ source that genuinely holds a level until serviced.
 | `-n <ticks> -M <marker>` | measure exactly this many clock pulses after the marker (default `# `); keep running through idle HALTs |
 
 The kernel build wraps these as `cmake --build build --target test`,
-`--target test-libc`, `--target test-preempt`, and `--target test-signal`.
+`--target test-libc`, `--target test-preempt`, `--target test-signal`,
+`--target test-tty`, `--target test-split`, and `--target test-fpe`. The split-space target checks
+0411 loading, separate instruction/data mapping, fork/exec, and linker limits.
 The preemption target runs CPU-bound scheduling/default-signal checks and a
 console-wakeup check with delayed input. The signal target checks caught
 handlers and context restoration, waiting for its completion marker so idle
 HALTs during pending alarms do not terminate the test early.
+
+The driver also requires `fpe.bin`, built with the kernel and loaded into
+reserved segment 127. Its upper two pages alias the current kernel stack
+through UPAGE. The floating-point engine executes guest Z8000 instructions;
+there is no host floating-point shortcut. `test-fpe` covers the arithmetic
+runtime and process/signal isolation in combined and split I/D executables.
 
 The final report includes generated clock ticks, actual NVI dispatches,
 merged pulses (a pulse arriving while NVI is already pending), and the final

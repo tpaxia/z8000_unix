@@ -26,7 +26,7 @@ extern int hdopen(), hdclose(), hdstrategy();
 extern struct buf hdtab;
 
 /* Console driver */
-extern int consopen(), consclose(), consread(), conswrite();
+extern int consopen(), consclose(), consread(), conswrite(), consioctl();
 extern struct tty cons_tty[];
 
 /* Stubs */
@@ -39,9 +39,9 @@ struct bdevsw bdevsw[] = {
 };
 
 struct cdevsw cdevsw[] = {
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 0 = console */
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 1 = spare */
-	{ consopen, consclose, consread, conswrite, nodev, nulldev, &cons_tty[0] },  /* 2 = tty */
+	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 0 = console */
+	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 1 = spare */
+	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 2 = tty */
 	{ 0 }
 };
 

@@ -6,7 +6,7 @@
  * while the process is swapped.
  *
  * Z8000 adaptation: removed PDP-11 MMU fields (u_uisa, u_uisd),
- * FPU fields (u_fper, u_fpsaved, u_fps), and I/D separation (u_sep).
+ * FPU fields (u_fper, u_fpsaved, u_fps). u_sep selects split I/D.
  */
 
 #define	EXCLOSE	01
@@ -71,8 +71,10 @@ struct	user
 	char	u_comm[DIRSIZ];
 	time_t	u_start;
 	char	u_acflag;
-	short	u_fpflag;		/* unused now, will be later */
+	short	u_fpflag;		/* software EPU initialized */
 	short	u_cmask;		/* mask for file creation */
+	int	u_sep;			/* separate instruction/data maps */
+	char	u_fpe[208];		/* software EPU registers/control and scratch */
 	int	u_stack[1];
 					/* kernel stack per user
 					 * extends from u + USIZE*64

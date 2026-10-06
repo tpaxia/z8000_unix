@@ -1,0 +1,9 @@
+! Keep a callable function beyond 32KB, and total code+data beyond 64KB.
+	.text
+	.zerow	19000
+	.globl	_highcall
+_highcall:
+	ldr	r0,.Lanswer
+	ret
+.Lanswer:
+	.word	42

@@ -56,3 +56,7 @@ __exit:
 ! --- Startup owns environ; cerror owns errno in syscalls.az8 ---
 	.bss
 _environ: .zerow	1
+
+! Keep address zero reserved in separate data space.
+	.data
+	.word	0

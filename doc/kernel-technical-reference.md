@@ -116,8 +116,66 @@ R1 = return     — second result (u.u_r.r_val2), or errno on error
 | 0x0202 | `boot_entry` | boot code at 0x01F0 | `_main` |
 | 0x0204 | `nvi_dispatch` | `nvi_entry` | `_clock` |
 | 0x0206 | `vi_dispatch` | `vi_entry` | `_hdintr`, then `_consrint` |
+| 0x0208 | `epu_dispatch` | segment 127 EPU entry (SEG call) | `_fptrap` |
 
 All devices share VI vector 0, so `vi_dispatch` calls every device handler and each one checks whether it has work.
+
+## Software EPU Service
+
+PSA offset 0x08 enters segment 127 offset 0 in SEG+SYS mode. EPA remains
+disabled in user FCW, so extended instructions trap for software execution.
+The arithmetic/decoder is the preserved `fpe/fpe.z8k` from CP/M-8000;
+`tools/fpe/translate.py` translates assembler syntax and replaces only the
+CP/M entry adapter. The build uses GNU Z8000 binutils, without requiring a
+CP/M installation or prebuilt arithmetic objects. `fpe/unix.s` provides Unix
+entry/return and instruction/data memory access helpers.
+
+The machine loads `fpe.bin` at physical 0x7f0000. Segment 127 and its physical
+frames are reserved. UPAGE maps pages 30/31 of both segment 1 and segment 127
+to the current process's u-area/kernel stack. The same stack is therefore
+accessible from either nonsegmented PC segment. SEG transfers use the system
+stack in segment 1. Arithmetic runs with VI/NVI enabled; interrupt return from
+system mode does not schedule. Scheduling/signals occur at the ordinary
+`userret` boundary after the engine has completed an instruction.
+
+The EPU entry saves all 16 user registers plus the four-word hardware frame.
+The kernel adapter validates instruction formats and passes this frame and
+`u.u_fpe`, a 208-byte per-process workspace, to segment 127 offset 0x80.
+The original engine receives its state through R9 and workspace through R13.
+Instruction fetch uses the process's I backing segment; operand accesses use
+its D segment. User memory transfers cannot wrap across the 64 KB boundary.
+Invalid instructions signal SIGILL, invalid memory signals SIGSEGV, and enabled
+arithmetic exceptions signal SIGFPE. No arithmetic is performed by host code.
+
+Fork copies the workspace with the u-area. Exec clears it; first use selects
+affine infinity and round-to-nearest/even. Signal frames preserve the first
+96 bytes (eight 80-bit registers and control state). The updated libc
+trampoline restores them through syscall 52, then restores only unprivileged
+CPU flags and PC. This changes the signal-frame ABI: existing programs that
+use caught signals must be relinked with the updated libc. All repository
+test images and native compiler binaries are rebuilt with it.
+
+The exposed subset includes the arithmetic, comparisons and transfers needed
+by PCC, square root, absolute value/negation, and flags/user control transfers.
+The gate rejects reserved instructions and unsupported operations, including
+the upstream defective FINT, BCD and partial-remainder operations. The original
+engine's numerical verification and remaining IEEE differences are recorded
+in `fpe/VERIFICATION.md`: subnormal double rounding and exception-flag behavior
+are not claimed to be strictly IEEE compliant. PCC glue preserves the prior
+NaN conventions for addition/subtraction, multiplication/division, and format
+conversion, without implementing finite arithmetic itself.
+
+`tools/fpe/glue.c` and generated `epu.az8` replace the private C arithmetic
+engine in Unix `libv7.a`; PCC's existing `float.az8` calling convention remains.
+The standalone compiler CPU tests retain `PCC-z8000/z8000/lib/softfp.c`, because
+their machine has no Unix service. Kernel C now uses the existing `c2z8.py`
+compaction pass and shared csv/cret. `bout2bin.py` rejects a kernel whose
+text/data/BSS reaches the MMU copy window at 0xe000.
+
+Run `cmake --build build --target test-fpe` to test arithmetic vectors,
+integer/format conversions, I/D memory operands, fork inheritance, exec reset,
+concurrent arithmetic, signal preservation, and invalid-instruction/memory
+and arithmetic-exception delivery in both 0407 and 0411 programs.
 
 ## Interrupt Levels
 
@@ -202,7 +260,7 @@ main() (sys/main.c):
 
 ## Paged MMU
 
-The emulated MMU provides 128 segments x 32 pages x 2KB pages, identity-mapped on construction. Two I/O ports remap specific pages within segment 1:
+The emulated MMU provides 128 segments x 32 pages x 2KB pages, identity-mapped on construction. UPAGE and WPAGE remap page pairs within segment 1; IMAP selects a separate instruction bank for each logical segment:
 
 ### MMU Control Ports
 
@@ -210,11 +268,13 @@ The emulated MMU provides 128 segments x 32 pages x 2KB pages, identity-mapped o
 |------|-------|------|----------|
 | 0x00B0 | word | UPAGE | KDSA6 equivalent: sets seg1 pages 30-31 to frame pair (value, value+1) |
 | 0x00B4 | word | WPAGE | Copy window: sets seg1 pages 28-29 to frame pair (value, value+1) |
+| 0x00B8 | word | IMAP | High byte: logical segment; low byte: instruction backing segment (7 bits each) |
 
 ### Address Translation
 
 ```
 segment = (addr >> 16) & 0x7F
+if program_access: segment = instruction_bank[segment]
 page    = (addr & 0xFFFF) >> 11    // 5 bits → 32 pages
 pg_off  = addr & 0x7FF             // 11 bits → 2048 bytes per page
 frame   = pages[segment][page]
@@ -225,7 +285,41 @@ physical = (frame << 11) | pg_off
 
 The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
 
-Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(NPROC+1)*32`, which is 288 with `NPROC` = 8: everything below is reserved for the identity-mapped segments.
+Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(2*NPROC+1)*32`, which is 544 with `NPROC` = 8: everything below is reserved for the kernel, user data banks, and user instruction banks.
+
+### Separate Instruction and Data Spaces
+
+`ldz8 -i` emits V7 magic 0411: text starts at instruction address zero and
+initialized data starts at data address zero. Ordinary 0407 programs retain a
+combined layout. Both use 16-bit pointers and NONSEG execution. Each space has
+64 KB of addresses; the a.out header limits an individual section to 65,535
+bytes, and executable text must have even length. Data, BSS, heap, arguments,
+and stack share the data space. The exec loader reserves at least 256 bytes
+beyond the initial arguments for stack growth; this is not a guarantee that a
+program's eventual heap and stack will fit.
+
+For process slot `i`, the logical/data segment is `S=i+1`. A split process uses
+backing segment `S+NPROC` for instructions. `u.u_sep` records the layout;
+`sureg()` selects the instruction bank and sets `useg`/`iseg` for kernel copies.
+The emulator routes instruction fetches and PC-relative program accesses
+through this selection, while data and stack accesses retain their original
+mapping. The kernel stays combined. Fork copies both banks for a split process;
+exec can change between layouts. Text is neither shared nor write-protected.
+This mapping is implemented in the emulated machine; FPGA hardware still needs
+an equivalent instruction/data bus mapping.
+
+`copyiin`/`copyiout` and `fuibyte`/`suibyte` access instruction backing memory.
+The loader uses the instruction copy path for text and the data path for data
+and BSS. It checks header, entry point, file length, and layout before replacing
+the old image. PCC places dense switch tables in data space because generated
+indirect loads use the data bus. The linker also rejects overflowing layouts
+before truncating header fields or symbol values.
+
+`test-split` runs a program with more than 64 KB of total static storage,
+including a function and PC-relative constant above address 0x8000. It covers
+BSS, initialized data, switch tables, file I/O, signals, fork isolation, failed
+exec, and transitions between combined and split programs. It also runs the
+libc and signal suites as 0411 binaries and checks linker overflow rejection.
 
 ## RAM Disk DMA
 
@@ -323,3 +417,22 @@ in the active libraries.
 Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
 Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).
+
+## Terminal control
+
+The libc stubs pass `ioctl(fd, command, address)` in R1–R3. Kernel `ioctl`
+handles `FIOCLEX`/`FIONCLEX` for any valid descriptor, rejects ordinary files
+with `ENOTTY` for device commands, and calls the character driver's `d_ioctl`.
+The two-argument `stty` and `gtty` calls translate to `TIOCSETP` and `TIOCGETP`.
+
+The console's `consioctl` delegates to `ttioccomm`: settings (`GETP`, `SETP`,
+`SETN`), special characters (`GETC`, `SETC`), flush, and tty state flags.
+`SETP` drains output and flushes input; `SETN` changes settings without that
+flush. Raw output sends all eight bits, including values otherwise used as
+output-delay markers. Baud values are stored but do not configure hardware on
+the host console. Alternate disciplines and modem commands return `ENOTTY`.
+The existing exclusive-open and hangup state flags do not implement physical
+modem behavior or enforce exclusive console opens.
+
+Run `test-tty` for settings and interactive mode regressions; see Step 21 in
+[implementation-steps.md](implementation-steps.md).

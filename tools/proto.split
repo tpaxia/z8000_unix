@@ -1,0 +1,21 @@
+boot
+1600 96
+d--755 0 0
+bin d--755 0 0
+ sh ---755 0 0 sh
+ splittest ---755 0 0 splittest
+ idnext ---755 0 0 idnext
+ idnormal ---755 0 0 idnormal
+ libctest ---755 0 0 libcid
+ signaltest ---755 0 0 signalid
+ $
+dev d--755 0 0
+ console c--644 0 0 0 0
+ tty c--644 0 0 2 0
+ $
+etc d--755 0 0
+ init ---755 0 0 init
+ $
+tmp d--777 0 0
+ $
+$

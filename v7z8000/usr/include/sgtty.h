@@ -96,6 +96,7 @@ struct tchars {
 #define	TIOCNXCL	(('t'<<8)|14)
 #define	TIOHMODE	(('t'<<8)|15)
 #define	TIOCTSTP	(('t'<<8)|16)
+#define	TIOCFLUSH	(('t'<<8)|16)
 #define	TIOCSETC	(('t'<<8)|17)
 #define	TIOCGETC	(('t'<<8)|18)
 #define	DIOCLSTN	(('d'<<8)|1)

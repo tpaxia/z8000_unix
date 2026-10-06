@@ -31,6 +31,7 @@
 #define NINDIR  (BSIZE / 4)     /* daddr_t = 4 bytes (long) */
 #define LADDR   10
 #define MAXFN   500
+#define MAXFILEBLKS (LADDR + NINDIR + NINDIR * NINDIR)
 
 /* inode number to disk block */
 #define itod(x) ((uint32_t)(((unsigned)(x) + 15) >> 3))
@@ -224,7 +225,7 @@ static int fsi;
 static int fso;
 static char *charp;
 static char buf[BSIZE];
-static char string[50];
+static char string[4096];
 static char *proto;
 static int f_n = MAXFN;
 static int f_m = 3;
@@ -398,6 +399,10 @@ loop:
 	}
 	i = 0;
 	do {
+		if (i >= (int)sizeof(string) - 1) {
+			fprintf(stderr, "prototype token too long\n");
+			exit(1);
+		}
 		string[i++] = c;
 		c = getch();
 	} while (c != ' ' && c != '\t' && c != '\n' && c != '\0' && c != EOF);
@@ -468,6 +473,10 @@ static void newblk(int *adbc, char *db, int *aibc, uint32_t *ib)
 	int i;
 	uint32_t bno;
 
+	if (*aibc >= MAXFILEBLKS) {
+		fprintf(stderr, "file exceeds double-indirect capacity\n");
+		exit(1);
+	}
 	bno = alloc_blk();
 	wtfs(bno, db);
 	for (i = 0; i < BSIZE; i++)
@@ -475,11 +484,6 @@ static void newblk(int *adbc, char *db, int *aibc, uint32_t *ib)
 	*adbc = 0;
 	ib[*aibc] = bno;
 	(*aibc)++;
-	if (*aibc >= NINDIR) {
-		printf("indirect block full\n");
-		error = 1;
-		*aibc = 0;
-	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -517,17 +521,29 @@ static void iput(struct inode *ip, int *aibc, uint32_t *ib)
 	case IFREG:
 		for (i = 0; i < *aibc && i < LADDR; i++)
 			ip->i_addr[i] = ib[i];
-		if (*aibc >= LADDR) {
+		if (*aibc > LADDR) {
+			char block[BSIZE];
+			int j;
+			memset(block, 0, sizeof(block));
+			for (j = 0; j < NINDIR && LADDR+j < *aibc; j++)
+				put32((uint8_t *)block+j*4, ib[LADDR+j]);
 			ip->i_addr[LADDR] = alloc_blk();
-			/* pack remaining addresses into indirect block */
-			{
-				char ibblk[BSIZE];
-				int j;
-				memset(ibblk, 0, BSIZE);
-				for (j = 0; j < NINDIR - LADDR && (j + LADDR) < *aibc; j++)
-					put32((uint8_t *)ibblk + j * 4, ib[j + LADDR]);
-				wtfs(ip->i_addr[LADDR], ibblk);
+			wtfs(ip->i_addr[LADDR], block);
+		}
+		if (*aibc > LADDR + NINDIR) {
+			char outer[BSIZE], inner[BSIZE];
+			int j, k, offset = LADDR + NINDIR;
+			memset(outer, 0, sizeof(outer));
+			for (j = 0; offset < *aibc; j++) {
+				uint32_t block = alloc_blk();
+				memset(inner, 0, sizeof(inner));
+				for (k = 0; k < NINDIR && offset < *aibc; k++, offset++)
+					put32((uint8_t *)inner+k*4, ib[offset]);
+				wtfs(block, inner);
+				put32((uint8_t *)outer+j*4, block);
 			}
+			ip->i_addr[LADDR+1] = alloc_blk();
+			wtfs(ip->i_addr[LADDR+1], outer);
 		}
 		/* fall through */
 	case IFBLK:
@@ -548,7 +564,7 @@ static void iput(struct inode *ip, int *aibc, uint32_t *ib)
 static void bflist(void)
 {
 	struct inode in;
-	uint32_t ib[NINDIR];
+	uint32_t ib[MAXFILEBLKS];
 	int ibc;
 	char flg[MAXFN];
 	int adr[MAXFN];
@@ -571,7 +587,7 @@ static void bflist(void)
 	in.i_number = ino;
 	in.i_mode = IFREG;
 
-	for (i = 0; i < NINDIR; i++)
+	for (i = 0; i < MAXFILEBLKS; i++)
 		ib[i] = 0;
 	ibc = 0;
 	bfree(0);
@@ -596,7 +612,7 @@ static void cfile(struct inode *par)
 	struct inode in;
 	int dbc, ibc;
 	char db[BSIZE];
-	uint32_t ib[NINDIR];
+	uint32_t ib[MAXFILEBLKS];
 	int i, f, c;
 
 	/* get mode, uid and gid */
@@ -620,7 +636,7 @@ static void cfile(struct inode *par)
 	ino++;
 	in.i_number = ino;
 	memset(db, 0, BSIZE);
-	for (i = 0; i < NINDIR; i++)
+	for (i = 0; i < MAXFILEBLKS; i++)
 		ib[i] = 0;
 	in.i_nlink = 1;
 	in.i_size = 0;

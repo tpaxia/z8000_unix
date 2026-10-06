@@ -497,6 +497,312 @@ before sending exit, allowing idle time while the alarm is pending.
 See [kernel-technical-reference.md](kernel-technical-reference.md#caught-signals)
 for the ABI and remaining limits.
 
+## Step 21: Terminal parameter control
+
+The existing terminal-control code now follows `ioctl(fd, command, address)`.
+`stty` and `gtty` remap their two arguments into that convention, and `ioctl`
+dispatches through the character driver's `d_ioctl` entry. Previously it read
+the command and address in the opposite order and bypassed the driver.
+The console now provides `consioctl`, using the common V7 tty handler.
+Raw console output preserves high-bit bytes instead of treating them as delay
+markers. The public `sgtty.h` now exposes `TIOCFLUSH` as defined by the kernel.
+
+`cmake --build v7z8000/usr/sys/build --target test-tty` runs four emulator
+sessions, delivering input after the program has installed its settings. It
+checks `gtty`/`stty`/`ioctl` settings round trips and restoration, special
+characters, descriptor errors, close-on-exec flag commands, flushing an empty
+queue, echo on/off, cooked erase/kill editing, raw and cbreak reads without a
+newline, and preservation of raw output bytes 0x80 and 0xff.
+
+This validates the host emulator console. Baud settings are stored metadata;
+the driver does not program physical serial hardware. Alternate line disciplines
+and modem-control commands remain unsupported (`ENOTTY`). This step adds no
+`stty` command-line utility.
+
+## Native PCC bootstrap audit
+
+Run `python3 tools/native-audit.py` after building the kernel and its boot disk
+(`cmake --build v7z8000/usr/sys/build --target kernel disk_image`). The audit
+cross-compiles the native tools against V7 headers and `libv7.a`, generates
+cpp's expression parser with the repository's V7 yacc, and saves objects,
+per-stage diagnostics, a JSON report, and an emulator smoke-test log under
+`tests/build/native-audit/`. It does not alter toolchain or Unix sources to
+make failed files compile. A completed audit is not a successful bootstrap;
+individual build failures remain in `report.json`.
+
+Initial results with PCC `ffdbb7d`:
+
+| Tool | Result | Measured size in bytes |
+|---|---|---|
+| `cpp` | Links and runs under Unix | Text 34,656; data 2,820; BSS 17,406; total 54,882 |
+| `cz8` | 13 of 15 files assemble | Partial text 71,824; data 20,140; common 23,572; total 115,536, excluding two failed files and libc |
+| `az8` | 8 of 9 files assemble | Partial text 32,424; data 7,096; common 1,466; total 40,986, excluding the scanner and libc |
+| `ldz8` | Compilation fails against V7 archive headers | Target layout probe: symbol table 56,042; hash table 8,010; local-symbol pointers 8,000; these three tables alone total 72,052 |
+| `ccz8` | Compiles and assembles; link fails | Undefined `_execv` in the current library |
+
+The native cpp smoke test uses `cpp -P /tmp/probe.c /tmp/probe.i` and reads the
+result with `cat`. It verifies an included header, object-like and function-like
+macros, a `#if` expression, suppression of the unselected branch, and file output.
+It is a small functional check, not yet preprocessing the compiler's own sources.
+Only 10,654 bytes remain above cpp's static image for heap and stack.
+
+Concrete blockers:
+
+- `cz8/pftn.c:1085` and `az8/scan.c:417` fail with PCC's “expression causes
+  compiler loop” diagnostic. Fix code generation; do not simplify the source
+  expressions as a workaround.
+- `cz8/local.c` uses `stdint.h`, `string.h`, `uint64_t`, and `memcpy` for
+  floating-point constant output. V7 lacks those headers and this compiler has
+  no native 64-bit integer type. Its constant emitter needs a native-capable
+  representation while retaining correct host builds.
+- `ldz8` expects text-header archives (`SARMAG`, `ARFMAG`, `ar_fmag`), whereas
+  the installed V7 header describes binary archives. Settle the format shared
+  by the linker, native archiver, and installed libraries.
+- The monolithic compiler cannot fit even in a separate 64 KB instruction
+  space: its incomplete code alone exceeds that limit. Investigate separate
+  compiler passes or overlays as well as reducing data. The linker needs
+  smaller or redesigned symbol storage. Swapping does not enlarge either
+  virtual address space.
+- The driver needs the missing `execv` library entry before it can link.
+
+A longer console transcript (cpp without `-P`, followed by `cat`) stalled
+mid-output until further console input arrived. This is consistent with
+`ttwrite` draining through synchronous `consstart` before setting `ASLEEP` and
+sleeping: the wakeup happens too early. The audit does not fix this kernel
+issue. The short `-P` smoke test avoids that queue-length boundary; sustained
+compiler diagnostics will need the console drain/wakeup path fixed.
+
+### Two-pass feasibility experiment
+
+An isolated copy under `tests/build/twopass/` was built with `ONEPASS` removed.
+Both halves compiled with the host C compiler, but initially failed to link:
+the front end still called the in-process pass-2 interface, and the back end
+still depended on front-end helpers and shared state.
+
+A small experimental adapter connects the existing `prtree` writer to
+`mainp2`/`eread`, transfers register-use and return-label state, gives each pass
+its own common routines, and supplies the small helpers needed on each side.
+The prototype uses `@` for expression records and passes assembly lines through
+the reader, avoiding conflicts with assembly labels beginning with `.`. It also
+restores a missing newline when serializing a local label. The production
+compiler and build files were not changed.
+
+Results: all 15 core compiler tests plus 8 selected floating-point, register,
+and long-operation probes generated byte-for-byte identical assembly to the
+one-pass compiler. All 23 generated programs passed in the Z8000 emulator.
+This checks the split compiler running on the host, not native compiler
+execution. The experimental patch, build helpers, intermediate files, and
+results are retained in that ignored build directory (`prototype.patch`,
+`connect.py`, `cases.json`, `extra-cases.json`, and `sizes.json`).
+
+Cross-compiling the separated back end succeeded, including linking libc:
+58,456 bytes text + 10,996 data + 9,630 BSS = **79,082 bytes**. At the time of this experiment, the loader only supported combined space;
+this image could not run in that 64 KB address space. A successful linker
+exit did not establish that the image fit. The front end still encounters
+the `pftn.c` compiler error and `local.c` header/type dependency. Its successful
+objects already total 69,980 bytes before those files and libc.
+
+Conclusion: reconnecting two passes is a bounded integration task, supported
+by a working prototype, rather than a compiler rewrite. Production work still
+needs build/driver integration, a reviewed intermediate format and helper
+implementations, broader regression coverage, and the native-build fixes above.
+Splitting alone did not meet the then-current 64 KB combined-space limit. Separate
+instruction/data maps would accommodate the measured back end's static sizes,
+but the full front-end size and stack/heap requirements remain unmeasured.
+
+## Step 22: Separate Instruction/Data Executables
+
+Implemented 0411 executables (`ldz8 -i`) alongside existing 0407 programs.
+The emulated MMU now selects a distinct instruction bank through port 0x00B8;
+C pointers remain 16-bit. Exec loads text and data into their respective spaces,
+fork copies both, and context switches restore the mapping. Kernel user-copy
+helpers distinguish instruction and data accesses. Loader and linker checks
+reject invalid or overflowing layouts before size fields wrap.
+
+PCC's dense switch tables now reside in data space. Linker header and symbol
+reads preserve unsigned 16-bit values, including code addresses above 0x8000.
+The production compiler remains one-pass; this change provides memory support
+for a future native two-pass compiler, not completed self-hosting.
+
+`test-split` exercises over 91 KB of static program storage, including code
+above 32 KB and a PC-relative instruction-space constant, initialized data,
+BSS, switch tables, file I/O, signals, fork isolation, malformed exec, and
+exec transitions between layouts. It also runs the libc and signal suites as
+split binaries and rejects instruction, data, and combined-space overflow.
+Existing boot, libc, preemption, signal, and terminal tests pass. The PCC gate
+passes; reviewed assembly-baseline changes move switch tables between sections.
+
+This implements the mapping in the emulator, with fixed backing banks and no
+text sharing or write protection. FPGA implementation is separate work. The
+native compiler front-end errors, assembler error, linker archive support, and
+compiler-driver integration recorded above still need resolution.
+
+### Native two-pass back-end execution
+
+Cross-built the experimental back end as a 0411 executable and ran it under
+Unix. The rebuilt image has 58,348 bytes of text, 11,100 bytes of initialized
+data, and 9,630 bytes of BSS (79,078 bytes total static storage). The executable
+file is 73,136 bytes including its retained global symbols.
+
+All 15 core cases and eight additional floating-point/register cases passed.
+For each case, the host front end produced intermediate input, the back end
+ran as a Unix process with file input/output, and a guest helper exported its
+output. The resulting assembly was byte-identical to the host back end's
+output. Host assembly/linking and execution of all 23 generated programs also
+passed. This verifies native back-end execution, not a fully native toolchain:
+the front end, assembler, and linker in this experiment still ran on the host.
+
+The experiment and logs are retained in the ignored directory
+`tests/build/twopass/native-run/`: `back`, `runner.c`, `run.py`, per-case assembly
+and logs, `results.json`, and `extra-results.json`. After building the prototype
+and native back end, `python3 tests/build/twopass/native-run/run.py` repeats the
+core cases; adding `extra` runs the eight additional cases. These remain
+experimental build artifacts, not production two-pass integration.
+
+The larger executable exposed a host image-builder limit: `v7mkfs` previously
+held only 128 file block addresses and could not include this file. It now
+supports the full single-indirect block plus double-indirect blocks, and checks
+prototype-token lengths while accepting long host paths. The independent
+`python3 tools/test-v7mkfs.py` check reconstructs six files across direct,
+single-indirect, and double-indirect boundaries, including a second indirect
+leaf and partial final block. Boot and split-space regression tests pass with
+the updated builder. No kernel changes were needed for this experiment.
+
+### Native front-end compilation fixes
+
+Fixed the two front-end source failures in PCC itself. Integer-to-long
+conversion templates incorrectly requested sharing with the right operand of
+a unary conversion. Under register pressure, that prevented reusing the input
+register and sent code generation into a loop. They now share the left operand;
+unsigned conversion copies the low word before clearing the high word, so
+sharing cannot destroy the source. `widen_pressure.c` reproduces the old failure
+and checks both signed and unsigned results. This also resolves the previously
+recorded `az8/scan.c` compilation failure.
+
+`local.c` now emits IEEE floating-point constants through unsigned-byte views
+of float/double values, with host byte-order detection. It needs neither modern
+`stdint.h`/`string.h` nor a 64-bit integer type. The same routine was compiled
+for Unix and emitted 16 exact float/double initializers, checked against
+independent IEEE encodings (including signed zero). Probe sources and logs are
+in `tests/build/frontend-fixes/`.
+
+All ten experimental front-end sources now compile and assemble. The fresh
+split-space link is still rejected: **78,668 bytes of text**, **14,988 bytes of
+data**, and **22,298 bytes of BSS**, including rebuilt libc. Data/BSS fit;
+text exceeds the 64 KB instruction address space by about 13 KB. No native
+front-end execution is claimed. Code-size reduction or an overlay design is
+needed before this pass can run; stripping symbols cannot reduce mapped text.
+
+The compiler execution suites, Unix boot/libc/preemption/signal/terminal/split
+checks, and rebuilt native back-end cases pass. Assembly-baseline changes were
+reviewed for the conversion sequences and resulting register allocation; the
+ratchet also records the newly compilable sources. Production PCC remains
+one-pass, and the two-pass build remains an experiment.
+
+## Step 23: Native Front End Fits and Runs
+
+The original V7 distribution provides the relevant comparison. Its ordinary
+PDP-11 compiler builds separate `c0`/`c1` programs (`v7unix/usr/src/cmd/c/makefile`).
+Its PCC builds with `-i`, and uses shared `csv`/`cret` entry/return routines
+(`v7unix/usr/src/cmd/pcc/code.c`). The shipped `v7unix/usr/lib/ccom` a.out header
+records 59,264 bytes of text, 22,308 data, and 24,384 BSS: the whole PDP-11 PCC
+fits separate spaces. Our larger generated code was a toolchain problem to
+address, not proof that a native front end was impossible.
+
+Added optional `PCC-z8000/z8000/c2z8.py` size optimization for generated C
+assembly, plus `lib/csv.az8`. It shares function entry/return code without
+changing stack layouts, removes redundant jumps/dead instructions, uses short
+stack adjustments and zero loads, and combines suitable word transfers into
+long transfers. Ordinary compilation remains unchanged. Compact output must
+link the shared helper. The pass is for PCC-generated C assembly, not arbitrary
+hand assembly. Its regression mode is:
+
+```
+python3 PCC-z8000/z8000/test/regress/run.py --compact --strict --build-dir tests/build/compact-regress
+```
+
+Native execution exposed overlapping allocation of an integer register and a
+following `register long`; fixed pair placement and availability checks in
+PCC, with `register_pair_overlap.c` covering the failure. Also guarded a debug
+call omitted by release builds and reserved the first data word in user crt0:
+otherwise a global at split data address zero could be mistaken for a null
+pointer by libc.
+
+The reproducible experimental two-pass build is now retained in
+`tools/pcc-native/`, rather than depending on previous ignored build artifacts:
+
+```
+python3 tools/pcc-native/build.py
+python3 tools/pcc-native/test.py
+python3 tools/pcc-native/test.py extra
+```
+
+It constructs separate passes in `tests/build/native-pcc`, disables compiler
+debug tracing, cross-compiles them, and compacts both passes and their private
+libc archive. Sizes before the separate EPU service (Step 24) were:
+
+| Pass | Text | Data | BSS |
+|------|-----:|-----:|----:|
+| Front | 65,380 | 13,920 | 22,338 |
+| Back | 48,420 | 10,624 | 9,630 |
+
+Both fit 0411 spaces. That front end had only 154 bytes below the largest even
+text size, so future changes must keep the link-time size check. The native
+test runs both passes under Unix, exports the generated assembly, then uses
+the host assembler/linker and emulator to validate the resulting programs.
+Floating-point output can differ in the last bit because V7 `atof` and the
+host decimal parser round differently; output comparisons and execution
+results are recorded separately. All 25 native two-pass cases execute correctly;
+24 produce byte-identical assembly, while `float_general` differs by one low
+bit in one double constant. All 80 compact-code regression cases, the full PCC
+gate, and Unix regression targets pass. This is native compiler-pass execution,
+not completed self-hosting: native preprocessing/assembly/linking and compiler
+driver integration still need to be assembled into the full workflow.
+
+## Step 24: Separate Zilog Software EPU Service
+
+Imported the preserved Zilog arithmetic/decoder from CP/M-8000 into
+`v7z8000/usr/sys/fpe/fpe.z8k` (SHA-256
+`d4173895dc6e4bacbbdd4966faac0fd1883dcb7a13e9c7c6f0ba63d3eb541ae8`).
+The accompanying `VERIFICATION.md` is the upstream report, not a claim that
+its entire TestFloat suite was rerun here. Source syntax is translated for
+GNU as; the engine itself is unchanged. Unix supplies trap entry, per-process
+state and split I/D memory helpers. Segment 127 is reserved for its code/data,
+with current u-area/stack pages aliased through UPAGE.
+
+PCC-compatible wrappers execute EPA instructions. The CPU traps into the
+service, which runs guest integer assembly with interrupts enabled. Fork,
+exec and caught signals preserve/reset state appropriately. The signal frame
+now includes 96 EPU bytes and libc restores them using syscall 52, requiring
+relinking programs that use caught signals. Unsupported opcodes, including
+upstream's broken FINT, are rejected instead of silently miscomputing or hanging.
+
+The new kernel code initially crossed the 0xe000 MMU copy window. Applying the
+existing, tested C compaction pass to kernel C provides space; an explicit
+build check now prevents another overlap. Hand assembly is not compacted.
+
+Native compiler sizes with the service runtime:
+
+| Pass | Text | Data | BSS |
+|------|-----:|-----:|----:|
+| Front | 60,728 | 13,920 | 22,338 |
+| Back | 43,768 | 10,624 | 9,630 |
+
+Each pass saves 4,652 bytes of text; the front now has 4,806 bytes below the
+largest even text size. Its data/stack space is unchanged. The compact user
+FP components total 4,412 bytes (ABI wrappers 1,848, glue 2,084, EPA primitives
+480), replacing 9,080 bytes of arithmetic/wrappers; the signal trampoline
+accounts for the 16-byte difference in executable savings.
+
+Validation: six arithmetic/vector programs plus the process/signal EPU test
+run in both combined and split I/D layouts. Tests include signed/unsigned
+conversion, memory transfers, fork/exec, asynchronous signal preservation,
+concurrent arithmetic, and fault delivery. All 25 native two-pass compiler
+cases compile and execute successfully, with the existing one-low-bit
+`float_general` decimal-parser difference. Kernel boot, libc (37 checks),
+preemption, signal, split I/D and terminal targets pass. Numerical caveats
+from the original FPE remain documented in the kernel reference.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
@@ -513,7 +819,7 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 - Buffer cache (bio.c) with 8 buffers
 - Interrupt-driven IDE hard drive with VI
 - Root filesystem mounted from HD image via ATA PIO
-- exec() syscall loading binaries from filesystem
+- exec() loads combined 0407 and separate instruction/data 0411 binaries from the filesystem
 - Directory traversal (namei) and inode management (iget/iput)
 - File descriptor table (falloc) and device open (openi → cdevsw)
 - V7 TTY subsystem: line discipline (echo, erase, kill), clist buffering, canon
@@ -534,7 +840,7 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 The divergence falls into three kinds, only two of which should shrink:
 
 1. **Machine dependent** — `machdep.c`, `trap.c` and `slp.c` are rewrites because V7's are PDP-11; `iget.c` carries big-endian 3-byte inode addresses; `param.h`, `seg.h`, `reg.h`, `user.h` and `proc.h` carry the `label_t` layout and MMU model; much of `sys1.c` is `exec()`. This is the port. It stays.
-2. **Amputated features** — these files are short because functionality is missing, not rewritten: `sig.c` lacks `psignal`, `core`, `fsig`, `grow`, `ptrace`, `procxmt`, `stop`; `tty.c` lacks `ioctl`, `stty`, `gtty`, `ttioccomm`; `bio.c` lacks `physio` and `swap`; `sysent.c` is mostly `nosys`; `main.c` is a cut-down startup. Restoring these moves the files back toward pristine.
+2. **Amputated features** — these files are short because functionality is missing, not rewritten: `sig.c` lacks `psignal`, `core`, `fsig`, `grow`, `ptrace`, `procxmt`, `stop`; `tty.c` lacks alternate line disciplines and multiplexor support; `bio.c` lacks `physio` and `swap`; `sysent.c` is mostly `nosys`; `main.c` is a cut-down startup. Restoring these moves the files back toward pristine.
 3. **Toolchain workarounds** — introduced for ACK, which is gone. The two header workarounds have been removed, see below.
 
 ### The ACK-era header workarounds are gone
@@ -559,7 +865,6 @@ They are left on. "illegal member use" is exactly what flagged the header and so
 
 ## Planned Steps
 
-- **stty/ioctl**: terminal parameter control
 - **More commands**: ls, cp, wc, etc., linked against `libv7.a`
 - **Multi-stage pipelines**: `ls | grep foo | wc`
 - **Amputated kernel features**: signals, `physio`/swap, the rest of `sysent` (see Divergence from Pristine V7)
