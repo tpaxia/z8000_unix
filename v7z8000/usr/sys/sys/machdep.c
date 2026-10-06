@@ -153,23 +153,24 @@ copyseg(from_seg, to_seg)
 {
 	register int i;
 	int s, j;
-	char buf[256];	/* stack buffer — safe during window remap */
+	char buf[16];	/* stack buffer — safe during window remap */
 
 	/*
-	 * Disable interrupts: while the copy window is remapped,
-	 * any BSS in the 0xE000 region would read as garbage.
+	 * Keep each remap short enough for clock ticks to be serviced between
+	 * chunks. While the window is remapped, BSS in the 0xE000 region is
+	 * inaccessible, so restore its identity mapping before splx().
 	 */
-	s = spl7();
 	for (i = 0; i < 32; i += 2) {
-		for (j = 0; j < 4096; j += 256) {
+		for (j = 0; j < 4096; j += sizeof(buf)) {
+			s = spl7();
 			outw(0x00B4, from_seg * 32 + i);
-			bcopy(0xE000 + j, buf, 256);
+			bcopy(0xE000 + j, buf, sizeof(buf));
 			outw(0x00B4, to_seg * 32 + i);
-			bcopy(buf, 0xE000 + j, 256);
+			bcopy(buf, 0xE000 + j, sizeof(buf));
+			outw(0x00B4, WPAGE_IDENTITY);
+			splx(s);
 		}
 	}
-	outw(0x00B4, WPAGE_IDENTITY);
-	splx(s);
 }
 
 /*

@@ -131,6 +131,20 @@ libctest: $(LIBC_DIR)/crt0.b libctest.b libv7.a
 root-libc.img: v7mkfs proto.libc init sh libctest
 	./v7mkfs root-libc.img proto.libc
 
+# CPU-bound scheduling and signal regression (no child syscalls in its loop).
+preempttest.az8: preempttest.c
+	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > preempttest.i
+	$(CZ8) < preempttest.i > $@
+
+preempttest.b: preempttest.az8
+	$(AZ8) -o $@ $<
+
+preempttest: $(LIBC_DIR)/crt0.b preempttest.b libv7.a
+	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b preempttest.b libv7.a -o $@
+
+root-preempt.img: v7mkfs proto.preempt init sh echo cat preempttest
+	./v7mkfs root-preempt.img proto.preempt
+
 # =============================================================================
 # arith - 32-bit arithmetic library (ldiv, lrem, aldiv)
 # =============================================================================
@@ -206,4 +220,5 @@ clean:
 	rm -f arith.b arith.az8
 	rm -f libc.a $(LIBC_DIR)/*.b
 	rm -rf $(LIBV7_DIR) libv7.a libctest libctest.b libctest.az8 root-libc.img
+	rm -f preempttest preempttest.b preempttest.az8 preempttest.i root-preempt.img
 	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/fakcu.az8

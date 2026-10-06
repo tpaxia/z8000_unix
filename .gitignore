@@ -27,3 +27,5 @@ tools/libv7/
 tools/libv7.a
 tools/libctest
 tools/root-libc.img
+tools/preempttest
+tools/root-preempt.img

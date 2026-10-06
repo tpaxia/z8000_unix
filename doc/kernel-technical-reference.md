@@ -53,16 +53,16 @@ When F_SEG changes within system mode, the CPU swaps R14 with the saved system s
 2. CPU sets `CHANGE_FCW(old | F_S_N | F_SEG)` -> SEG+SYS mode
 3. CPU pushes PC(4) + FCW(2) + tag(2) = 8 bytes onto system stack via *RR14
 4. CPU loads new FCW and PC from PSA[SYSCALL] -> jumps to trap stub
-5. Trap stub: saves R0-R12, switches to NONSEG+SYS
+5. Trap stub: saves R0-R12, switches to NONSEG+SYS with VIE and NVIE enabled
 6. Trap stub: extracts syscall number from tag word, calls C handler
-7. Trap stub: writes C handler return value into saved-R0 slot on stack
+7. C handler writes results into saved R0/R1 and handles signals/rescheduling
 8. Trap stub: switches back to SEG+SYS, restores registers (R0 gets return value), IRET
 9. IRET pops tag(2) + FCW(2) + PC(4), CHANGE_FCW restores original mode
 
 ### Stack Layout After Register Save
 
 ```
-SP+0:  saved R0    <- regs[0] (return value written here by trap stub)
+SP+0:  saved R0    <- regs[0] (return value written here by C handler)
 SP+2:  saved R1    <- regs[1] (arg1)
 SP+4:  saved R2    <- regs[2] (arg2)
 SP+6:  saved R3    <- regs[3] (arg3)
@@ -70,8 +70,8 @@ SP+6:  saved R3    <- regs[3] (arg3)
 SP+24: saved R12   <- regs[12]
 SP+26: tag word    <- 0x7F00 | syscall_number
 SP+28: saved FCW
-SP+30: saved PC low
-SP+32: saved PC high
+SP+30: saved PC high
+SP+32: saved PC low
 ```
 
 ## Mixed-Mode Assembly in trap.s
@@ -126,13 +126,42 @@ The Z8000 has two interrupt enables in the FCW where the PDP-11 has priority lev
 | Routine | PDP-11 meaning | Here |
 |---------|----------------|------|
 | `spl0`, `spl1` | everything allowed | set VIE and NVIE |
-| `spl4`, `spl5` | devices blocked, clock allowed | clear VIE, leave NVIE as it is |
+| `spl4`, `spl5` | devices blocked, clock allowed | clear VIE, set NVIE |
 | `spl6`, `spl7` | everything blocked | clear VIE and NVIE |
 | `splx(s)` | restore | copy VIE and NVIE from `s` |
 
-All return the previous FCW for `splx`. `spl5` never turns anything on, because `ttstart()` calls it from inside the console interrupt handler. The interrupt stubs run with both enables clear.
+All return the previous FCW for `splx`. `spl5` allows clock interrupts even
+inside device handlers, but keeps VIE clear to prevent device reentry.
+NVI enters C with both enables clear; VI enters C with NVIE set. Clock
+callouts use `spl5()` to permit nested ticks. `BASEPRI()` tests the saved
+FCW and defers nested callouts whenever either enable was clear.
+
+Syscalls enter C with both enables set. User-memory helpers preserve the
+caller's enables, and fork restores the MMU copy window between short,
+masked chunks. User mode starts with both enables set.
+
+`userret()` handles signals and scheduling for syscall exits and interrupts
+returning to user mode. It preserves NSPOFF on the process's kernel stack
+across a switch, rechecks pending work, and masks the final return through
+IRET. Interrupts of kernel code never schedule directly. `trap()` saves
+`u_qsav` so signals can unwind interruptible sleeps. See
+[interrupt-masking.md](interrupt-masking.md) for tests and measurements.
 
 `resume()` also masks both from the moment it remaps the u-area until it has restored SP: in between, the stack pages already belong to the new process while SP is still the old one.
+
+Each process has a normal/user stack and a system/kernel stack. The latter
+preserves suspended kernel calls when the process sleeps. An interrupt from
+kernel mode uses that current system stack; there is no independent timer
+stack selected automatically. Even a counter-only handler therefore needs
+the stack-switch interval masked, because CPU entry saves its frame before
+executing the handler.
+
+Masking delays a pending timer request; it does not itself lose a tick.
+Loss occurs when another pulse arrives while the request latch is already
+set. Keeping fully masked regions brief prevents accumulation in the tested
+workloads. Ten nominal timer hours each of idle and two busy workloads showed
+zero post-boot merges; see the measurement method and limits in
+[interrupt-masking.md](interrupt-masking.md#measuring-sustained-clock-delivery).
 
 ## Boot Flow (V7 Kernel)
 

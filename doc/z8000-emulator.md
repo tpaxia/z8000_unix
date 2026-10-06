@@ -36,8 +36,24 @@ source that genuinely holds a level until serviced.
 | `-i <text>` | console input; `\n` written as two characters is a newline |
 | `-x <text>` | pass if the console output contains this text, the system comes to rest and there is no panic |
 | `-t`, `-r`, `-m` | instruction, register and memory traces |
+| `-w <marker> -I <text>` | after initial input, wait for output containing the marker plus 100 ticks, then type a second input (`\n` is decoded) |
+| `-n <ticks> -M <marker>` | measure exactly this many clock pulses after the marker (default `# `); keep running through idle HALTs |
 
-The kernel build wraps these as `cmake --build build --target test` and `--target test-libc`.
+The kernel build wraps these as `cmake --build build --target test`,
+`--target test-libc`, and `--target test-preempt`. The last runs CPU-bound
+scheduling/signal checks and a console-wakeup check with delayed input.
+
+The final report includes generated clock ticks, actual NVI dispatches,
+merged pulses (a pulse arriving while NVI is already pending), and the final
+pending bit. It checks `generated = accepted + merged + pending`.
+Measurement mode also accounts for the pending bit at both boundaries;
+`-x` still requires its text, but a final HALT is not required. Reaching the
+cycle limit before completing the sample is a failure. See
+[interrupt-masking.md](interrupt-masking.md) for measured workloads.
+
+Ticks are
+injected after each slice requested as 5,000 cycles; instruction overshoot
+and early HALT mean this count cannot be inferred from total cycles alone.
 
 This approach simplifies development considerably — the full kernel trap round-trip can be tested without a real boot sequence or hardware.
 

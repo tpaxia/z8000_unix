@@ -12,6 +12,8 @@
 //   -t  Enable instruction tracing
 //   -r  Enable register tracing
 //   -m  Enable memory tracing
+//   -w text -I input  Type a second input after text appears, plus 100 ticks
+//   -n ticks -M text  Measure clock delivery after text (default: shell prompt)
 
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +24,19 @@
 #include <getopt.h>
 #include <z8000/z8000.h>
 #include "memory.h"
+
+// Observe the existing request latch without changing interrupt delivery.
+class ClockObservedCPU : public z8001_device {
+public:
+    bool clock_pending() const { return (m_irq_req & Z8000_NVI) != 0; }
+    uint64_t clock_accepted = 0;
+protected:
+    uint16_t GET_FCW(uint32_t vec) override {
+        // Count actual NVI dispatches, independently of the latch accounting.
+        if (vec == PSA_ADDR() + m_vector_mult * 0x18) clock_accepted++;
+        return z8001_device::GET_FCW(vec);
+    }
+};
 
 // Paged MMU: 128 segments x 32 pages x 2KB pages
 // Identity-mapped on construction; UPAGE/WPAGE ports remap specific pages.
@@ -433,6 +448,15 @@ static bool load_file(MemoryRegion& mem, const char* filename, uint32_t addr) {
     return true;
 }
 
+static std::string decode_input(const char *arg) {
+    std::string text;
+    for (const char *q = arg; *q; q++) {
+        if (q[0] == '\\' && q[1] == 'n') { text += '\n'; q++; }
+        else text += *q;
+    }
+    return text;
+}
+
 int main(int argc, char* argv[]) {
     bool trace = false;
     bool reg_trace = false;
@@ -446,9 +470,14 @@ int main(int argc, char* argv[]) {
     const char *disk_image = "hd.img";
     const char *console_input = "echo hello | cat\nexit\n";
     const char *expect = nullptr;
+    const char *wait_output = nullptr;
+    std::string typed, later_input;
+    bool has_later_input = false;
+    uint64_t measure_ticks = 0;
+    const char *measure_marker = "# ";
 
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:")) != -1) {
         switch (opt) {
             case 't': trace = true; break;
             case 'r': reg_trace = true; break;
@@ -458,21 +487,26 @@ int main(int argc, char* argv[]) {
             case 'i': {
                 // "\n" written as two characters stands for a newline, so the
                 // text survives make and the shell unchanged.
-                static std::string typed;
-                typed.clear();
-                for (const char *q = optarg; *q; q++) {
-                    if (q[0] == '\\' && q[1] == 'n') { typed += '\n'; q++; }
-                    else typed += *q;
-                }
+                typed = decode_input(optarg);
                 console_input = typed.c_str();
                 break;
             }
             case 'x': expect = optarg; break;
+            case 'w': wait_output = optarg; break;
+            case 'I': later_input = decode_input(optarg); has_later_input = true; break;
+            case 'n': measure_ticks = strtoull(optarg, nullptr, 10); break;
+            case 'M': measure_marker = optarg; break;
             default:
                 fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
-                        "[-d hd-image] [-i console-input] [-x expected-text]\n", argv[0]);
+                        "[-d hd-image] [-i console-input] [-x expected-text] "
+                        "[-w output-marker -I later-input] "
+                        "[-n measured-ticks -M start-marker]\n", argv[0]);
                 return 1;
         }
+    }
+    if ((wait_output != nullptr) != has_later_input) {
+        fprintf(stderr, "-w and -I must be supplied together\n");
+        return 1;
     }
 
     printf("Z8001 Kernel Test Driver\n");
@@ -487,7 +521,7 @@ int main(int argc, char* argv[]) {
     MMU mmu(&memory);
 
     // Create Z8001 CPU (memory access goes through MMU)
-    z8001_device cpu;
+    ClockObservedCPU cpu;
 
     // Create I/O ports with DMA controller, MMU access, and CPU reference
     KernelIOPorts io(&memory, &mmu, &cpu);
@@ -530,15 +564,49 @@ int main(int argc, char* argv[]) {
     // Run CPU in chunks, delivering periodic NVI clock ticks
     // and delayed console input for testing read()
     const int CYCLES_PER_TICK = 5000;
-    int tick_count = 0;
+    uint64_t tick_count = 0, merged_ticks = 0;
+    uint64_t start_ticks = 0, start_merged = 0, start_accepted = 0;
+    bool measuring = false, measure_done = false, start_pending = false;
     int input_idx = 0;
 
     bool input_started = false;
     int idle_after_input = 0;
+    bool waiting_for_output = has_later_input;
+    int ticks_after_marker = 0;
 
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
+        // Sample before injection: the previous pulse has had a full slice
+        // to be accepted. A still-set latch at injection proves a merged tick.
+        if (measure_ticks && !measuring &&
+            io.console_output().find(measure_marker) != std::string::npos) {
+            measuring = true;
+            start_ticks = tick_count;
+            start_merged = merged_ticks;
+            start_accepted = cpu.clock_accepted;
+            start_pending = cpu.clock_pending();
+            printf("\nClock baseline: generated=%llu merged=%llu pending=%d\n",
+                   (unsigned long long)tick_count,
+                   (unsigned long long)merged_ticks, start_pending);
+        }
+        if (measuring && tick_count - start_ticks == measure_ticks) {
+            uint64_t lost = merged_ticks - start_merged;
+            bool pending = cpu.clock_pending();
+            uint64_t accepted = cpu.clock_accepted - start_accepted;
+            if (accepted != measure_ticks - lost + start_pending - pending) {
+                fprintf(stderr, "FAIL: clock accounting mismatch\n");
+                return 1;
+            }
+            printf("\nClock sample: generated=%llu accepted=%llu merged=%llu "
+                   "pending_start=%d pending_end=%d loss_pct=%.9f\n",
+                   (unsigned long long)measure_ticks,
+                   (unsigned long long)accepted, (unsigned long long)lost,
+                   start_pending, pending, 100.0 * lost / measure_ticks);
+            measure_done = true;
+            break;
+        }
         // Always deliver NVI clock tick (wakes CPU from HALT)
+        if (cpu.clock_pending()) merged_ticks++;
         cpu.pulse_input_line(z8002_device::NVI_LINE);
         tick_count++;
         // Deliver console input after shell prompt "# " appears
@@ -550,12 +618,23 @@ int main(int argc, char* argv[]) {
                 io.queue_console_char(console_input[input_idx++]);
             }
         }
+        if (!console_input[input_idx] && waiting_for_output &&
+            io.console_output().find(wait_output) != std::string::npos) {
+            // Give a CPU-bound child time to run after the marker's write.
+            if (++ticks_after_marker >= 100) {
+                console_input = later_input.c_str();
+                input_idx = 0;
+                waiting_for_output = false;
+                idle_after_input = 0;
+            }
+        }
         // After all input delivered, count idle ticks
-        if (!console_input[input_idx]) {
+        if (!console_input[input_idx] && !waiting_for_output) {
             idle_after_input++;
         }
         // Stop if halted AND all input delivered AND enough time for pipe to finish
-        if (cpu.is_halted() && !console_input[input_idx] && idle_after_input > 500) {
+        if (!measure_ticks && cpu.is_halted() && !console_input[input_idx] &&
+            !waiting_for_output && idle_after_input > 500) {
             break;
         }
     }
@@ -566,6 +645,15 @@ int main(int argc, char* argv[]) {
     printf("\nFinal state:\n");
     cpu.dump_regs();
     printf("\nTotal cycles: %llu\n", static_cast<unsigned long long>(cpu.get_cycles()));
+    printf("Clock ticks generated: %llu\n", (unsigned long long)tick_count);
+    printf("Clock ticks merged: %llu; pending: %d\n",
+           (unsigned long long)merged_ticks, cpu.clock_pending());
+    printf("Clock interrupts accepted: %llu\n",
+           (unsigned long long)cpu.clock_accepted);
+    if (tick_count != cpu.clock_accepted + merged_ticks + cpu.clock_pending()) {
+        fprintf(stderr, "FAIL: total clock accounting mismatch\n");
+        return 1;
+    }
     printf("Halted: %s\n", cpu.is_halted() ? "Yes" : "No");
 
     // Dump system stack (IRET frame from trap handler)
@@ -593,6 +681,14 @@ int main(int argc, char* argv[]) {
     bool has_prompt_after = has_hello && output.find("# ", hello_at) != std::string::npos;
     bool settled = cpu.is_halted();
     bool has_panic = output.find("panic") != std::string::npos;
+    if (measure_ticks) {
+        bool ok = measure_done && has_kernel_msg && has_prompt && !has_panic &&
+                  (!expect || output.find(expect) != std::string::npos) &&
+                  output.find("FAIL") == std::string::npos;
+        printf("%s: clock measurement %s\n", ok ? "PASS" : "FAIL",
+               measure_done ? "complete" : "incomplete (cycle limit or marker)");
+        return ok ? 0 : 1;
+    }
 
     printf("\nConsole output: \"");
     for (char c : output) {

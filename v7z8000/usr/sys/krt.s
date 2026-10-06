@@ -78,16 +78,7 @@ nvi_dispatch:
 	ld	0(sp), r0		! push argument: ps = interrupted FCW
 	calr	_clock
 	add	sp, #2
-	! clock() may have called spl1() which re-enabled NVIE.
-	! Disable VIE+NVIE before returning to trap.s epilog to prevent
-	! nested NVI during register restore / IRET sequence.
-	! IRET will atomically restore the interrupted FCW (with NVIE set).
-	ldctl	r1, fcw
-	and	r1, #0xE7FF		! clear VIE+NVIE
-	ldctl	fcw, r1
-	ld	sp, r13
-	pop	r13, @sp
-	ret
+	jr	irq_return
 
 ! --- VI dispatch entry (device interrupts) ---
 ! Called from trap.s vi_entry in NONSEG+SYS mode.
@@ -99,6 +90,18 @@ vi_dispatch:
 	ld	r13, sp
 	calr	_hdintr
 	calr	_consrint
+irq_return:
+	! Saved R0 starts four bytes above our frame pointer (saved R13,
+	! return address). intrret only schedules when returning to user mode.
+	ld	r0, r13
+	add	r0, #4
+	push	@sp, r0
+	calr	_intrret
+	add	sp, #2
+	! Mask before restoring the wrapper frame and entering the SEG epilog.
+	ldctl	r1, fcw
+	and	r1, #0xE7FF
+	ldctl	fcw, r1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -270,12 +273,12 @@ _fubyte:
 	ld	r13, sp
 	ld	r2, _useg		! user segment encoding
 	ld	r3, 4(r13)		! user offset
+	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	! --- SEG mode: only IR/reg/imm instructions ---
 	ldb	rl0, @r2		! load byte from seg:off
-	ld	r1, #0x4000
-	ldctl	fcw, r1			! NONSEG+SYS
+	ldctl	fcw, r9			! NONSEG+SYS
 	! --- back to NONSEG mode ---
 	and	r0, #0x00FF		! zero-extend
 	ld	sp, r13
@@ -289,11 +292,11 @@ _subyte:
 	ld	r2, _useg
 	ld	r3, 4(r13)		! user offset
 	ld	r0, 6(r13)		! value in R0 (rl0 for byte)
+	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r1, #0xC000
 	ldctl	fcw, r1			! SEG+SYS
 	ldb	@r2, rl0		! store byte to seg:off
-	ld	r1, #0x4000
-	ldctl	fcw, r1			! NONSEG+SYS
+	ldctl	fcw, r9			! NONSEG+SYS
 	ldk	r0, #0
 	ld	sp, r13
 	pop	r13, @sp
@@ -305,11 +308,11 @@ _fuword:
 	ld	r13, sp
 	ld	r2, _useg
 	ld	r3, 4(r13)
+	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	r0, @r2			! load word from seg:off
-	ld	r1, #0x4000
-	ldctl	fcw, r1			! NONSEG+SYS
+	ldctl	fcw, r9			! NONSEG+SYS
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -321,11 +324,11 @@ _suword:
 	ld	r2, _useg
 	ld	r3, 4(r13)
 	ld	r8, 6(r13)		! value (R8 caller-saved)
+	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	@r2, r8			! store word to seg:off
-	ld	r1, #0x4000
-	ldctl	fcw, r1			! NONSEG+SYS
+	ldctl	fcw, r9			! NONSEG+SYS
 	ldk	r0, #0
 	ld	sp, r13
 	pop	r13, @sp
@@ -344,10 +347,10 @@ _copyin:
 	cp	r9, #0
 	jr eq,	.Lcidone
 .Lciloop:
+	ldctl	r1, fcw			! restore caller state after each byte
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ldb	rl0, @r2		! load byte from user space
-	ld	r1, #0x4000
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldb	@r8, rl0		! store byte to kernel
 	inc	r3, #1			! advance user offset
@@ -367,6 +370,9 @@ _copyout:
 	push	@sp, r13
 	ld	r13, sp
 	push	@sp, r4			! save R4 (callee-saved, used for FCW)
+	push	@sp, r5
+	ldctl	r4, fcw			! caller state, restored after each byte
+	ld	r5, #0xC000
 	ld	r2, 4(r13)		! from: kernel address
 	ld	r3, 6(r13)		! to: user offset
 	ld	r1, 8(r13)		! count (R1 caller-saved)
@@ -377,16 +383,15 @@ _copyout:
 	ldb	rl0, @r2		! load byte from kernel
 	inc	r2, #1			! advance kernel pointer
 	ld	r9, r3			! R9 = user offset copy
-	ld	r4, #0xC000
-	ldctl	fcw, r4			! SEG+SYS
+	ldctl	fcw, r5			! SEG+SYS
 	ldb	@r8, rl0		! store byte to user space via @RR8
-	ld	r4, #0x4000
 	ldctl	fcw, r4			! NONSEG+SYS
 	inc	r3, #1			! advance user offset
 	dec	r1, #1
 	jr ne,	.Lcoloop
 .Lcodone:
 	ldk	r0, #0
+	pop	r5, @sp
 	pop	r4, @sp			! restore R4
 	ld	sp, r13
 	pop	r13, @sp
@@ -399,6 +404,10 @@ _copyout:
 ! Must avoid BA/DA mode instructions while in SEG mode.
 ! =============================================================================
 _retu:
+	! Stack segment preparation must be atomic with respect to interrupts.
+	ldctl	r0, fcw
+	and	r0, #0xE7FF
+	ldctl	fcw, r0
 	! Set up registers for the NONSEG+SYS to SEG+SYS transition.
 	! CHANGE_FCW swaps R14 with NSPSEG when the SEG bit changes.
 	! We want R14=0x8100 (kernel seg) after the swap so the system
@@ -421,14 +430,15 @@ _retu:
 	! --- SEG mode: only IR/reg/imm instructions! ---
 	! Build IRET frame on system stack (@rr14):
 	!   push PC (4 bytes): user_seg:0x0000
-	!   push FCW (2 bytes): 0x0000 (NONSEG+NORM)
+	!   push FCW (2 bytes): 0x1800 (NONSEG+NORM, interrupts enabled)
 	!   push tag (2 bytes): 0x0000
 	clr	r0
 	push	@r14, r0		! PC low: offset 0
 	ld	r0, r1			! r1 = useg (loaded before mode switch)
 	push	@r14, r0		! PC high: user segment encoding
+	ld	r0, #0x1800
+	push	@r14, r0		! FCW: NONSEG+NORM + VIE + NVIE
 	clr	r0
-	push	@r14, r0		! FCW: NONSEG+NORM = 0x0000
 	push	@r14, r0		! tag: 0x0000
 
 	! Clear user registers
@@ -537,7 +547,7 @@ _outw:
 ! Z8000 has no priority levels; VIE (0x1000) and NVIE (0x0800) control
 ! device and clock interrupts respectively.
 ! spl0/spl1: enable both (set VIE+NVIE)
-! spl4/spl5: disable devices (clear VIE), clock unchanged
+! spl4/spl5: disable devices (clear VIE), enable clock (set NVIE)
 ! spl6/spl7: disable both (clear VIE+NVIE)
 ! splx(s): restore VIE+NVIE from saved FCW value
 ! All return the previous FCW value (for splx restoration).
@@ -552,20 +562,17 @@ _spl1:
 	ldctl	fcw, r1
 	ret
 
-! --- spl4/spl5: block device interrupts (clear VIE) ---
-! On the PDP-11, spl5 raises the priority to 5: devices (tty, disk, priority
-! 5 and below) are blocked and the clock (priority 6) is not. On the Z8000,
-! VIE = devices and NVIE = clock, so spl5 clears VIE. NVIE is left as it is
-! rather than set: these are called from inside device interrupt handlers
-! (ttstart), where turning anything on would let interrupts nest.
-! An earlier version did the reverse (set VIE, cleared NVIE), which enabled
-! device interrupts inside the console interrupt handler and let a second
-! character's handler run in the middle of the first one's echo.
+! --- spl4/spl5: block devices, allow the clock ---
+! Like PDP-11 spl5, this sets a level rather than only raising it.
+! Device handlers may admit the clock, but must never re-enable VIE.
+! In clock(), lowering to this level permits nested ticks during callouts;
+! their saved FCW has VIE clear, so BASEPRI defers nested callout execution.
 _spl4:
 _spl5:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
 	and	r1, #0xEFFF		! clear VIE (block devices)
+	or	r1, #0x0800		! set NVIE (allow clock)
 	ldctl	fcw, r1
 	ret
 

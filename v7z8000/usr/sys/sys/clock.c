@@ -10,7 +10,7 @@
 /*
  * Z8000 FCW macros for clock():
  *   USERMODE: F_S_N (bit 0x4000) clear means normal (user) mode
- *   BASEPRI:  VIE+NVIE both clear means interrupts were disabled
+ *   BASEPRI:  either enable clear means above base priority
  */
 #define	USERMODE(ps)	(((ps) & 0x4000) == 0)
 #define	BASEPRI(ps)	(((ps) & 0x1800) != 0x1800)

@@ -128,8 +128,15 @@ out:
 setrun(p)
 register struct proc *p;
 {
+	register caddr_t w;
+
 	if (p->p_stat==0 || p->p_stat==SZOMB)
 		panic("Running a dead proc");
+	/* V7: unlink sleepers before p_link is reused for the run queue. */
+	if (w = p->p_wchan) {
+		wakeup(w);
+		return;
+	}
 	p->p_stat = SRUN;
 	p->p_flag |= SLOAD;	/* always in-core on Z8000 */
 	setrq(p);
@@ -292,34 +299,38 @@ retry:
 		u.u_rdir->i_count++;
 
 	/*
-	 * Partially simulate the environment
-	 * of the new process so that when it is actually
-	 * created (by copying) it will look right.
+	 * Save the child's continuation in the parent's u-area before copying.
+	 * Keep u_procp naming the parent until the child actually resumes, so
+	 * clocks during the copies charge the running process correctly.
 	 */
 	rpp = p;
-	u.u_procp = rpp;
 	rip = up;
 
 	/*
 	 * When resumed, child returns here with save() returning 1.
 	 */
 	if (save(u.u_ssav)) {
+		u.u_procp = rpp;
 		sureg();
 		return(1);
 	}
 
 	/*
 	 * Copy parent's u-area to child's physical frames via window.
-	 * Interrupts must be disabled: BSS extends into the copy window
-	 * region (0xE000-0xEFFF), so clock handlers would read garbage.
+	 * The live stack above the saved SP is stable: interrupts use space
+	 * below the current SP. Copy in small chunks, restoring the window
+	 * before admitting interrupts, just as copyseg() does. No process
+	 * switch is possible here because this is kernel code.
 	 */
 	{
-		int s;
-		s = spl7();
-		outw(0x00B4, rpp->p_addr);		/* map window to child's frames */
-		bcopy(0xF000, 0xE000, 4096);		/* copy u-area + kernel stack */
-		outw(0x00B4, WPAGE_IDENTITY);		/* restore window identity map */
-		splx(s);
+		int s, off;
+		for (off = 0; off < 4096; off += 16) {
+			s = spl7();
+			outw(0x00B4, rpp->p_addr);
+			bcopy(0xF000 + off, 0xE000 + off, 16);
+			outw(0x00B4, WPAGE_IDENTITY);
+			splx(s);
+		}
 	}
 
 	/*
@@ -328,7 +339,6 @@ retry:
 	 */
 	copyseg((rip - proc) + 1, (rpp - proc) + 1);
 
-	u.u_procp = rip;
 	setrq(rpp);
 	rpp->p_flag |= SSWAP;
 	return(0);

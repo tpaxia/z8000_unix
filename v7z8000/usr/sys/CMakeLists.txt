@@ -241,6 +241,26 @@ add_custom_target(test
     COMMENT "Running kernel boot test"
 )
 
+add_custom_target(preempt_image
+    COMMAND make -C "${TOOLS_DIR}" root-preempt.img
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root-preempt.img" "${B}/hd-preempt.img"
+    WORKING_DIRECTORY "${TOOLS_DIR}"
+    COMMENT "Building preemption test disk image"
+)
+
+add_custom_target(test-preempt
+    COMMAND ./test_driver -c 400000000 -d hd-preempt.img
+            -i "preempttest\\nexit\\n"
+            -x "preempt: scheduling, signals and context passed"
+    COMMAND ./test_driver -c 400000000 -d hd-preempt.img
+            -i "preempttest console\\n" -w "preempt: waiting for input"
+            -I "go\\nexit\\n" -x "preempt: console wakeup passed"
+    DEPENDS kernel disk_image preempt_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing CPU-bound preemption and signals"
+    VERBATIM
+)
+
 # =============================================================================
 # Clean
 # =============================================================================

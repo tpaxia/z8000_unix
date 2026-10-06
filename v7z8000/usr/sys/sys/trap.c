@@ -28,7 +28,7 @@ unsigned *regs;
 	int saved_usp;
 
 	saved_usp = get_usp();
-	u.u_ar0 = regs;
+	u.u_ar0 = (int *)regs;
 	u.u_error = 0;
 	u.u_intflg = 0;
 	u.u_segflg = 0;		/* user-mode caller -> user address space */
@@ -44,6 +44,10 @@ unsigned *regs;
 
 	if (num < 0 || num >= 64 || sysent[num].sy_call == NULL) {
 		u.u_error = ENOSYS;
+	} else if (save(u.u_qsav)) {
+		/* sleep() unwinds here when a signal interrupts a syscall. */
+		if (u.u_error == 0)
+			u.u_error = EINTR;
 	} else {
 		(*sysent[num].sy_call)();
 	}
@@ -75,12 +79,45 @@ unsigned *regs;
 	 */
 	regs[15] = useg;
 
-	if (issig())
-		psig();
+	userret(regs, saved_usp);
+}
 
-	curpri = setpri(u.u_procp);
+/*
+ * Interrupt return. The assembly wrapper supplies the same saved-register
+ * layout as a syscall. Kernel interrupts never switch processes here.
+ */
+intrret(regs)
+unsigned *regs;
+{
+	if ((regs[14] & 0x4000) == 0)
+		userret(regs, get_usp());
+}
 
-	set_usp(saved_usp);
+/*
+ * Common return to user mode: deliver signals and honor clock/wakeup
+ * rescheduling requests. Keep the user SP on this process's kernel stack:
+ * NSPOFF is a CPU register and another process can change it in qswtch().
+ * Recheck after switching, since signals can arrive while we are off CPU.
+ * Mask the final check through IRET so no request slips past this boundary.
+ */
+userret(regs, usp)
+unsigned *regs;
+int usp;
+{
+	u.u_ar0 = (int *)regs;
+	for (;;) {
+		spl0();
+		if (issig())
+			psig();
+		curpri = setpri(u.u_procp);
+		spl7();
+		if (runrun) {
+			spl0();
+			qswtch();
+		} else if (!issig())
+			break;
+	}
+	set_usp(usp);
 }
 
 /*

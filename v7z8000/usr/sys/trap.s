@@ -9,8 +9,8 @@
 !
 ! Memory layout within segment 1 (offset from segment base):
 !   0x0000 - 0x003F: PSA table (8 entries x 8 bytes = 64 bytes)
-!   0x0040 - 0x017F: Trap handler stubs (syscall, NVI clock, VI device)
-!   0x01C0+:         Boot entry
+!   0x0040 - 0x01EF: Trap handler stubs (syscall, NVI clock, VI device)
+!   0x01F0:         Boot entry
 ! =============================================================================
 
 	.segm
@@ -176,16 +176,16 @@ default_nmi:
 !   - Mode: SEG + SYS (F_SEG | F_S_N)
 !   - RR14 = system stack pointer (segment:offset)
 !   - System stack already contains (pushed by CPU):
-!       [SP+6,+7]: saved PC high (segmented format)
-!       [SP+4,+5]: saved PC low
+!       [SP+6,+7]: saved PC low
+!       [SP+4,+5]: saved PC high (segmented format)
 !       [SP+2,+3]: saved FCW
 !       [SP+0,+1]: tag (instruction word, e.g. 0x7F00 for sc #0)
 !
 ! Strategy:
 !   1. Save registers R0-R12 onto the system stack
-!   2. Switch to NONSEG+SYS to call C handler
+!   2. Switch to NONSEG+SYS with interrupts enabled to call C handler
 !   3. Extract syscall number from tag word, pass args to C handler
-!   4. Store C handler return value into saved-R0 slot
+!   4. C handler writes saved R0/R1 and handles signals/rescheduling
 !   5. Switch back to SEG+SYS
 !   6. Restore registers (R0 gets return value from saved slot)
 !   7. IRET to return to caller
@@ -212,7 +212,7 @@ syscall_entry:
 	! with the saved system stack segment register, preserving the
 	! stack segment for later restoration. R15 (stack offset) is
 	! unchanged since F_S_N stays set.
-	ld	r1, #0x4000	! FCW: NONSEG + SYS
+	ld	r1, #0x5800	! FCW: NONSEG + SYS + VIE + NVIE
 	ldctl	fcw, r1
 
 	! --- Now in NONSEG+SYS mode, segment 1 (inherited from PC) ---
@@ -282,16 +282,16 @@ syscall_entry:
 !   - Mode: SEG + SYS (F_SEG | F_S_N), NVIE cleared (interrupts disabled)
 !   - RR14 = system stack pointer (segment:offset)
 !   - System stack already contains (pushed by CPU):
+!       [SP+6,+7]: saved PC low
 !       [SP+4,+5]: saved PC high (segmented format)
-!       [SP+2,+3]: saved PC low
-!       [SP+0,+1]: saved FCW (has NVIE set — will be restored by IRET)
-!       [-2,-1]:   tag (interrupt vector, 0x0000 for NVI)
+!       [SP+2,+3]: saved FCW (has NVIE set — will be restored by IRET)
+!       [SP+0,+1]: tag (interrupt vector, 0x0000 for NVI)
 !
 ! Strategy:
 !   1. Read interrupted FCW from IRET frame (needed by clock())
 !   2. Save registers R0-R12 onto the system stack
 !   3. Switch to NONSEG+SYS, pass FCW in R0 to nvi_dispatch
-!   4. Switch back to SEG+SYS
+!   4. Dispatch handles user-return work, then masks and returns to SEG+SYS
 !   5. Restore registers
 !   6. IRET to return (restores FCW with NVIE set)
 ! =============================================================================
@@ -360,10 +360,10 @@ nvi_entry:
 !   - Mode: SEG + SYS (F_SEG | F_S_N), VIE cleared
 !   - RR14 = system stack pointer (segment:offset)
 !   - System stack already contains (pushed by CPU):
+!       [SP+6,+7]: saved PC low
 !       [SP+4,+5]: saved PC high (segmented format)
-!       [SP+2,+3]: saved PC low
-!       [SP+0,+1]: saved FCW
-!       [-2,-1]:   tag (vector identifier)
+!       [SP+2,+3]: saved FCW
+!       [SP+0,+1]: tag (vector identifier)
 !
 ! Note: The CPU reads the new PC from the vector table (VEC00 + 2*vec),
 ! NOT from the PSA VI entry. For vector 0, VEC00 = PSA + 0x3C, which
@@ -374,13 +374,11 @@ nvi_entry:
 ! it from the IRET frame on the stack and pass it to vi_dispatch.
 !
 ! Stack layout after CPU push (before our saves):
-!   @RR14 → saved FCW   (+0)
-!            saved PC_low (+2)
+!   @RR14 → tag           (+0)
+!            saved FCW    (+2)
 !            saved PC_high (+4)
-!   Tag word is at @RR14 - 2 (pushed last, below FCW)
-!
-! Actually: the CPU pushes in order: PC(4), FCW(2), tag(2).
-! The last push (tag) is at the top of stack = @RR14.
+!            saved PC_low (+6)
+! CPU push order: PC(4), FCW(2), tag(2).
 ! =============================================================================
 vi_entry:
 	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
@@ -399,7 +397,7 @@ vi_entry:
 	push	@rr14, r0
 
 	! Switch to NONSEG+SYS mode
-	ld	r1, #0x4000	! FCW: NONSEG + SYS
+	ld	r1, #0x4800	! FCW: NONSEG + SYS + NVIE (devices masked)
 	ldctl	fcw, r1
 
 	.unsegm

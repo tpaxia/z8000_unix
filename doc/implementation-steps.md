@@ -87,7 +87,7 @@ Added process management (fork/exit/wait), a paged MMU emulation, and V7-style c
 - u-area at fixed virtual address (`#define u (*(struct user *)0xF000)`), remapped per-process by the MMU — exactly like the PDP-11.
 - V7-style `save()`/`resume()` in assembly: `resume()` writes KDSA6 to remap the u-area before restoring registers. `label_t[12]` stores all state including return address and SP (the PDP-11 uses `label_t[6]`) because `bcopy()` in `newproc()` clobbers save's deallocated stack frame.
 - V7-style `swtch()` — the save/resume dance with `u_rsav`/`u_qsav`/`u_ssav`, proc[0] as idle process, run queue search.
-- V7-style `newproc()` — allocates u-area frames, copies parent u-area to child via MMU copy window, no per-process kernel stacks or trampolines.
+- V7-style `newproc()` — allocates u-area frames, copies parent u-area and its kernel stack to the child via the MMU copy window; no separate stack allocation or trampolines.
 - `sleep()`/`wakeup()` with hash-table sleep queues, `setrq()`/`setrun()`/`setpri()`.
 - `fork()`/`exit()`/`wait()` syscalls in `sys1.c`.
 - `retu()` for user-mode entry via IRET frame (NONSEG+NORM).
@@ -411,6 +411,39 @@ make -C PCC-z8000/z8000/test gate         # compiler gate, including the ratchet
 
 **Test:** boot test PASS with the exact transcript `boot\nZ8000 Unix\n# echo hello | cat\r\nexit\r\nhello\r\n# # `. `test-libc`: `libc: 33 passed, 0 failed`.
 
+## Step 18: Interrupt State, Preemption, and Signal Return
+
+Restored the V7 interrupt rules across the Z8000 entry/return paths and
+memory helpers. User mode and syscall C code run with interrupts enabled;
+helpers restore their caller's mask. `spl5()` blocks devices while admitting
+the clock, and interrupt return schedules only when returning to user mode.
+A shared `userret()` checks signals and `runrun`, preserves the user SP
+across switches, and masks the final return through IRET.
+
+Restored the syscall `u_qsav` save and wait-channel handling in `setrun()`
+so a signal can interrupt a blocking syscall. Fork copies the u-area and
+user segment in short masked chunks, restoring the MMU window between
+chunks; it charges clocks to the parent until the child actually resumes.
+
+Added `test-preempt`: syscall-free spinning children, kill/alarm delivery,
+interrupted pipe reads, computation across context switches, and delayed
+console input while another process spins. Boot, all 33 libc checks, and
+both preemption runs pass. A negative control with user interrupts disabled
+fails the new test. The boot trace services 14,556 of 14,579 generated ticks,
+compared with 537 of 7,871 before. Direct measurement separates the remaining
+difference into 22 merged pulses before the first shell prompt and one pending
+request at shutdown. This boot ratio is not a sustained clock-drift rate.
+
+The driver now supports fixed-length post-boot measurements, independently
+counting generated pulses, actual NVI dispatches, merged pulses, and pending
+requests at both sample boundaries. Ten nominal timer hours each of idle,
+syscall-free spinning, and repeated preemption-suite workloads delivered all
+6,480,000 measured ticks, with zero merges and no pending boundary requests.
+The busy suite completed 66 iterations. These results apply to the current
+5,000-cycle-slice test harness, not calibrated M20 hardware. Details and
+reproduction commands are in
+[interrupt-masking.md](interrupt-masking.md).
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
@@ -421,7 +454,7 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 - Bourne shell running with fork/exec/wait/pipe
 - Shell pipelines work (`echo hello | cat`)
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
-- V7-style context switching (save/resume/swtch) — no bcopy of u-areas, no per-process kernel stacks
+- V7-style context switching (save/resume/swtch) — remaps each process's u-area and embedded kernel stack without copying them during a switch
 - Process creation via fork (newproc) with u-area copy through MMU window
 - sleep/wakeup, run queue management, priority scheduling
 - Buffer cache (bio.c) with 8 buffers
@@ -473,8 +506,6 @@ They are left on. "illegal member use" is exactly what flagged the header and so
 
 ## Planned Steps
 
-- **Interrupts are off almost everywhere**: user programs and most kernel code run with both interrupt enables clear, so a looping program freezes the machine and 93% of clock ticks are lost. Written up in [interrupt-masking.md](interrupt-masking.md); this should come before more userland work
-- **`trap.c` line 31**: look at the one remaining kernel compiler warning
 - **V7 startup code**: have `crt0` define and set `environ` as V7's does, and take `errno` from a `cerror` with its own `.comm`, which removes the archive-ordering dependency in `tools/libc`
 - **stty/ioctl**: terminal parameter control
 - **More commands**: ls, cp, wc, etc., linked against `libv7.a`
