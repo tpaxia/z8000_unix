@@ -80,15 +80,14 @@ for tool,files in sources.items():
  report[tool]={'files':records, 'compiled_object_totals':totals,
                'complete':all(rec['status']=='assembled' for rec in records)}
  if all(rec['status']=='assembled' for rec in records):
-  cmd=[str(pcc/'ldz8'),'-x','-R','0',str(root/'tools/libc/crt0.b')]+[src.stem+'.b' for src in files]+[str(root/'tools/libv7.a'),'-o',tool]
+  cmd=[str(pcc/'ldz8'),'-x','-R','0']+(['-i'] if tool in ('az8','ldz8') else [])+[str(root/'tools/libc/crt0.b')]+[src.stem+'.b' for src in files]+[str(root/'tools/libv7.a'),'-o',tool]
   r=subprocess.run(cmd,cwd=d,capture_output=True,timeout=60)
   (d/'link.log').write_bytes(r.stdout+r.stderr)
   report[tool]['link_returncode']=r.returncode
   report[tool]['link_log']=(r.stdout+r.stderr).decode(errors='replace')
   if (d/tool).exists():
    vals=struct.unpack('>8H',(d/tool).read_bytes()[:16]);report[tool]['image_header_unvalidated']={'text':vals[1],'data':vals[2],'bss':vals[3],'total':sum(vals[1:4])}
-# Measure the linker's table element on the target, without compiling the
-# archive-dependent linker body or replacing its headers.
+# Measure the linker's table element on the target.
 layout=work/'ld-layout';layout.mkdir(exist_ok=True)
 ldsource=(pcc/'ldz8.c').read_text()
 start=ldsource.index('typedef struct symbol *symp;')
@@ -104,9 +103,12 @@ raw=(layout/'layout.b').read_bytes();h=struct.unpack('>8H',raw[:16])
 symbol_size,pointer_size=struct.unpack('>2H',raw[16+h[1]:20+h[1]])
 nsym=int(re.search(r'#define\s+NSYM\s+(\d+)',ldsource)[1])
 nsympr=int(re.search(r'#define\s+NSYMPR\s+(\d+)',ldsource)[1])
+block=int(re.search(r'#define\s+SYMBLOCK\s+(\d+)',ldsource)[1])
+blocks=(nsym+block-1)//block
 report['ldz8']['table_layout']={'symbol_bytes':symbol_size,'pointer_bytes':pointer_size,
-    'symtab':symbol_size*nsym,'hshtab':pointer_size*(nsym+2),'local':pointer_size*nsympr,
-    'total':symbol_size*nsym+pointer_size*(nsym+2+nsympr)}
+    'symbol_limit':nsym,'dynamic_block_bytes':symbol_size*block,
+    'symblocks':pointer_size*blocks,'hshtab':pointer_size*(nsym+2),'local':pointer_size*nsympr,
+    'static_total':pointer_size*(blocks+nsym+2+nsympr)}
 
 # Only cpp linked successfully in the initial audit. Never execute a failed
 # link or an image whose static footprint already exhausts the address space.

@@ -546,7 +546,7 @@ macros, a `#if` expression, suppression of the unselected branch, and file outpu
 It is a small functional check, not yet preprocessing the compiler's own sources.
 Only 10,654 bytes remain above cpp's static image for heap and stack.
 
-Concrete blockers:
+Blockers at the time of the initial audit (later steps record their fixes):
 
 - `cz8/pftn.c:1085` and `az8/scan.c:417` fail with PCC's “expression causes
   compiler loop” diagnostic. Fix code generation; do not simplify the source
@@ -802,6 +802,114 @@ cases compile and execute successfully, with the existing one-low-bit
 `float_general` decimal-parser difference. Kernel boot, libc (37 checks),
 preemption, signal, split I/D and terminal targets pass. Numerical caveats
 from the original FPE remain documented in the kernel reference.
+
+## Step 25: Native Assembler and Linker
+
+`az8` and `ldz8` now build as 0411 executables and run under Unix. Reproduce
+the build and guest tests after building the kernel and boot disk:
+
+```
+python3 tools/native-binutils/build.py
+python3 tools/native-binutils/test.py
+```
+
+Artifacts, sizes, guest transcripts, exported objects/executables and test
+results go to `tests/build/native-binutils/`. These builds use ordinary PCC
+output and `libv7.a`; they do not require the Python compaction pass.
+
+| Tool | Text | Data | BSS | Data space above static storage |
+|------|-----:|-----:|----:|-------------------------------:|
+| `az8` | 58,324 | 8,768 | 2,754 | 54,014 |
+| `ldz8` | 32,200 | 2,268 | 17,646 | 45,622 |
+
+The final column is shared by heap, stack and startup arguments; it is not a
+measurement of peak free memory. The assembler has 7,210 bytes below the
+largest even text size.
+
+The linker reads an explicitly defined portable ASCII archive format,
+independent of the installed V7 binary-archive header. Bootstrap libraries
+must use that format; this does not add a native portable-format archiver.
+Symbol records are allocated in stable blocks of 32, preserving insertion
+order and the 4,003-symbol limit. Fixed symbol/hash/local tables occupy
+16,262 bytes instead of 72,052. Actual capacity still depends on available
+heap; rejected archive members release their names and reuse symbol slots.
+
+Guest testing also exposed host assumptions in the assembler and linker:
+header output read the first two bytes of a `long`, which wrote the wrong
+half on the big-endian target. Header fields now serialize numeric values.
+Register helpers now receive explicit `int` arguments instead of K&R calls
+passing `long` operands; the assembler's seek offset and dot-padding count
+also use the correct long width.
+
+Tests compare native objects and final executables byte-for-byte with host
+output, then execute the native-linked programs under Unix in both 0407 and
+0411 layouts. Coverage includes archive selection and rollback across symbol
+blocks, common/data/BSS and pointer relocation, dot padding, long arithmetic,
+byte registers, and floating-point storage/arithmetic through the EPU service.
+
+The next step integrates native cpp, compiler passes, assembler/linker and
+the driver. Replacing the host Python compaction dependency and rebuilding
+the compiler inside Unix remain bootstrap work. This step
+does not yet establish compiler self-hosting or worst-case heap/stack usage.
+
+## Step 26: Native C Compiler Driver
+
+The native toolchain disk now installs `/bin/cc`, `/bin/az8`, `/bin/ldz8`,
+`/lib/cpp`, `/lib/front`, `/lib/back`, startup code, a portable-format
+`/lib/libc.a`, and the V7 headers under `/usr/include`. Build and test it with:
+
+```
+python3 tools/native-cc/build.py
+python3 tools/native-cc/test.py
+```
+
+The build refreshes both compiler passes and the assembler/linker first.
+Its bootable disk is `tests/build/native-cc/hd.img`; the tests leave a clean
+compiler disk after completing. Boot it with the kernel test driver from
+`v7z8000/usr/sys/build`. The installed `/usr/src/hello.c` supports a quick
+guest-shell check:
+
+```
+cc /usr/src/hello.c -o /tmp/hello
+/tmp/hello
+cc -i /usr/src/hello.c -o /tmp/hello
+/tmp/hello
+```
+
+`ccz8.c` builds with `TWOPASS` for this installation, selecting front-end
+tree output and then the back end before assembly. Its historical one-pass
+configuration remains available. The driver supports preprocessing (`-E`,
+`-P`), assembly output (`-S`), object output (`-c`), ordinary linking and
+split-I/D linking (`-i`), multiple inputs, and `-D`/`-U`/`-I` options.
+`-O`, `-p` and `-f` are explicitly rejected in this installation: it has no
+native optimizer or alternate profiling/no-FP startup objects.
+
+| Newly installed tool | Text | Data | BSS |
+|----------------------|-----:|-----:|----:|
+| `cc` | 19,976 | 1,556 | 3,248 |
+| `cpp` | 29,064 | 3,268 | 17,406 |
+
+Both use 0411 layouts. `execv` is supplied as the Z8000 C counterpart of
+V7's PDP-11 assembly wrapper, passing `environ` through to `execve`.
+Driver fixes include preprocessing-only setup, closing the temporary-name
+reservation descriptor, argument-vector capacity, missing-option checks,
+and propagating any assembler failure. Direct assembly tests exposed another
+V7 issue: appending `.tmpr` and `.tmpd` to a source name could collide at the
+14-character directory limit. The assembler now uses short distinct names
+containing its process ID; the assembler sizes above include this fix.
+
+Guest tests exercise multi-file C compilation in 0407 and 0411 layouts,
+header lookup and macro options, integer and EPU arithmetic, environment
+inheritance across driver/pass execution, each intermediate-output mode,
+object-only linking, and failures in preprocessing, compilation, assembly and
+linking. Checks also verify temporary-file cleanup. Logs and results are in
+`tests/build/native-cc/`.
+
+This is a complete native C compilation pipeline for programs that fit its
+segments. The initial compiler binaries still require host-side compaction
+to build. A native compaction pass (or equivalent code-generation changes),
+compiler rebuilds inside Unix, and peak heap/stack measurements remain before
+claiming self-hosting.
 
 ## Current State
 

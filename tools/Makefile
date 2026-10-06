@@ -82,7 +82,7 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     ttyslot ttyname abort abs atof atoi atol crypt ctime calloc malloc ecvt \
     errlst fakcu fpsup isatty l3 mktemp qsort rand swab tell ctype_ \
     index rindex strcat strncat strcmp strncmp strcpy strncpy strlen \
-    sbrk execl
+    sbrk execl execv
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
     $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
     $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b

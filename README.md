@@ -49,6 +49,12 @@ The Portable C Compiler is the historical V7 Unix compiler and was designed to b
 
 Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
+An experimental native two-pass toolchain is available under Unix, including
+`cc`, preprocessing, assembly and linking. Build its disk with
+`python3 tools/native-cc/build.py` and run its guest tests with
+`python3 tools/native-cc/test.py`. See [native compiler setup and remaining
+self-hosting work](doc/implementation-steps.md#step-26-native-c-compiler-driver).
+
 ### Emulator
 
 The Z8000 software emulator is used as a library with a custom front end (`emu/test_driver.cpp`, kept outside the V7 tree since it is host code, not Unix source) that can simulate I/O and load code segments and data from files at arbitrary physical addresses without needing bootstrap code. This simplifies development considerably — the full kernel trap round-trip can be tested without a real boot ROM or hardware.
