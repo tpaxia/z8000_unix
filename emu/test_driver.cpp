@@ -8,7 +8,7 @@
 //
 // The I/O port space includes a DMA controller for the RAM disk driver.
 //
-// Usage: ./test_driver [-t] [-r] [-m] [-c cycles]
+// Usage: ./test_driver [-t] [-r] [-m] [-c cycles] [-d hd-image] [-i console-input] [-x expected-text]
 //   -t  Enable instruction tracing
 //   -r  Enable register tracing
 //   -m  Enable memory tracing
@@ -167,6 +167,14 @@ public:
                     if (!m_console_rx.empty()) {
                         val = m_console_rx.front();
                         m_console_rx.pop();
+                        // The interrupt request is a one-bit latch shared by
+                        // every VI source, so two characters queued before the
+                        // handler runs (or a character and a disk completion)
+                        // raise only one interrupt, and the handler reads one
+                        // character per interrupt. Keep requesting while data
+                        // remains, as a receiver with a FIFO does.
+                        if (!m_console_rx.empty())
+                            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
                     } else {
                         val = 0x00;
                     }
@@ -431,15 +439,37 @@ int main(int argc, char* argv[]) {
     bool mem_trace = false;
     int max_cycles = 50000000;  // increased for shell startup overhead
 
+    // Defaults are the boot test: the small root image, the pipeline typed
+    // at the shell, and an exact transcript. -d, -i and -x run something
+    // else under the same kernel, e.g. the C library test.
+    const char *disk_image = "hd.img";
+    const char *console_input = "echo hello | cat\nexit\n";
+    const char *expect = nullptr;
+
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:")) != -1) {
         switch (opt) {
             case 't': trace = true; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
             case 'c': max_cycles = atoi(optarg); break;
+            case 'd': disk_image = optarg; break;
+            case 'i': {
+                // "\n" written as two characters stands for a newline, so the
+                // text survives make and the shell unchanged.
+                static std::string typed;
+                typed.clear();
+                for (const char *q = optarg; *q; q++) {
+                    if (q[0] == '\\' && q[1] == 'n') { typed += '\n'; q++; }
+                    else typed += *q;
+                }
+                console_input = typed.c_str();
+                break;
+            }
+            case 'x': expect = optarg; break;
             default:
-                fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles]\n", argv[0]);
+                fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
+                        "[-d hd-image] [-i console-input] [-x expected-text]\n", argv[0]);
                 return 1;
         }
     }
@@ -478,7 +508,7 @@ int main(int argc, char* argv[]) {
     // Load disk images
     if (!io.load_disk("root.img"))
         return 1;
-    if (!io.load_hd("hd.img"))
+    if (!io.load_hd(disk_image))
         return 1;
 
     cpu.set_memory(&mmu);
@@ -500,7 +530,6 @@ int main(int argc, char* argv[]) {
     // and delayed console input for testing read()
     const int CYCLES_PER_TICK = 5000;
     int tick_count = 0;
-    const char *console_input = "echo hello | cat\nexit\n";
     int input_idx = 0;
 
     bool input_started = false;
@@ -553,7 +582,15 @@ int main(int argc, char* argv[]) {
     std::string output = io.console_output();
     bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
     bool has_prompt = output.find("# ") != std::string::npos;
-    bool has_hello = output.find("hello") != std::string::npos;
+    // The command line itself is echoed and contains "hello", so only a line
+    // that ends right after it ("hello\n", with or without "\r") is the
+    // pipeline's own output. The shell must then prompt again, and the system
+    // must come to rest in idle() rather than run into the cycle limit.
+    size_t hello_at = output.find("hello\r\n");
+    if (hello_at == std::string::npos) hello_at = output.find("hello\n");
+    bool has_hello = hello_at != std::string::npos;
+    bool has_prompt_after = has_hello && output.find("# ", hello_at) != std::string::npos;
+    bool settled = cpu.is_halted();
     bool has_panic = output.find("panic") != std::string::npos;
 
     printf("\nConsole output: \"");
@@ -565,16 +602,40 @@ int main(int argc, char* argv[]) {
     }
     printf("\"\n\n");
 
-    if (has_kernel_msg && has_prompt && has_hello && !has_panic) {
-        printf("PASS: Kernel booted, shell ran, echo hello succeeded\n");
+    if (expect) {
+        // A custom run: the given text must appear, the system must settle,
+        // and there must be no panic.
+        bool found = output.find(expect) != std::string::npos;
+        if (found && settled && !has_panic) {
+            printf("PASS: output contains the expected text\n");
+            return 0;
+        }
+        printf("FAIL: expected_text=%s, panic=%s, halted=%s\n",
+               found ? "yes" : "no", has_panic ? "yes" : "no", settled ? "yes" : "no");
+        return 1;
+    }
+
+    // With the checks above passed, the whole transcript must also match: the
+    // typed characters are echoed exactly, "exit" is typed ahead while the
+    // pipeline runs, and the shell prompts once more before it exits.
+    const std::string expected =
+        "boot\nZ8000 Unix\n# echo hello | cat\r\nexit\r\nhello\r\n# # ";
+    bool exact = output == expected;
+    if (!exact)
+        printf("Console output differs from the expected transcript.\n");
+
+    if (has_kernel_msg && has_prompt && has_hello && has_prompt_after && settled && !has_panic && exact) {
+        printf("PASS: Kernel booted, shell ran, echo hello | cat printed hello\n");
         return 0;
     } else {
-        printf("FAIL: kernel_msg=%s, prompt=%s, hello=%s, panic=%s, halted=%s\n",
+        printf("FAIL: exact=%s, kernel_msg=%s, prompt=%s, pipeline_output=%s, prompt_after=%s, panic=%s, halted=%s\n",
+               exact ? "yes" : "no",
                has_kernel_msg ? "yes" : "no",
                has_prompt ? "yes" : "no",
                has_hello ? "yes" : "no",
+               has_prompt_after ? "yes" : "no",
                has_panic ? "yes" : "no",
-               cpu.is_halted() ? "yes" : "no");
+               settled ? "yes" : "no");
         return 1;
     }
 }

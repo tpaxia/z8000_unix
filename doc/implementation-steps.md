@@ -344,10 +344,75 @@ which re-enters the handler forever. The symptom was a kernel that printed `boot
 
 **Test:** PASS at 39,258,572 cycles — identical to the previous emulator, so none of the 12 upstream fixes changes behaviour for this kernel.
 
+## Step 17: Compiler Update, Underscore Names, Two Kernel Races, the V7 C Library
+
+Brought the compiler up to date under a regression gate, moved to PDP-11 style symbol names, fixed two interrupt races the new compiler's timing exposed, closed three ways the build and test could hide a failure, and built the Seventh Edition C library.
+
+### Compiler
+
+`PCC-z8000` moved from `510a0f5` to its current head. The details are in that repository's README and commit messages; what matters here:
+
+- A round of compiler changes that passed every compiler test had broken the V7 shell and seven kernel files. The compiler repository now has a gate (`make -C z8000/test gate`) that includes a *ratchet*: it compiles the V7 kernel, shell, commands and libc (686 files) and fails on any new diagnostic or unreviewed change in generated assembly. It needs this repository's `v7z8000` tree.
+- `cgram.c` is generated from `cgram.y` by the Seventh Edition yacc, which now lives in the compiler tree.
+- Plain `int` bit-fields are unsigned and `08`/`09` are accepted in octal constants, as in the original compiler. V7 `make` depends on the first.
+
+### C symbols carry an underscore
+
+`cz8` now names C symbols as the PDP-11 compiler does: a leading underscore, eight characters in all, so seven of the C name are significant. The compiler's support routines (`lmul`, `ldiv`, `fadd`, ...) have none. Before this a C program that defined `flt` or `ldiv` collided with the runtime.
+
+- `krt.s`: every label called from C is `_name` (`_save`, `_resume`, `_spl0`, `_fubyte`, ...) and references to C symbols are `_trap`, `_clock`, `_hdintr`, `_consrint`, `_main`, `_useg`.
+- `tools/libc`: system call stubs, `setjmp`/`longjmp` and `errno` are underscored; the C-level `_exit` is `__exit` in assembly.
+- `tools/libc/end.c` is gone: C's `end` is now the linker's own `_end`.
+- In `libc.a`, `errno.b` comes last. The linker loads an archive member only if it defines something, and uninitialized data does not count.
+
+### Two interrupt races in `krt.s`
+
+Both were latent; the new compiler shifted instruction timing enough to hit them.
+
+1. **`resume()`** remapped the u-area and restored SP about ten instructions later with interrupts enabled. In that window the stack pages belong to the new process while SP is still the old one, so a clock interrupt pushed its frame over the new process's kernel stack. Symptom: the shell prompt appeared, the command never ran, and the CPU ran off into BSS. `resume()` now masks interrupts from the remap until SP is restored, as V7's PDP-11 `resume` does with `bis $340,PS`.
+2. **`spl5` was backwards.** On the PDP-11 it blocks devices and leaves the clock running. Ours set VIE and cleared NVIE, so `ttstart()`, called from inside the console interrupt handler, turned device interrupts on and a second character's handler ran in the middle of the first one's echo. Symptom: echoed characters dropped and reappearing later (`eco hello`, `hhello`); the build from before the compiler update showed it too. `spl4`/`spl5` now clear VIE and leave NVIE alone.
+
+### Build and test no longer hide failures
+
+- **Compiler errors.** `pcc_compile.sh` used to merge `cz8`'s stderr into the assembly and strip every line starting with `"`, which is how `cz8` prefixes diagnostics. A file the compiler rejected still "built". Diagnostics now go to the terminal and any failure fails the build. The kernel has one warning: `sys/trap.c` line 31, "illegal pointer combination".
+- **Dependencies.** Kernel objects depend on `cz8`, `az8`, `ldz8` and every header in `h/`. Before, a compiler update or a header edit rebuilt nothing.
+- **Boot test.** It used to pass if the output contained `hello`, which the echoed command line always does. It now requires the pipeline's own output line, a prompt after it, the system at rest in `idle()`, and the exact transcript.
+- **Linker.** `ldz8` used to exit 0 after reporting undefined or multiply defined symbols.
+
+### The Seventh Edition C library
+
+`tools/libv7.a` is built from the unmodified V7 sources in `v7z8000/usr/src/libc/gen` and `stdio` (77 files). V7's PDP-11 assembly is replaced by Z8000 files in `tools/libc/`:
+
+| File | Replaces | Contents |
+|------|----------|----------|
+| `doprnt.c` | `stdio/doprnt.s`, `fltpr.s`, `ffltpr.s` | the `printf` conversion engine |
+| `fpsup.c` | `gen/modf11.s`, `ldexp11.s`, `frexp11.s` | `modf`, `ldexp`, `frexp` for IEEE doubles |
+| `exit.c`, `fakcu.c` | `gen/cuexit.s`, `fakcu.s` | `exit` flushing stdio, and the dummy `_cleanup` |
+| `abort.c` | `gen/abort.s` | `abort` |
+| `syscalls.az8`, `setjmp.az8`, `sbrk.c` | `sys/*.s`, `gen/setjmp.s` | system calls |
+
+`crt0` now calls C `exit()` after `main`, as V7's does. Not built: `mon.c`, `mpx.c`, `pkon.c`, `nlist.c` (needs the `a_flag` field our `a.out.h` renamed) and `stty.c` (the system call stubs already provide `stty`/`gtty`). Every `printf` user links the floating-point formatter; V7 avoids that with the `fltused` trick, not reproduced here.
+
+`tools/libctest.c` runs 33 checks under the kernel: strings, `ctype`, `malloc`, `qsort`, `sprintf` with ints, longs and doubles, `atof`, `sscanf`, and file I/O with `fopen`/`fgets`/`fclose`.
+
+### Tests
+
+```sh
+cmake --build build --target test        # boot test, exact transcript
+cmake --build build --target test-libc   # libctest under the kernel
+make -C PCC-z8000/z8000/test gate         # compiler gate, including the ratchet
+```
+
+`emu/test_driver.cpp` takes `-d <hd image>`, `-i <console input>` and `-x <expected text>` to run something other than the boot test.
+
+**Test:** boot test PASS with the exact transcript `boot\nZ8000 Unix\n# echo hello | cat\r\nexit\r\nhello\r\n# # `. `test-libc`: `libc: 33 passed, 0 failed`.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
 - All V7 C source compiled with PCC (cz8) in Z8002 mode, K&R style unchanged
+- C symbols carry a leading underscore, as on the PDP-11
+- The Seventh Edition C library (stdio, strings, malloc, floating conversion) built from unmodified sources and tested under the kernel
 - PCC toolchain produces native a.out binaries directly (no conversion scripts)
 - Bourne shell running with fork/exec/wait/pipe
 - Shell pipelines work (`echo hello | cat`)
@@ -368,7 +433,8 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 - Pipes (pipe.c) for inter-process communication
 - Clock interrupts via NVI with timeout() callouts
 - Cross-segment user memory access (copyin/copyout) via SEG mode toggle
-- SPL functions controlling VIE/NVIE enable/disable
+- SPL functions controlling VIE/NVIE: spl5 blocks devices, spl6 blocks devices and clock
+- Build fails on any compiler error; boot test compares the exact console transcript
 - Trap diagnostic handlers (privilege violation, segmentation trap)
 
 ## Divergence from Pristine V7
@@ -394,14 +460,17 @@ tty.h, line 59: warning: structure typed union member must be named
 tty.c, line 85: warning: illegal member use: t_intrc
 ```
 
-and the build pipeline (`cpp | cz8 2>&1 | grep -v '^"'`) merges `cz8`'s stderr into the assembly stream and strips every line starting with `"`. The warnings are therefore invisible, and so would a genuine error be — the build would carry on with truncated assembly. Making the diagnostics visible first, so the noise can be told apart from real failures, is the prerequisite for taking this change.
+At the time the build pipeline swallowed all compiler output, so that noise could not be told apart from a real failure. Since Step 17 diagnostics are visible and errors fail the build, so this change is no longer blocked. What remains is deciding what to do with the warnings: accept 19 lines of noise per file, or teach `cz8` that this V7 idiom is not worth a warning.
 
 `inode.h` is a weaker case: ours flattens the union to `i_addr[NADDR]` plus `#define i_rdev i_addr[0]`, which is semantically identical and clearer, and most of its diff is the removal of `struct group` for the mpx multiplexer — a feature amputation, not a toolchain workaround.
 
 ## Planned Steps
 
+- **Pristine `tty.h`**: now unblocked, see Divergence from Pristine V7 above
+- **`trap.c` line 31**: look at the one remaining kernel compiler warning
+- **V7 startup code**: have `crt0` define and set `environ` as V7's does, and take `errno` from a `cerror` with its own `.comm`, which removes the archive-ordering dependency in `tools/libc`
 - **stty/ioctl**: terminal parameter control
-- **More commands**: ls, cp, wc, etc.
+- **More commands**: ls, cp, wc, etc., linked against `libv7.a`
 - **Multi-stage pipelines**: `ls | grep foo | wc`
-- **Surface cz8 diagnostics**: stop the build pipeline swallowing compiler warnings and errors, then drop the ACK-era header workarounds and return `tty.h` (and possibly `inode.h`) to pristine V7 — see Divergence from Pristine V7 above
+- **Amputated kernel features**: signals, `physio`/swap, the rest of `sysent` (see Divergence from Pristine V7)
 - **Self-hosting**: PCC compiling itself on Z8000 Unix

@@ -536,7 +536,8 @@ _outw:
 !
 ! Z8000 has no priority levels; VIE (0x1000) and NVIE (0x0800) control
 ! device and clock interrupts respectively.
-! spl0/spl1/spl4/spl5: enable both (set VIE+NVIE)
+! spl0/spl1: enable both (set VIE+NVIE)
+! spl4/spl5: disable devices (clear VIE), clock unchanged
 ! spl6/spl7: disable both (clear VIE+NVIE)
 ! splx(s): restore VIE+NVIE from saved FCW value
 ! All return the previous FCW value (for splx restoration).
@@ -551,15 +552,20 @@ _spl1:
 	ldctl	fcw, r1
 	ret
 
-! --- spl4/spl5: enable VIE only (allow device interrupts, block clock NVI) ---
-! On PDP-11, spl5 blocks clock (priority 6) but allows devices (priority 5).
-! On Z8000, NVIE = clock, VIE = devices.
+! --- spl4/spl5: block device interrupts (clear VIE) ---
+! On the PDP-11, spl5 raises the priority to 5: devices (tty, disk, priority
+! 5 and below) are blocked and the clock (priority 6) is not. On the Z8000,
+! VIE = devices and NVIE = clock, so spl5 clears VIE. NVIE is left as it is
+! rather than set: these are called from inside device interrupt handlers
+! (ttstart), where turning anything on would let interrupts nest.
+! An earlier version did the reverse (set VIE, cleared NVIE), which enabled
+! device interrupts inside the console interrupt handler and let a second
+! character's handler run in the middle of the first one's echo.
 _spl4:
 _spl5:
 	ldctl	r0, fcw			! r0 = old FCW (return value)
 	ld	r1, r0
-	and	r1, #0xF7FF		! clear NVIE (block clock)
-	or	r1, #0x1000		! set VIE (allow devices)
+	and	r1, #0xEFFF		! clear VIE (block devices)
 	ldctl	fcw, r1
 	ret
 

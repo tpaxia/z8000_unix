@@ -26,7 +26,18 @@ set(DRIVER_DIR "${CMAKE_SOURCE_DIR}/../../../emu" CACHE PATH "Emulator front end
 set(PCC_COMPILE_SH "${B}/pcc_compile.sh")
 file(WRITE "${PCC_COMPILE_SH}" [=[#!/bin/sh
 # Usage: pcc_compile.sh <include_dir> <source.c> <cz8_path> <output.az8>
-cpp -Dz8000 -Dz8002 -I"$1" "$2" | "$3" 2>&1 | grep -v '^"' > "$4"
+# cz8 writes assembly to stdout and diagnostics to stderr. Diagnostics are
+# left on stderr so warnings are seen, and any preprocessor or compiler
+# failure fails the build instead of leaving truncated assembly behind.
+cpp -Dz8000 -Dz8002 -I"$1" "$2" > "$4.i" || { rm -f "$4.i" "$4"; exit 1; }
+"$3" < "$4.i" > "$4"
+status=$?
+rm -f "$4.i"
+if [ $status -ne 0 ]; then
+	rm -f "$4"
+	echo "cz8 failed on $2" >&2
+	exit 1
+fi
 ]=])
 
 # =============================================================================
@@ -76,6 +87,9 @@ add_custom_command(OUTPUT ${B}/kernel.bin
 # Appends the .b path to HANDLER_B_FILES in parent scope.
 # NOTE: az8 has a 32-byte filename buffer (STR_MAX), so COMMAND arguments
 # use relative paths while OUTPUT/DEPENDS use absolute paths for CMake.
+# Every kernel source may include any kernel header.
+file(GLOB KERNEL_HEADERS "${CMAKE_SOURCE_DIR}/h/*.h")
+
 function(pcc_compile_c subdir name)
     set(SRC "${CMAKE_SOURCE_DIR}/${subdir}/${name}.c")
     set(AZ8_REL "${subdir}/${name}.az8")
@@ -84,12 +98,12 @@ function(pcc_compile_c subdir name)
     add_custom_command(OUTPUT "${B}/${AZ8_REL}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${subdir}"
         COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}"
-        DEPENDS "${SRC}"
+        DEPENDS "${SRC}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}"
         COMMENT "PCC: ${subdir}/${name}.c → .az8"
     )
     add_custom_command(OUTPUT "${B}/${B_REL}"
         COMMAND ${AZ8} -o "${B_REL}" "${AZ8_REL}"
-        DEPENDS "${B}/${AZ8_REL}"
+        DEPENDS "${B}/${AZ8_REL}" "${AZ8}"
         COMMENT "PCC: ${subdir}/${name}.az8 → .b"
     )
 
@@ -108,7 +122,7 @@ add_custom_command(OUTPUT ${B}/krt.az8
 )
 add_custom_command(OUTPUT ${B}/krt.b
     COMMAND ${AZ8} -o krt.b krt.az8
-    DEPENDS ${B}/krt.az8
+    DEPENDS ${B}/krt.az8 "${AZ8}"
     COMMENT "PCC: krt.az8 → krt.b"
 )
 
@@ -153,7 +167,7 @@ add_custom_command(OUTPUT ${B}/arith.az8
 )
 add_custom_command(OUTPUT ${B}/arith.b
     COMMAND ${AZ8} -o arith.b arith.az8
-    DEPENDS ${B}/arith.az8
+    DEPENDS ${B}/arith.az8 "${AZ8}"
     COMMENT "PCC: arith.az8 → arith.b"
 )
 list(APPEND HANDLER_B_FILES arith.b)
@@ -167,7 +181,7 @@ endforeach()
 
 add_custom_command(OUTPUT ${B}/handler.bout
     COMMAND ${LDZ8} -x -R 200 ${HANDLER_B_FILES} -o handler.bout
-    DEPENDS ${HANDLER_B_ABS}
+    DEPENDS ${HANDLER_B_ABS} "${LDZ8}"
     COMMENT "Linking handler.bout"
 )
 add_custom_command(OUTPUT ${B}/handler.bin
@@ -201,6 +215,23 @@ add_custom_target(disk_image
     COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root.img" "${B}/hd.img"
     WORKING_DIRECTORY "${TOOLS_DIR}"
     COMMENT "Building disk image"
+)
+
+# The Seventh Edition C library, exercised by tools/libctest.c under the kernel.
+add_custom_target(libc_image
+    COMMAND make -C "${TOOLS_DIR}" root-libc.img
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root-libc.img" "${B}/hd-libc.img"
+    WORKING_DIRECTORY "${TOOLS_DIR}"
+    COMMENT "Building C library test disk image"
+)
+
+add_custom_target(test-libc
+    COMMAND ./test_driver -c 400000000 -d hd-libc.img -i "libctest\\nexit\\n"
+            -x "libc: 33 passed, 0 failed"
+    DEPENDS kernel disk_image libc_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Running C library test under the kernel"
+    VERBATIM
 )
 
 add_custom_target(test

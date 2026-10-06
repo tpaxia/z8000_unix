@@ -13,6 +13,7 @@
 	.globl	_edata
 	.globl	_end
 	.globl	__exit
+	.globl	_exit
 
 ! --- Entry point (first instruction in text segment) ---
 _start:
@@ -36,9 +37,9 @@ _start:
 	ld	0(sp), r1	! arg 1: argc
 	call	__crtinit	! set environ = &argv[argc+1]
 	call	_main
-	! main() returned; call _exit(retval)
+	! main() returned: exit(retval), which flushes stdio first
 	ld	0(sp), r0	! arg 1: return value
-	call	__exit
+	call	_exit
 	halt
 
 ! --- _exit(status) --- syscall #1
