@@ -1,5 +1,7 @@
 # Step 8: Fork, Paged MMU, and V7-Style Context Switching
 
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+
 Added process management (fork/exit/wait), a paged MMU emulation, and V7-style context switching using a KDSA6-equivalent I/O port. Process 0 forks process 1, which writes a message via syscall and exits.
 
 ## Paged MMU
@@ -46,6 +48,8 @@ The PDP-11 uses `label_t[6]` (R2-R5, SP, return address). Our Z8000 uses `label_
 | 9 | Caller's R13 (frame pointer) |
 | 10 | Return address |
 | 11 | Caller's SP |
+
+(Since Step 12, when the frame pointer moved to R13 and R14 became callee-saved, the layout is: 0–3 R4–R7, 4–6 R10–R12, 7 R14, 8 caller's R13, 9 return address, 10 caller's SP, 11 unused.)
 
 The label_t stores the return address and SP explicitly because `resume()` cannot depend on stack contents — `newproc()` calls `bcopy()` after `save()` returns, which overwrites save's deallocated stack frame before the u-area snapshot is taken. The PDP-11 avoids this because `copyseg()` copies physical memory click-by-click without touching the virtual stack.
 

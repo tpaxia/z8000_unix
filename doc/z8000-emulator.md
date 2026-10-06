@@ -25,6 +25,20 @@ handler's `IRET` re-enables NVIE or VIE. A device that held the line would
 therefore re-enter its own handler forever. Use `set_input_line()` only for a
 source that genuinely holds a level until serviced.
 
+### Running tests
+
+`test_driver` runs the boot test by default: it types `echo hello | cat` and `exit` at the shell and requires the exact console transcript. Options run something else under the same kernel:
+
+| Option | Meaning |
+|--------|---------|
+| `-c <cycles>` | cycle limit (64-bit) |
+| `-d <image>` | hard disk image to boot from, instead of `hd.img` |
+| `-i <text>` | console input; `\n` written as two characters is a newline |
+| `-x <text>` | pass if the console output contains this text, the system comes to rest and there is no panic |
+| `-t`, `-r`, `-m` | instruction, register and memory traces |
+
+The kernel build wraps these as `cmake --build build --target test` and `--target test-libc`.
+
 This approach simplifies development considerably — the full kernel trap round-trip can be tested without a real boot sequence or hardware.
 
 ## Building

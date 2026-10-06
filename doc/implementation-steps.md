@@ -473,6 +473,7 @@ They are left on. "illegal member use" is exactly what flagged the header and so
 
 ## Planned Steps
 
+- **Interrupts are off almost everywhere**: user programs and most kernel code run with both interrupt enables clear, so a looping program freezes the machine and 93% of clock ticks are lost. Written up in [interrupt-masking.md](interrupt-masking.md); this should come before more userland work
 - **`trap.c` line 31**: look at the one remaining kernel compiler warning
 - **V7 startup code**: have `crt0` define and set `environ` as V7's does, and take `errno` from a `cerror` with its own `.comm`, which removes the archive-ordering dependency in `tools/libc`
 - **stty/ioctl**: terminal parameter control

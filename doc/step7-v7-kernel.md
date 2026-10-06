@@ -1,5 +1,7 @@
 # Step 7: V7 Kernel — Process 0, Filesystem, /dev/console
 
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+
 Replaced the test syscall handler with a real V7 kernel that boots to process 0, mounts a root filesystem from a RAM disk, opens `/dev/console`, and prints a message. This proves the entire V7 filesystem + buffer cache + device driver stack works end-to-end.
 
 ## What Was Built

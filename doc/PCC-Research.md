@@ -789,6 +789,18 @@ a Z8000 emulator, iterate quickly.  The PCC retargeting approach is
 historically authentic but unnecessarily painful for practical work.
 
 
+## 13. What Happened
+
+This document was written before the port began and is kept as it was. Its recommendation was followed, and then reversed.
+
+- **Steps 1–10 used ACK**, as recommended above. It got the kernel as far as a console with the V7 tty driver, at the cost of fixing its Z8000 assembler, runtime library and code generator along the way (see `implementation-steps.md`, Steps 1, 2, 7 and 8).
+- **Step 11 switched to PCC**, Option B. ACK cannot host itself on the target and its table-driven code generator was hard to debug; PCC is the compiler V7 itself was built around and was designed to be self-hosting. ACK has since been removed from the tree.
+- **Option B was done differently from how it is described above.** The work was not done on a PDP-11 emulator under V7's memory limits. The MIT 68000 back end was retargeted to the Z8002 as a cross-compiler on a modern host, with a new assembler (`az8`) and linker (`ldz8`); that is the `PCC-z8000` repository.
+- **Sections 10 and 11 describe ACK as it stood then.** Nothing in this project uses ACK now.
+- **The small-model recommendation of section 8 held.** Kernel and user programs are non-segmented, with 16-bit pointers.
+
+One consequence worth knowing: `az8` does not assemble segmented instructions. The statement in section 10 that "the assembler supports segmented addressing modes" is about ACK's assembler. The two segmented source files in the kernel, `rom.s` and `trap.s`, are assembled with GNU `z8k-coff-as`.
+
 ## References
 
 - S. C. Johnson, "A Tour Through the Portable C Compiler" (V7 Unix manual, Volume 2)

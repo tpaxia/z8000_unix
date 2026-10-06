@@ -88,20 +88,51 @@ Instructions using only immediate, register, or indirect-register addressing mod
 ## Syscall Dispatch
 
 ```c
-int syscall_handler(int num, unsigned *regs)
+trap(num, regs)
+int num;
+unsigned *regs;
 ```
 
-Dispatches by syscall number via V7-style `sysent[]` function-pointer table (64 entries). Each entry holds `{ sy_call, sy_narg }`. Bounds-checks the syscall number and NULL-checks the handler before calling.
+`trap()` in `sys/trap.c` is reached from the SYSCALL stub in `trap.s` through the jump table at the start of `krt.s` (see Entry Points below). It copies the arguments from the saved registers into `u.u_arg[0..4]`, sets `u.u_dirp` to the first one, and dispatches through the V7-style `sysent[]` table (64 entries). A number out of range or with no handler gives `ENOSYS`.
 
 ### Syscall Calling Convention
 
 ```
 sc #N           — syscall number N (encoded in instruction tag word)
-R1 = arg1       — e.g., fd for write
-R2 = arg2       — e.g., buffer pointer for write
-R3 = arg3       — e.g., byte count for write
-R0 = return     — bytes written, or -1 on error
+R1..R5          — up to five arguments (e.g. fd, buffer, count for write)
+R0 = return     — first result (u.u_r.r_val1), or -1 on error
+R1 = return     — second result (u.u_r.r_val2), or errno on error
 ```
+
+`fork` uses the second result: the kernel returns R1 = 1 in the child and 0 in the parent. The user-space stubs in `tools/libc/syscalls.az8` store R1 into `errno` when R0 is -1.
+
+## Entry Points
+
+`trap.s` (assembled with `z8k-coff-as`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `krt.s`, which is linked at 0x0200:
+
+| Address | Label | Reached from | Calls |
+|---------|-------|--------------|-------|
+| 0x0200 | `syscall_dispatch` | `syscall_entry` | `_trap` |
+| 0x0202 | `boot_entry` | boot code at 0x01F0 | `_main` |
+| 0x0204 | `nvi_dispatch` | `nvi_entry` | `_clock` |
+| 0x0206 | `vi_dispatch` | `vi_entry` | `_hdintr`, then `_consrint` |
+
+All devices share VI vector 0, so `vi_dispatch` calls every device handler and each one checks whether it has work.
+
+## Interrupt Levels
+
+The Z8000 has two interrupt enables in the FCW where the PDP-11 has priority levels: VIE (0x1000) for devices and NVIE (0x0800) for the clock.
+
+| Routine | PDP-11 meaning | Here |
+|---------|----------------|------|
+| `spl0`, `spl1` | everything allowed | set VIE and NVIE |
+| `spl4`, `spl5` | devices blocked, clock allowed | clear VIE, leave NVIE as it is |
+| `spl6`, `spl7` | everything blocked | clear VIE and NVIE |
+| `splx(s)` | restore | copy VIE and NVIE from `s` |
+
+All return the previous FCW for `splx`. `spl5` never turns anything on, because `ttstart()` calls it from inside the console interrupt handler. The interrupt stubs run with both enables clear.
+
+`resume()` also masks both from the moment it remaps the u-area until it has restored SP: in between, the stack pages already belong to the new process while SP is still the old one.
 
 ## Boot Flow (V7 Kernel)
 
@@ -109,20 +140,24 @@ R0 = return     — bytes written, or -1 on error
 ROM reset → seg0:0x0010 (init)
   → set PSAP to seg1:0x0000, system stack RR14 = seg1:0xFFF0
   → set NSP = 0xFFF0
-  → IRET to seg1:0x0100 (NONSEG+SYS)
+  → IRET to seg1:0x01F0 (NONSEG+SYS)
 
-seg1:0x0100 (trap.s boot entry):
+seg1:0x01F0 (trap.s boot entry):
   → call 0x0202
 
 seg1:0x0202 (krt.s boot_entry):
-  → zero BSS (begbss..endbss)
-  → ld R15, $0xFFFE   (kernel stack at top of u-area page)
+  → zero BSS (_edata.._end)
+  → ld sp, #0xFFFE    (kernel stack at top of u-area page)
+  → FCW = 0x5000      (NONSEG+SYS, devices enabled, clock not yet)
   → calr _main
 
 main() (sys/main.c):
   → proc[0] setup: p_stat=SRUN, p_flag=SLOAD|SSYS, p_addr=62
   → u.u_procp = &proc[0], u.u_error = 0
-  → rootdev = makedev(0, 0)
+  → rootdev = makedev(1, 0)   — the IDE hard disk; also pipedev, swapdev
+  → printf("boot\n")
+  → clkstart()      — enable the clock
+  → cinit()         — clist free list
   → binit()         — init 8-buffer cache, count block devices
   → iinit()         — open block device, bread superblock, mount root
   → iget(ROOTINO)   — load root inode
@@ -133,7 +168,7 @@ main() (sys/main.c):
   → newproc()       — fork process 1
     → child: copyout(icode) → return → krt.s → retu() → user mode
     → parent: swtch() → resumes child → child runs icode
-  → icode: write(1, "hello from process 1\n", 21) → exit(0)
+  → icode: exec("/etc/init") → init execs /bin/sh
 ```
 
 ## Paged MMU
@@ -161,7 +196,7 @@ physical = (frame << 11) | pg_off
 
 The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
 
-Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame 96.
+Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(NPROC+1)*32`, which is 288 with `NPROC` = 8: everything below is reserved for the identity-mapped segments.
 
 ## RAM Disk DMA
 
@@ -184,7 +219,9 @@ On command write, the emulator immediately copies 512 bytes between the disk ima
 
 ```
 bdevsw[0] = { mdopen, mdclose, mdstrategy, &mdtab }   — RAM disk
+bdevsw[1] = { hdopen, hdclose, hdstrategy, &hdtab }   — IDE hard disk (the root device)
 cdevsw[0] = { consopen, consclose, consread, conswrite } — console
+cdevsw[1] = the same entry, spare
 cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 ```
 

@@ -28,6 +28,8 @@ The ONIX operating system was a port of V7 Unix. Only about 60 lines of V7 C cod
 
 ## Proposed Design: Using Z8001 Segmentation to Select MMU Map Sets
 
+> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It does not implement split instruction/data maps, per-page protection bits or the normal-mode segment check described below, and only two page pairs of the kernel's segment are ever remapped (the u-area and a copy window). See `kernel-technical-reference.md`, Paged MMU.
+
 ### Core Concept
 
 Instead of using the Z8001's segmentation in its intended manner (per-segment base+limit translation via the Z8010), repurpose the 7-bit segment number as a **map set selector** for an external paged MMU. The segment number, which the Z8001 places on the address bus with every memory access, tells the MMU which set of page registers to use. Within each map set, the 16-bit offset is translated through page registers, exactly as the Onyx MMC did.

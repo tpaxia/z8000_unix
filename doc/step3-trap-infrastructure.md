@@ -1,5 +1,7 @@
 # Step 3: Trap Infrastructure
 
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+
 Implemented the SYSCALL trap round-trip — the foundation for all system calls.
 
 ## What Was Built
