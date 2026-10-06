@@ -16,7 +16,7 @@ extern int fstat(), getuid(), stime(), alarm(), pause(), utime();
 extern int stty(), gtty(), saccess(), nice(), ftime(), sync();
 extern int kill(), dup(), pipe(), times(), profil(), setgid();
 extern int getgid(), ssig(), ioctl(), umask(), chroot();
-extern int fprestore();
+extern int fprestore(), mpxchan(), exece();
 
 nosys()
 {
@@ -55,8 +55,8 @@ struct sysent sysent[] = {
 	{ 2, 2, fstat },	/* 28 = fstat */
 	{ 0, 0, pause },	/* 29 = pause */
 	{ 2, 2, utime },	/* 30 = utime */
-	{ 1, 1, stty },		/* 31 = stty */
-	{ 1, 1, gtty },		/* 32 = gtty */
+	{ 2, 2, stty },		/* 31 = stty */
+	{ 2, 2, gtty },		/* 32 = gtty */
 	{ 2, 2, saccess },	/* 33 = access */
 	{ 1, 1, nice },		/* 34 = nice */
 	{ 1, 1, ftime },	/* 35 = ftime */
@@ -76,16 +76,16 @@ struct sysent sysent[] = {
 	{ 0, 0, nosys },	/* 49 */
 	{ 0, 0, nosys },	/* 50 */
 	{ 0, 0, nosys },	/* 51 */
-	{ 1, 1, fprestore },	/* 52 = restore signal EPU state */
+	{ 3, 3, nosys },	/* 52 = sysphys (not implemented) */
 	{ 0, 0, nosys },	/* 53 */
 	{ 3, 3, ioctl },	/* 54 = ioctl */
 	{ 0, 0, nosys },	/* 55 */
-	{ 0, 0, nosys },	/* 56 */
+	{ 4, 4, mpxchan },	/* 56 = multiplexor (optional stub) */
 	{ 0, 0, nosys },	/* 57 */
 	{ 0, 0, nosys },	/* 58 */
-	{ 0, 0, nosys },	/* 59 */
-	{ 0, 0, nosys },	/* 60 */
-	{ 1, 1, umask },	/* 61 = umask */
-	{ 1, 1, chroot },	/* 62 = chroot */
+	{ 3, 3, exece },	/* 59 = exec with environment */
+	{ 1, 1, umask },	/* 60 = umask */
+	{ 1, 1, chroot },	/* 61 = chroot */
+	{ 1, 1, fprestore },	/* 62 = Z8000 signal EPU restore */
 	{ 0, 0, nosys },	/* 63 */
 };

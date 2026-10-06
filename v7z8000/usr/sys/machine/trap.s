@@ -65,7 +65,7 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_seg	! PC low: offset of seg handler
+	.word	0x020A		! PC low: krt.s SEGTRAP entry
 
 ! --- NMI vector (offset 0x28) ---
 	.word	0x0000		! reserved
@@ -154,17 +154,6 @@ default_priv:
 	outb	@r0, rl1
 	ret
 
-	.segm
-default_seg:
-	! Minimal SEGTRAP handler: switch to NONSEG+SYS, print 'X', halt.
-	! Avoid stack operations that could double-fault.
-	ld	r1, #0x4000
-	ldctl	fcw, r1		! NONSEG + SYS
-	.unsegm
-	ld	r1, #0x0058		! 'X'
-	ld	r0, #0x00F0
-	outb	@r0, rl1
-	halt
 	.segm
 default_nmi:
 	halt

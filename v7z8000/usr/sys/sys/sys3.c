@@ -2,6 +2,7 @@
 #include "../h/systm.h"
 #include "../h/mount.h"
 #include "../h/ino.h"
+#include "../h/reg.h"
 #include "../h/buf.h"
 #include "../h/filsys.h"
 #include "../h/dir.h"

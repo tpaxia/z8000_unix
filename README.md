@@ -41,7 +41,12 @@ See [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) for the full 
 
 ### Syscall Convention
 
-System calls use the Z8000 `sc` instruction. The syscall number is encoded in the tag word, arguments are passed in registers (R1-R3), and the return value comes back in R0. Dispatch uses a V7-style `sysent[]` function-pointer table.
+System calls use the Z8000 `sc` instruction. The syscall number is encoded in the tag word, arguments are passed in registers (R1-R5), and the return value comes back in R0. Dispatch uses a V7-style `sysent[]` function-pointer table.
+
+The current ABI uses V7's exec/execve, umask and chroot numbers; the Z8000 EPU
+restore extension uses slot 62. Earlier port binaries using the changed slots
+must be rebuilt with the matching libc and kernel. See the
+[ABI migration instructions](doc/kernel-technical-reference.md#user-program-startup).
 
 ### Compiler: PCC
 
@@ -106,6 +111,26 @@ Run these commands from the repository root. The basic boot disk contains a
 small command set. The larger native development disk, including sources and
 makefiles, is built separately using the [Step 29 and Step 30 instructions](doc/implementation-steps.md#step-29-native-compiler-self-hosting).
 
+The upper-layer restoration has completed batches 1–5, including user-access
+fault recovery, shared filesystem/TTY interfaces, ordinary buffer-cache behavior
+and syscall compatibility. The configured process limit is 16 so recursive
+native builds have room for command shells and compiler passes. Resource maps
+and real memory sizing are next; see the [restoration audit](doc/v7-upper-layer-audit.md).
+
+To run the current kernel regression targets:
+
+```sh
+cmake --build v7z8000/usr/sys/build --target \
+  test test-libc test-signal test-preempt test-tty test-split test-fpe \
+  test-copy test-fault test-v7-interfaces test-bio test-abi
+python3 PCC-z8000/z8000/test/ratchet/run.py
+```
+
+These cover both executable layouts, copy/fault recovery, filesystem and TTY
+contracts, queued disk I/O and reboot persistence, syscall numbers and process
+exhaustion. Native self-hosting and development-environment rebuilds use the
+separate Step 29/30 commands linked above.
+
 ## Files
 
 | File | Purpose |
@@ -157,6 +182,7 @@ makefiles, is built separately using the [Step 29 and Step 30 instructions](doc/
 | Document | Contents |
 |----------|----------|
 | [doc/implementation-steps.md](doc/implementation-steps.md) | Step-by-step implementation journal |
+| [doc/v7-upper-layer-audit.md](doc/v7-upper-layer-audit.md) | V7 kernel differences, compatibility findings and restoration order |
 | [doc/kernel-technical-reference.md](doc/kernel-technical-reference.md) | Kernel internals: PSA table, CPU modes, SYSCALL flow, stack layout |
 | [doc/z8000-emulator.md](doc/z8000-emulator.md) | Z8000 software emulator and its use in the project |
 | [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) | Custom paged MMU design using Z8001 segment numbers as map set selectors |

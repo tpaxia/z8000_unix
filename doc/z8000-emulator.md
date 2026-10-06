@@ -91,3 +91,30 @@ artifacts; test targets also build the host driver. Configure with
 Standalone compiler test programs exit via `halt`, with the return value from
 `main()` in R0. Unix programs exit through the kernel syscall; the kernel may
 HALT while idle, which the integration driver handles according to its test mode.
+
+## Kernel access-fault tests
+
+The kernel test driver supports `-F r:HEX`, `-F w:HEX`, and `-F u:HEX` with
+`-w marker -I input`. Once the marker appears, an access touching that user-bank
+offset is denied and raises the CPU's SEGTRAP. Modes r/w restrict injection to
+kernel segmented reads/writes; u restricts it to user-mode accesses. The failed
+bus access is suppressed. Kernel/ROM/EPU-service banks are excluded. This test
+option leaves normal fixed-bank mappings unchanged and reports the denied-access
+count. Run `cmake --build tests/build/kernel-config --target test-fault` for
+range, copy recovery, exec, signal-stack and direct-user-fault tests in both
+executable layouts. Expected-text runs stop at idle HALT only after their verdict
+appears, or at the configured cycle limit.
+
+## User memory profiling
+
+`-P report.tsv` observes user stack minima and successful break requests,
+recording executable names at successful exec transitions. It recognizes both
+V7 exec (11) and environment-aware exec (59), preserves the current record on
+failed exec, and finishes records on exit. `test-abi` checks that boot exec and
+libc execve both produce records. These are workload observations, not memory
+bounds for arbitrary inputs.
+
+After changing the driver or profiler, rebuild each harness used for tests.
+In particular, native self-hosting prefers `tests/build/selfhost/host/test_driver`
+when present, and the development-environment runner uses that driver. See the
+[ABI rebuild sequence](kernel-technical-reference.md#user-program-startup).

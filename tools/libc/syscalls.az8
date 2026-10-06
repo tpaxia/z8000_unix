@@ -53,6 +53,7 @@
 	.globl	_getgid
 	.globl	_signal
 	.globl	_ioctl
+	.globl	_chroot
 	.globl	_umask
 
 ! ======================================================================
@@ -171,13 +172,13 @@ _unlink:
 	ret
 
 ! ======================================================================
-! int execve(name, argv, envp) -- syscall #11
+! int execve(name, argv, envp) -- syscall #59
 ! ======================================================================
 _execve:
 	ld	r1, 2(sp)	! name
 	ld	r2, 4(sp)	! argv
 	ld	r3, 6(sp)	! envp
-	sc	#11
+	sc	#59
 	! If we get here, exec failed
 	cp	r0, #0xFFFF
 	jr eq,	cerror
@@ -497,7 +498,7 @@ _signal:
 	jp	cerror
 
 ! Kernel entry frame: signo, saved FCW, saved R0, saved PC, 96 EPU bytes.
-! Syscall 52 restores EPU state; CPU FLAGS/PC return stays unprivileged.
+! Syscall 62 restores EPU state; CPU FLAGS/PC return stays unprivileged.
 .Lsigtramp:
 	push	@sp, r1
 	push	@sp, r2
@@ -524,7 +525,7 @@ _signal:
 	add	sp, #2
 	! Preserve emulated EPU registers across an asynchronous C handler.
 	lda	r1, 36(sp)
-	sc	#52
+	sc	#62
 	! Move the return PC past the 96-byte EPU save area.
 	ld	r0, 34(sp)
 	ld	130(sp), r0
@@ -566,9 +567,17 @@ _ioctl:
 	ret
 
 ! ======================================================================
-! int umask(mask) -- syscall #61
+! int umask(mask) -- syscall #60
 ! ======================================================================
 _umask:
 	ld	r1, 2(sp)	! mask
+	sc	#60
+	ret
+
+! int chroot(path) -- V7 syscall #61
+_chroot:
+	ld	r1, 2(sp)
 	sc	#61
+	cp	r0, #0xFFFF
+	jp eq,	cerror
 	ret

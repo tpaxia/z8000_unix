@@ -779,7 +779,8 @@ with current u-area/stack pages aliased through UPAGE.
 PCC-compatible wrappers execute EPA instructions. The CPU traps into the
 service, which runs guest integer assembly with interrupts enabled. Fork,
 exec and caught signals preserve/reset state appropriately. The signal frame
-now includes 96 EPU bytes and libc restores them using syscall 52, requiring
+now includes 96 EPU bytes and libc initially restored them using syscall 52
+(moved to 62 in upper-layer batch 5), requiring
 relinking programs that use caught signals. Unsupported opcodes, including
 upstream's broken FINT, are rejected instead of silently miscomputing or hanging.
 
@@ -1243,8 +1244,127 @@ tty.c, line 85: warning: illegal member use: t_intrc
 
 They are left on. "illegal member use" is exactly what flagged the header and source being out of step, and the compiler repository's ratchet records the exact set, so a new one is noticed.
 
+## V7 upper-layer restoration: batch 1
+
+Restored original V7 `pipe.c`, `sys3.c`, `sys4.c` and the syscall return union,
+including named time/offset accesses. Corrected default signal termination to
+put the signal in the low wait-status byte; ordinary exit remains high-byte.
+Updated signal, preemption and EPU assertions and added independent normal-exit
+and Bourne shell reporting checks. Libc now has 39 regression checks, including
+32-bit time and seek returns, exercised in combined and split I/D layouts.
+
+Validation: boot, libc, signals, preemption, TTY, split I/D and EPU tests pass.
+All 29 kernel assembly outputs are unchanged except the signal-status fix;
+the full 689-file compiler ratchet passes with reviewed kernel baselines.
+`time(&value)` pointer storage is an existing missing libc behavior, recorded
+in the audit; the time-return regression compares `time(0)` with `ftime()`.
+
+## V7 upper-layer restoration: batch 2
+
+Restored V7 `passc()`/`cpass()` I/D selection and byte-error accounting, with
+parentheses correcting the original `passc()` ternary comparison. Restored
+original `iomove()` bulk/byte selection and bulk-error handling. No machine
+assembly changes or new memory-protection claims accompany this step.
+
+Added `test-copy`: 655 cases per combined/split executable, using actual shared
+functions, target headers and injected machine-helper failures. Covers all
+spaces, directions, alignment, high-bit bytes, zero count, boundaries and
+partial accounting. Boot, libc, signals, preemption, TTY, split and EPU tests
+pass. The technical reference now defines the helper return/fault contract and
+recorded the missing fault recovery, implemented in the following step.
+
+## Machine-layer access-fault recovery
+
+SEGTRAP now dispatches through a ten-site user-access recovery table. Faults in
+those byte/word/bulk helper instructions return -1 after restoring mode, stack
+and caller interrupt state. Other kernel faults panic; user faults deliver
+SIGSEGV. Bulk helpers and read/write requests reject 64 KB address wrap; word
+helpers reject odd addresses. The fixed-bank MMU still maps whole user spaces;
+this does not introduce protected gaps or read-only text.
+
+Exec vector faults now report EFAULT; faults during image/stack construction
+take the existing fatal-image path. Signal-frame failures terminate with SIGSEGV,
+and failed EPU restores leave previous state intact. Added a test-driver denied
+bus access option, armed after a guest marker, which uses real CPU SEGTRAP
+handling. The driver waits for an expected verdict before stopping at an idle
+HALT, avoiding premature termination while longer tests sleep.
+
+Validation: 30 guest fault scenarios (both layouts), 655 copy-policy cases per
+layout, and boot/libc/signals/preemption/TTY/split/EPU suites pass. Tests include
+mid-copy failure accounting and subsequent syscall/clock operation.
+
+## V7 upper-layer restoration: batch 3
+
+Restored pristine `file.h`, `mx.h`, `fakemx.c`, `fio.c` and `nami.c`, plus the
+multiplexor branches in `sys2`, `iget` and TTY processing. The configuration
+selects `fakemx.c` through `KERNEL_OPTIONAL_C`; syscall 56 returns V7's disabled
+`EINVAL` result. No multiplexed device or active channel is installed.
+
+Restored `ttioccomm()` recognized/unrecognized returns, discipline queries and
+selection, and discipline ioctl dispatch. The console driver supplies ENOTTY
+for an unhandled request. Preserved validation before flush and interrupt-safe
+parameter updates; special-character updates now also commit only after a
+successful copy. Discipline zero has configured callbacks; no alternate is
+installed.
+
+Validation: `test-v7-interfaces` covers >64 KB directory offsets, pathname and
+file lifecycle operations, dup, pipes, disabled mpx, driver fallback and TTY
+failure handling. Expanded real TTY tests and all existing runtime suites pass;
+all 30 kernel C files compile and assemble, and the full compiler ratchet has
+690 files. Kernel-only builds still work.
+
+## V7 upper-layer restoration: batch 4
+
+Restored ordinary `bio.c` code, DISKMON counters (including initialized NBUF)
+and V7 word-based buffer clearing. Removed obsolete RAM-disk-only comments.
+Swap/raw/physical-map paths remain separate because their machine contracts
+are not yet implemented.
+
+Fixed an HD driver prerequisite: queue outstanding buffers instead of replacing
+one active pointer. V7 `bflush()` submits asynchronous writes with interrupts
+masked, so multiple requests must survive until completion. The driver unlinks
+before `iodone()`, handles errors without copying failed read data, and starts
+the next queued request.
+
+Validation: target-ABI tests using real cache/driver code with deferred/error
+completions pass; a real-kernel 24-block write/partial-update/sync/save/reboot
+round trip verifies disk contents. All existing runtime suites and compiler
+ratchet pass. Panic flushing remains unchanged after source review: ordinary
+`update()` can wait on a buffer held by the panicking path and needs a separate
+bounded panic protocol before reinstatement.
+
+## V7 upper-layer restoration: batch 5
+
+Restored V7 syscall numbering and exec semantics together: slot 11 takes
+pathname/argv and clears the environment; slot 59 takes pathname/argv/envp;
+umask/chroot use 60/61. Both exec paths preserve the newly installed user
+stack on trap return. Libc wrappers match, and execl now inherits environ
+and returns failure to its caller. The EPU signal-state restore extension
+moved from sysphys slot 52 to unused slot 62; sysphys remains unimplemented.
+
+This is a coordinated binary ABI migration. Rebuild both libraries, relink
+programs and regenerate disks with the matching kernel; old syscall aliases
+would collide with the restored V7 meanings. Boot icode still uses slot 11.
+
+Added test-abi for direct-slot and libc behavior in combined and split I/D:
+exec environments (including poisoned R3 on SC11), execv/execl inheritance,
+umask file modes, chroot isolation and slot 52 rejection. Existing runtime
+suites and the full 690-file compiler ratchet pass. The 52-step native
+self-host rebuild produces identical front/back/optimizer objects and
+executables across two generations.
+
+The full recursive native build exposed the old eight-process ceiling: V7's
+shell sleeps and retries fork when the table is full. Raised NPROC to 16
+(+224 bytes kernel BSS); the MMU bank reservations already derive from NPROC.
+Added exhaustion/reaping/reuse coverage and updated the emulator memory profiler
+to recognize both exec numbers. All 82 native development stages now pass,
+including recursive make all; all 92 libc archive members and the native
+compiler parser match their host-built counterparts. Runtime suites and the
+compiler ratchet pass with the final 16-process configuration.
+
 ## Planned Steps
 
+- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), continuing with resource maps and real memory sizing (batch 6). Ordinary cache restoration is complete; panic-specific flushing and physical/swap I/O remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
 - **More commands**: extend beyond the boot disk and native development tools, including ls, wc and grep
 - **Multi-stage pipelines**: `ls | grep foo | wc`
 - **Missing kernel features**: ptrace/core dumps, automatic stack growth, `physio`/swap and unsupported syscalls

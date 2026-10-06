@@ -185,7 +185,8 @@ time_t *ta, *tm;
 		p1 = (char *)dp->di_addr;
 		p2 = (char *)ip->i_un.i_addr;
 		for(i=0; i<NADDR; i++) {
-			if(*p2++ != 0)
+			if(*p2++ != 0 && (ip->i_mode&IFMT)!=IFMPC
+			   && (ip->i_mode&IFMT)!=IFMPB)
 				printf("iaddress > 2^24\n");
 			*p1++ = *p2++;	/* high byte */
 			*p1++ = *p2++;	/* mid byte */

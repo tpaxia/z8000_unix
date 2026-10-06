@@ -9,9 +9,11 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/timeb.h>
 
 char	*malloc(), *calloc(), *index(), *rindex(), *strcpy(), *strcat();
-long	atol();
+long	atol(), time(), lseek();
 double	atof();
 char	*getenv();
 extern char **environ;
@@ -72,6 +74,7 @@ char **argv, **envp;
 	int v[8], i, n;
 	unsigned u;
 	long l;
+	struct timeb stamp;
 	double d;
 	FILE *f;
 
@@ -184,6 +187,18 @@ char **argv, **envp;
 	check(35, close(-1) == -1 && errno == EBADF);
 	check(36, startup(0));
 	check(37, startup(1));
+
+	/* Both words of the kernel's overlaid syscall return union. */
+	i = ftime(&stamp);
+	l = time((long *)0);
+	check(38, i == 0 && l > 65535L && l >= stamp.time &&
+	    l <= stamp.time + 1);
+	i = creat("/tmp/seektest", 0600);
+	check(39, i >= 0 && lseek(i, 0x12345678L, 0) == 0x12345678L &&
+	    lseek(i, 0L, 1) == 0x12345678L && lseek(i, -0x12345678L, 1) == 0L);
+	if (i >= 0)
+		close(i);
+	unlink("/tmp/seektest");
 
 	printf("libc: %d passed, %d failed\n", passed, failed);
 	return (failed != 0);

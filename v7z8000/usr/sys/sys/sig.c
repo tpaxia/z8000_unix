@@ -111,12 +111,13 @@ unsigned usp;
 			goto die;
 		}
 		sp = usp - 104;
-		suword(sp, n);
-		suword(sp + 2, u.u_ar0[14]);
-		suword(sp + 4, u.u_ar0[0]);
-		suword(sp + 6, u.u_ar0[16]);
-		/* The trampoline restores these through syscall 52. */
-		copyout(u.u_fpe, sp + 8, 96);
+		if (suword(sp, n) < 0 || suword(sp + 2, u.u_ar0[14]) < 0 ||
+		    suword(sp + 4, u.u_ar0[0]) < 0 ||
+		    suword(sp + 6, u.u_ar0[16]) < 0 ||
+		    copyout(u.u_fpe, sp + 8, 96) < 0) {
+			n = SIGSEG;
+			goto die;
+		}
 		u.u_ar0[16] = handler;
 		u.u_error = 0;
 		if (n != SIGINS && n != SIGTRC)
@@ -131,6 +132,5 @@ unsigned usp;
 		}
 	/* Kill the process */
 die:
-	u.u_arg[0] = (n << 8);
-	exit(u.u_arg[0]);
+	exit(n);
 }

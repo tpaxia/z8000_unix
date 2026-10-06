@@ -61,7 +61,8 @@ consioctl(dev, cmd, addr, flag)
 dev_t dev;
 caddr_t addr;
 {
-	ttioccomm(cmd, &cons_tty[0], addr, dev);
+	if (!ttioccomm(cmd, &cons_tty[0], addr, dev))
+		u.u_error = ENOTTY;
 }
 
 /*

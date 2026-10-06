@@ -4,6 +4,7 @@
 #include "../h/user.h"
 #include "../h/inode.h"
 #include "../h/file.h"
+#include "../h/reg.h"
 
 /*
  * Max allowable buffering per pipe.

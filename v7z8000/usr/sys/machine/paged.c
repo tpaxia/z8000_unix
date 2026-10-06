@@ -251,3 +251,14 @@ struct proc *from, *to;
 {
 	copyseg((from - proc) + 1, (to - proc) + 1);
 }
+
+/* All bytes of each fixed 64KB user bank are mapped read/write. Reject
+ * address wrap before a transfer can cross into address zero. No gap or
+ * read-only text is implied by the current MMU's accounting fields.
+ */
+useracc(base, count, writing)
+char *base;
+unsigned count;
+{
+	return((long)(unsigned)base + (long)count <= 65536L);
+}

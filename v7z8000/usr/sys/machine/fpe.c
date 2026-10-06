@@ -110,11 +110,16 @@ done:
 fprestore()
 {
 	unsigned a;
+	char state[96];
 	a = u.u_arg[0];
 	if (a > 65440) {
 		u.u_error = EFAULT;
 		return;
 	}
-	copyin(a, u.u_fpe, 96);
+	if (copyin(a, state, 96) < 0) {
+		u.u_error = EFAULT;
+		return;
+	}
+	bcopy(state, u.u_fpe, 96);
 	u.u_fpflag = 1;
 }

@@ -2,6 +2,7 @@
 #include "../h/systm.h"
 #include "../h/dir.h"
 #include "../h/user.h"
+#include "../h/reg.h"
 #include "../h/inode.h"
 #include "../h/proc.h"
 #include "../h/timeb.h"
@@ -15,7 +16,7 @@
  */
 gtime()
 {
-	*(time_t *)&u.u_r = time;
+	u.u_r.r_time = time;
 }
 
 /*

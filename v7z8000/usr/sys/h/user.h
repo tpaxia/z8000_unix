@@ -22,9 +22,13 @@ struct	user
 	short	u_rgid;			/* real group id */
 	struct proc *u_procp;		/* pointer to proc structure */
 	int	*u_ap;			/* pointer to arglist */
-	struct {			/* syscall return values */
-		int	r_val1;
-		int	r_val2;
+	union {				/* syscall return values */
+		struct	{
+			int	r_val1;
+			int	r_val2;
+		};
+		off_t	r_off;
+		time_t	r_time;
 	} u_r;
 	caddr_t	u_base;			/* base address for IO */
 	unsigned int u_count;		/* bytes remaining for IO */

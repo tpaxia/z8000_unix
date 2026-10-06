@@ -30,7 +30,7 @@ char **argv;
 	struct sgttyb saved, mode, got;
 	struct tchars chars, changed, gotchars;
 	char buf[32];
-	int n, fd;
+	int n, fd, discipline;
 
 	if (gtty(0, &saved) < 0)
 		return(1);
@@ -50,6 +50,16 @@ char **argv;
 	check("clear close on exec", ioctl(fd, FIONCLEX, 0) == 0);
 	close(fd);
 	check("unknown command", ioctl(0, 0, &got) == -1 && errno == ENOTTY);
+	discipline = -1;
+	check("get discipline", ioctl(0, TIOCGETD, &discipline) == 0 && discipline == 0);
+	check("set ordinary discipline", ioctl(0, TIOCSETD, &discipline) == 0);
+	discipline = 1;
+	check("unconfigured discipline", ioctl(0, TIOCSETD, &discipline) == -1 && errno == ENXIO);
+	check("discipline unchanged", ioctl(0, TIOCGETD, &discipline) == 0 && discipline == 0);
+	check("discipline ioctl", ioctl(0, DIOCGETP, &got) == -1 && errno == ENODEV);
+	check("bad discipline address", ioctl(0, TIOCGETD, (char *)0xffff) == -1 && errno == EFAULT);
+	check("bad parameters", ioctl(0, TIOCSETP, (char *)0xffff) == -1 && errno == EFAULT);
+	check("parameters preserved", gtty(0, &got) == 0 && same(&saved, &got, sizeof(saved)));
 	mode = saved;
 	mode.sg_flags = CRMOD;
 	mode.sg_ispeed = B9600;

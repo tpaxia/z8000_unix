@@ -198,6 +198,12 @@ static char argbuf[NCARGS];	/* kernel buffer for exec arguments */
 
 exec()
 {
+	u.u_arg[2] = 0;
+	exece();
+}
+
+exece()
+{
 	register struct inode *ip;
 	register unsigned i;
 	extern int uchar();
@@ -243,7 +249,11 @@ exec()
 			int sp;
 			sp = fuword(ap);
 			ap += 2;
-			if (sp == 0 || sp == -1)
+			if (sp == -1) {
+				u.u_error = EFAULT;
+				goto bad;
+			}
+			if (sp == 0)
 				break;
 			na++;
 			/* Copy string from user space */
@@ -272,7 +282,11 @@ exec()
 			int sp;
 			sp = fuword(ap);
 			ap += 2;
-			if (sp == 0 || sp == -1)
+			if (sp == -1) {
+				u.u_error = EFAULT;
+				goto bad;
+			}
+			if (sp == 0)
 				break;
 			ne++;
 			for (;;) {
@@ -345,7 +359,8 @@ exec()
 	 * Zero BSS in user segment.
 	 */
 	for (i = 0; i < u.u_exdata.ux_bsize; i++)
-		subyte(u.u_exdata.ux_dsize + i, 0);
+		if (subyte(u.u_exdata.ux_dsize + i, 0) < 0)
+			goto badimage;
 
 	/*
 	 * Set up user stack with arguments.
@@ -374,7 +389,8 @@ exec()
 	usp &= ~1;
 	strbase = usp;
 	for (i = 0; i < nc; i++)
-		subyte(strbase + i, argbuf[i]);
+		if (subyte(strbase + i, argbuf[i]) < 0)
+			goto badimage;
 
 	/* Now lay out pointers below the strings */
 	/* Space needed: argc(2) + na ptrs(2*na) + NULL(2) + ne ptrs(2*ne) + NULL(2) */
@@ -382,29 +398,34 @@ exec()
 	usp &= ~1;
 
 	/* Write argc */
-	suword(usp, na);
+	if (suword(usp, na) < 0)
+		goto badimage;
 
 	/* Write argv[] pointers */
 	cp = argbuf;
 	for (i = 0; i < na; i++) {
-		suword(usp + 2 + i * 2, strbase);
+		if (suword(usp + 2 + i * 2, strbase) < 0)
+			goto badimage;
 		/* Advance past this string */
 		while (*cp++)
 			strbase++;
 		strbase++;	/* skip NUL */
 	}
 	/* argv terminator */
-	suword(usp + 2 + na * 2, 0);
+	if (suword(usp + 2 + na * 2, 0) < 0)
+		goto badimage;
 
 	/* Write envp[] pointers */
 	for (i = 0; i < ne; i++) {
-		suword(usp + 2 + (na + 1) * 2 + i * 2, strbase);
+		if (suword(usp + 2 + (na + 1) * 2 + i * 2, strbase) < 0)
+			goto badimage;
 		while (*cp++)
 			strbase++;
 		strbase++;
 	}
 	/* envp terminator */
-	suword(usp + 2 + (na + 1) * 2 + ne * 2, 0);
+	if (suword(usp + 2 + (na + 1) * 2 + ne * 2, 0) < 0)
+		goto badimage;
 
 	/*
 	 * Close EXCLOSE files, reset signals.

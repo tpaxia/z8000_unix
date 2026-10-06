@@ -14,6 +14,7 @@ tools/v7mkfs
 tools/*.b
 tools/*.az8
 !tools/sigregs.az8
+!tools/faultregs.az8
 tools/*.bout
 tools/*.out
 tools/libc.a

@@ -11,10 +11,11 @@
  * Interrupt-driven ATA PIO driver — VI interrupt on command completion.
  * Single drive, whole disk, LBA addressing.
  *
- * hdstrategy() issues the ATA command and returns.
+ * hdstrategy() queues the request and starts the controller if idle.
  * The emulator asserts VI when the operation completes.
  * hdintr() (called from the VI handler) performs the data transfer
- * for reads, checks status, and calls iodone().
+ * for successful reads, checks status, calls iodone(), and starts the next
+ * queued request.
  *
  * ATA register interface (emulated at standard x86 addresses):
  *   0x1F0 (R/W): DATA — 16-bit data transfer (word I/O)
@@ -52,7 +53,7 @@ extern int inb(), outb();
 extern int insw(), outsw();
 
 struct buf hdtab;
-struct buf *hd_bp;		/* active request */
+/* Busy buffers use av_forw as the pending-request queue link. */
 
 hdopen(dev, rw)
 dev_t dev;
@@ -67,27 +68,42 @@ dev_t dev;
 hdstrategy(bp)
 register struct buf *bp;
 {
+	int s;
+
+	s = spl6();
+	bp->av_forw = 0;
+	if (hdtab.b_actf)
+		hdtab.b_actl->av_forw = bp;
+	else
+		hdtab.b_actf = bp;
+	hdtab.b_actl = bp;
+	if (!hdtab.b_active)
+		hdstart();
+	splx(s);
+}
+
+/* Called with device interrupts masked; only the head owns the controller. */
+hdstart()
+{
+	register struct buf *bp;
 	register int blkno;
 
-	hd_bp = bp;
+	bp = hdtab.b_actf;
+	if (bp == 0)
+		return;
+	hdtab.b_active = 1;
 	blkno = bp->b_blkno;
-
-	/* Set LBA address and sector count */
 	outb(HD_SC, 1);
 	outb(HD_SN, blkno & 0xFF);
 	outb(HD_CL, (blkno >> 8) & 0xFF);
 	outb(HD_CH, 0);
-	outb(HD_DH, 0xE0);		/* LBA mode, drive 0 */
-
-	if (bp->b_flags & B_READ) {
-		/* READ: emulator loads sector + asserts VI */
+	outb(HD_DH, 0xE0);
+	if (bp->b_flags & B_READ)
 		outb(HD_CMD, CMD_READ);
-	} else {
-		/* WRITE: emulator sets DRQ, we fill buffer, VI on last word */
+	else {
 		outb(HD_CMD, CMD_WRITE);
 		outsw(HD_DATA, bp->b_un.b_addr, 256);
 	}
-	/* Don't call iodone — hdintr() will */
 }
 
 /*
@@ -98,20 +114,29 @@ register struct buf *bp;
 hdintr()
 {
 	register struct buf *bp;
+	int status;
 
-	bp = hd_bp;
-	if (bp == 0)
+	bp = hdtab.b_actf;
+	if (bp == 0 || !hdtab.b_active)
 		return;
-
-	if (bp->b_flags & B_READ)
-		insw(HD_DATA, bp->b_un.b_addr, 256);
-
-	/* Check for errors */
-	if (inb(HD_STATUS) & ST_ERR) {
+	status = inb(HD_STATUS);
+	if (status & ST_BSY)
+		return;
+	if (status & ST_ERR) {
 		bp->b_flags |= B_ERROR;
 		bp->b_error = EIO;
+	} else {
+		if ((bp->b_flags & B_READ) && !(status & ST_DRQ))
+			return;
+		if (bp->b_flags & B_READ)
+			insw(HD_DATA, bp->b_un.b_addr, 256);
+		bp->b_resid = 0;
 	}
-
-	hd_bp = 0;
+	/* Unlink before iodone(): asynchronous completion releases av_forw. */
+	hdtab.b_actf = bp->av_forw;
+	if (hdtab.b_actf == 0)
+		hdtab.b_actl = 0;
+	hdtab.b_active = 0;
 	iodone(bp);
+	hdstart();
 }

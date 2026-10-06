@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='split-link-', dir=build) as directory:
         assert b'exceeds 16-bit address space' in result.stdout + result.stderr, name
     print('split linker: rejects combined, data-space, and instruction-space overflow', flush=True)
 for command, expected in [('splittest', 'split: all checks passed'),
-                          ('libctest', 'libc: 37 passed, 0 failed'),
+                          ('libctest', 'libc: 39 passed, 0 failed'),
                           ('signaltest', 'signal: all checks passed')]:
     marker = 'signal: complete' if command == 'signaltest' else expected
     result = subprocess.run(

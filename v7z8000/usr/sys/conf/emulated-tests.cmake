@@ -23,7 +23,7 @@ add_custom_target(libc_image
 
 add_custom_target(test-libc
     COMMAND ./test_driver -c 400000000 -d hd-libc.img -i "libctest\\nexit\\n"
-            -x "libc: 37 passed, 0 failed"
+            -x "libc: 39 passed, 0 failed"
     DEPENDS kernel test_driver disk_image libc_image
     WORKING_DIRECTORY "${B}"
     COMMENT "Running C library test under the kernel"
@@ -48,6 +48,7 @@ add_custom_target(test-signal
     COMMAND ./test_driver -c 400000000 -d hd-preempt.img
             -i "signaltest\\n" -w "signal: complete" -I "exit\\n"
             -x "signal: all checks passed"
+    COMMAND python3 "${TOOLS_DIR}/test-signal-shell.py" "${B}"
     DEPENDS kernel test_driver disk_image preempt_image
     WORKING_DIRECTORY "${B}"
     COMMENT "Testing caught signals and user context restoration"
@@ -114,3 +115,43 @@ add_custom_target(test-fpe
     WORKING_DIRECTORY ${B}
     COMMENT "Testing separate software EPU, arithmetic and process state"
     VERBATIM)
+
+add_custom_target(test-copy
+    COMMAND python3 "${TOOLS_DIR}/test-copy.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing V7 copy dispatch and fault accounting on the target ABI"
+    VERBATIM
+)
+
+add_custom_target(test-fault
+    COMMAND python3 "${TOOLS_DIR}/test-fault.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing user address bounds and SEGTRAP recovery"
+    VERBATIM
+)
+
+add_custom_target(test-v7-interfaces
+    COMMAND python3 "${TOOLS_DIR}/test-v7-interfaces.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing restored V7 filesystem and TTY interfaces"
+    VERBATIM
+)
+
+add_custom_target(test-bio
+    COMMAND python3 "${TOOLS_DIR}/test-bio.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing buffer-cache policy, deferred HD completions and reboot persistence"
+    VERBATIM
+)
+
+add_custom_target(test-abi
+    COMMAND python3 "${TOOLS_DIR}/test-abi.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing V7 syscall numbers and exec environments in both layouts"
+    VERBATIM
+)

@@ -1,6 +1,6 @@
 /*
  * tunable variables
- * Reduced for single-process Z8000 bring-up.
+ * Small Z8000 configuration, including native recursive builds.
  */
 
 #define	NBUF	8		/* size of buffer cache */
@@ -16,7 +16,7 @@
 #define	CMAPSIZ	50		/* size of core allocation area */
 #define	SMAPSIZ	50		/* size of swap allocation area */
 #define	NCALL	20		/* max simultaneous time callouts */
-#define	NPROC	8		/* max number of processes */
+#define	NPROC	16		/* room for recursive make, shell and compiler */
 #define	NTEXT	40		/* max number of pure texts */
 #define	NCLIST	100		/* max total clist size */
 #define	HZ	60		/* Ticks/second of the clock */

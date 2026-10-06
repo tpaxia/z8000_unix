@@ -155,7 +155,7 @@ arithmetic exceptions signal SIGFPE. No arithmetic is performed by host code.
 Fork copies the workspace with the u-area. Exec clears it; first use selects
 affine infinity and round-to-nearest/even. Signal frames preserve the first
 96 bytes (eight 80-bit registers and control state). The updated libc
-trampoline restores them through syscall 52, then restores only unprivileged
+trampoline restores them through syscall 62, then restores only unprivileged
 CPU flags and PC. This changes the signal-frame ABI: existing programs that
 use caught signals must be relinked with the updated libc. All repository
 test images and native compiler binaries are rebuilt with it.
@@ -290,7 +290,7 @@ physical = (frame << 11) | pg_off
 
 The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
 
-Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(2*NPROC+1)*32`, which is 544 with `NPROC` = 8: everything below is reserved for the kernel, user data banks, and user instruction banks.
+Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(2*NPROC+1)*32`, which is 1056 with `NPROC` = 16: everything below is reserved for the kernel, user data banks, and user instruction banks.
 
 ### Separate Instruction and Data Spaces
 
@@ -325,6 +325,81 @@ including a function and PC-relative constant above address 0x8000. It covers
 BSS, initialized data, switch tables, file I/O, signals, fork isolation, failed
 exec, and transitions between combined and split programs. It also runs the
 libc and signal suites as 0411 binaries and checks linker overflow rejection.
+
+### Shared user-copy policy and machine-helper contract
+
+`passc()`, `cpass()` and `iomove()` now follow V7 transfer policy. `u_segflg`
+selects user data (0), kernel memory (1), or user instructions (2). Aligned,
+even-length user transfers use the corresponding bulk helper; other transfers
+use the byte routines, including kernel-memory transfers. `iomove(..., 0, ...)`
+has no effect. Callers supply a nonnegative length no greater than `u_count`;
+`passc()` requires a nonzero remaining count.
+
+The replaceable machine layer must implement these return conventions:
+
+| Helpers | Success | Failure |
+|---|---|---|
+| `fubyte`, `fuibyte` | Unsigned byte, 0–255 | Negative value |
+| `subyte`, `suibyte` | Zero | Negative value |
+| `copyin`, `copyout`, `copyiin`, `copyiout` | Zero after the whole transfer | Nonzero |
+
+A failed byte access sets `EFAULT` without advancing `u_base`, `u_count` or
+`u_offset` for that byte. Earlier successful bytes remain accounted. A failed
+bulk operation sets `EFAULT` without advancing any of those fields for that
+operation. Its destination may already contain a copied prefix: the V7 bulk
+interface has no residual count and does not promise rollback. Successful
+operations update the three fields exactly once. `passc()` also returns -1
+when the last requested byte succeeds; `u_error` distinguishes failure.
+
+`machine/krt.s` now rejects bulk ranges crossing the 64 KB boundary and odd
+word addresses (including a word at `0xffff`). Zero-length bulk copies do not
+access memory; a final byte at `0xffff` remains valid. `rdwr()` calls the selected
+MMU's `useracc()` before starting a read/write, preventing a long request from
+wrapping across multiple buffer-cache blocks or byte transfers.
+
+The current MMU maps each complete user bank read/write. Accordingly,
+`useracc()` checks address wrap, not a nonexistent heap/stack gap or read-only
+text. A null pointer is not inherently unmapped in this layout. Future MMUs
+must extend this interface to check their actual mappings and permissions.
+
+The SEGTRAP vector now enters the runtime at `0x020a`, saves the same registers
+as syscall entry, and calls `segtrap()`. For a kernel fault, `ufixups` recognizes
+only the saved PCs immediately following the ten user-access instructions.
+Z8001 SEGT is accepted after the instruction, as specified in the CPU manual
+(section 7.3.4 and the interrupt transaction description). The handler redirects
+IRET to the matching recovery label. That label restores the helper caller's
+FCW, including interrupt enables, and unwinds the helper frame with return -1.
+No global recovery pointer or shared continuation is needed. Kernel faults
+outside those sites panic; user faults enter normal SIGSEGV delivery.
+
+Exec argument-vector faults now return `EFAULT`; a fault after exec has replaced
+the old image takes the existing fatal-image path. Signal-frame store failures
+terminate with SIGSEGV instead of returning into an incomplete frame. EPU-state
+restoration copies into a temporary buffer first, so a failed copy cannot leave
+partially restored state.
+
+This mechanism requires a functioning system stack and MMU hardware that
+suppresses invalid accesses and raises SEGT. It does not recover arbitrary
+kernel bugs, supply demand paging, or introduce per-page protection policy.
+
+`test-copy` compiles the actual three shared functions with the real target
+headers and user structure, relocating `u` into the test program and replacing
+only machine helpers. It runs 655 cases in each executable layout: all three
+spaces, both directions, odd/even addresses and lengths, zero count, high-bit
+bytes, 32-bit offset carry, injected failures and an address-space boundary.
+Failures are synthetic; existing boot, libc, TTY and split-I/D suites exercise
+the kernel with the actual machine helpers.
+
+`test-fault` adds 30 guest scenarios across combined and split I/D layouts.
+They test range rejection, zero-length and last-byte accesses, actual bus faults
+in byte/bulk copies, mid-transfer accounting, pathnames, exec vectors, EPU
+restoration, signal stacks, split-text loading and direct user accesses.
+Each recovery case checks subsequent syscalls and clock progress. The emulator
+option `-F r:hex`, `-F w:hex` or `-F u:hex` denies an access at that offset after
+the `-w` marker: r/w target kernel segmented user accesses; u targets user-mode
+accesses. The bus suppresses the access and requests the CPU's real SEGTRAP
+path. This is test-only fault injection, not a new production MMU permission
+register. Ordinary runs have no injected denied addresses.
 
 ### Library Archives
 
@@ -389,10 +464,10 @@ odd SP or insufficient space above the data area for the frame and trampoline
 entry, terminating with SIGSEGV rather than wrapping the user stack.
 
 The trampoline saves R1-R14, calls the C handler with the signal number,
-restores EPU state through syscall 52, restores the registers, and uses unprivileged `LDCTLB FLAGS,rl0` to restore
+restores EPU state through syscall 62, restores the registers, and uses unprivileged `LDCTLB FLAGS,rl0` to restore
 condition flags. It then pops R0 and returns to the interrupted PC, restoring
 the original SP. No privileged FCW bits are loaded from user memory, and no
-CPU-context signal-return syscall is needed; syscall 52 restores only EPU
+CPU-context signal-return syscall is needed; syscall 62 restores only EPU
 state. A handler may instead use `longjmp`.
 
 As in V7, caught dispositions reset before delivery except SIGILL and
@@ -408,6 +483,50 @@ rejection. Its alarm tests use two seconds because V7's next-second rounding
 can make a one-second alarm fire before the blocking call starts.
 
 ## User Program Startup
+
+The syscall table preserves V7 numbering for these interfaces:
+
+| Number | Interface | Arguments |
+|---:|---|---|
+| 11 | `exec` | pathname, argv; always an empty environment |
+| 52 | `sysphys` | unimplemented (`ENOSYS`); no longer EPU restore |
+| 59 | `exece` / libc `execve` | pathname, argv, envp |
+| 60 | `umask` | creation mask |
+| 61 | `chroot` | pathname |
+| 62 | Z8000 EPU restore extension | saved 96-byte EPU state |
+
+`execv()` and `execl()` call `execve()` with `environ`. Both successful exec
+syscalls update the saved user stack pointer before trap return. The boot
+icode keeps using two-argument syscall 11. Sysent argument counts describe
+16-bit words in registers here; the dispatcher copies R1–R5 directly rather
+than decoding PDP-11 inline arguments.
+
+This migration breaks compatibility with earlier port binaries using the old
+execve, umask, chroot or caught-signal trampoline slots. Rebuild both libc
+archives, relink programs, and regenerate boot/test/native disks with the
+matching kernel. There are no legacy slot aliases: the old numbers conflict
+with the restored interfaces. Rebuild the native environment from the repository
+root (with the cross-toolchain available):
+
+```sh
+python3 tools/native-cc/build.py
+cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build
+cmake --build v7z8000/usr/sys/build --target kernel test_driver
+cmake -S v7z8000/usr/sys -B tests/build/selfhost/host -DCMAKE_BUILD_TYPE=Release
+cmake --build tests/build/selfhost/host --target test_driver
+python3 tools/native-cc/selfhost.py --setup
+python3 tools/native-cc/environment.py --setup
+```
+
+Rebuild the separate host driver as well: the native scripts prefer it when
+present, and its profiler must recognize syscall 59. Refreshing an old disk is
+insufficient. `test-abi` verifies the raw slots and libc interfaces in combined
+and split I/D executables, including inherited/empty environments, file modes,
+child-only root changes and the now-reserved slot 52. It also verifies that
+process-table exhaustion returns EAGAIN and that slots can be reused afterward.
+The configured limit is 16 processes: eight cannot accommodate recursive make,
+its command shells and the compiler passes. This adds 224 bytes to kernel BSS.
+The emulator profiler observes both exec syscall numbers.
 
 `execve()` builds a user stack containing `argc`, the `argv` pointers and
 their null terminator, then the environment pointers and their null
@@ -460,3 +579,63 @@ modem behavior or enforce exclusive console opens.
 
 Run `test-tty` for settings and interactive mode regressions; see Step 21 in
 [implementation-steps.md](implementation-steps.md).
+
+## Shared TTY ioctl contract
+
+`ttioccomm()` implements the V7 handled/unhandled interface: return 1 for a
+recognized request (with `u_error` if it failed), or return 0 so the driver can
+try a device-specific command. `consioctl()` sets `ENOTTY` for this latter case.
+The configured ordinary line discipline is zero; GETD/SETD are supported,
+unconfigured disciplines return `ENXIO`, and DIOCGETP/DIOCSETP route to the
+discipline's ioctl callback (the ordinary discipline rejects them with ENODEV).
+Parameter updates validate the user copy before flushing or changing state.
+Both parameter and special-character commits use interrupt masking.
+
+`test-v7-interfaces` tests the shared contract on the target ABI, including
+failure preservation and alternate callback routing through substitute test
+disciplines. `test-tty` exercises the real terminal syscall path and input modes.
+The same interface suite tests restored filesystem call sites, including
+lookup and creation beyond 64 KB directory offsets and disabled multiplexor
+syscall behavior. The real multiplexor remains unconfigured.
+
+## Buffer cache and asynchronous disk requests
+
+`sys/bio.c` again uses V7's ordinary cache implementation, word-based `clrbuf`
+and `DISKMON` accounting. `io_info.nbuf` is initialized to NBUF; `nread`,
+`nreada` and `nwrite` count submitted operations, `ncache` counts `bread()`
+cache hits, and `bufcount[]` records the free-list position of reused buffers.
+These are diagnostic counters, not completion/durability statistics.
+
+The remaining exclusions are swap buffers/`swap()`, `physio()`, and `B_MAP`
+release. Current drivers do not create physical or bus-mapped requests. Those
+facilities require a machine/device transfer contract; no no-op `mapfree()`
+is substituted for real mapping ownership.
+
+The HD driver now queues busy buffers through `av_forw`, headed by
+`hdtab.b_actf/b_actl`, with one controller request active at a time. This is
+required by V7 `bflush()`: it can submit multiple asynchronous writes while
+interrupts are masked. A single active pointer previously let later requests
+overwrite earlier ones. Completion removes the head before `iodone()` can
+release/reuse its list link, then starts the next request. Failed reads do not
+copy controller data into the buffer, and errors do not strand later requests.
+Controller-busy and read-not-ready interrupts leave the request pending.
+
+`test-bio` compiles the actual cache, HD driver and `binit()` for the target ABI
+with a deferred-completion controller and injectable read/write errors. It
+checks cache hits/counters, delayed writes, dirty eviction, read-ahead reuse,
+queue order, completion/free-list integrity, buffer clearing, retries and
+specific/default error propagation. A separate real-kernel test writes 24
+blocks with partial-block updates, calls sync, saves the settled disk image,
+and verifies every byte after a fresh boot. As in V7, sync queues delayed writes;
+the reboot test waits for completion and does not claim power-loss durability
+at the instant sync returns.
+
+### Panic-time flushing remains separate
+
+The port still prints the panic and idles without calling `update()`. Source
+review shows that `update()` can call `getblk()`/`bwrite()` and sleep on a busy
+buffer or I/O. If the panicking path owns that buffer, completion of a flush
+cannot be guaranteed; device/cache corruption is another possible panic cause.
+Restoring V7's unconditional `update()` here would risk hiding the panic behind
+a deadlock. A future best-effort panic flush needs a separate bounded protocol
+that avoids owned buffers and does not depend on normal interrupt completion.

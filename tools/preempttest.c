@@ -55,7 +55,7 @@ char **argv;
 		    buf[1] != 'o' || buf[2] != '\n')
 			fail("console read");
 		if (kill(pid, SIGKILL) < 0 || wait(&status) != pid ||
-		    status != (SIGKILL << 8))
+		    status != SIGKILL)
 			fail("console child");
 		printf("preempt: console wakeup passed\n");
 		exit(0);
@@ -77,7 +77,7 @@ char **argv;
 			;
 		if (kill(pid, SIGKILL) < 0)
 			fail("kill");
-		if (wait(&status) != pid || status != (SIGKILL << 8))
+		if (wait(&status) != pid || status != SIGKILL)
 			fail("kill status");
 		if (times(after) < 0 || after[2] - before[2] < 60)
 			fail("child did not run for a quantum");
@@ -92,7 +92,7 @@ char **argv;
 		for (;;)
 			;
 	}
-	if (wait(&status) != pid || status != (SIGALRM << 8))
+	if (wait(&status) != pid || status != SIGALRM)
 		fail("alarm status");
 
 	/* Signals to a blocked syscall must unwind through u_qsav, and the
@@ -111,7 +111,7 @@ char **argv;
 	while (time(0) - start < 2)
 		;
 	if (kill(pid, SIGKILL) < 0 || wait(&status) != pid ||
-	    status != (SIGKILL << 8))
+	    status != SIGKILL)
 		fail("sleeping kill");
 	close(fd[0]);
 	close(fd[1]);

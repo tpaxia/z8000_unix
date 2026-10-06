@@ -1,0 +1,22 @@
+	.text
+	.globl _sigfault
+	.globl _epufault
+_sigfault:
+	ld r1,2(sp)
+	ld r2,#15
+	ld sp,#0x9068
+	sc #37
+	ld r1,#98
+	sc #1
+_epufault:
+	ld r1,2(sp)
+	sc #62
+	cp r0,#0xffff
+	jr ne,.Lbad
+	cp r1,#14
+	jr ne,.Lbad
+	clr r0
+	ret
+.Lbad:
+	ld r0,#1
+	ret

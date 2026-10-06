@@ -2,6 +2,7 @@
 #include "../h/systm.h"
 #include "../h/dir.h"
 #include "../h/user.h"
+#include "../h/reg.h"
 #include "../h/file.h"
 #include "../h/inode.h"
 
@@ -45,6 +46,10 @@ register mode;
 		u.u_error = EBADF;
 		return;
 	}
+	if (!useracc(uap->cbuf, uap->count, mode == FREAD)) {
+		u.u_error = EFAULT;
+		return;
+	}
 	u.u_base = (caddr_t)uap->cbuf;
 	u.u_count = uap->count;
 	u.u_segflg = 0;
@@ -55,7 +60,10 @@ register mode;
 			writep(fp);
 	} else {
 		ip = fp->f_inode;
-		u.u_offset = fp->f_un.f_offset;
+		if (fp->f_flag&FMP)
+			u.u_offset = 0;
+		else
+			u.u_offset = fp->f_un.f_offset;
 		if((ip->i_mode&(IFCHR&IFBLK)) == 0)
 			plock(ip);
 		if(mode == FREAD)
@@ -64,7 +72,8 @@ register mode;
 			writei(ip);
 		if((ip->i_mode&(IFCHR&IFBLK)) == 0)
 			prele(ip);
-		fp->f_un.f_offset += uap->count-u.u_count;
+		if ((fp->f_flag&FMP) == 0)
+			fp->f_un.f_offset += uap->count-u.u_count;
 	}
 	u.u_r.r_val1 = uap->count-u.u_count;
 }
@@ -186,7 +195,7 @@ seek()
 	fp = getf(uap->fdes);
 	if(fp == NULL)
 		return;
-	if(fp->f_flag&FPIPE) {
+	if(fp->f_flag&(FPIPE|FMP)) {
 		u.u_error = ESPIPE;
 		return;
 	}
@@ -195,7 +204,7 @@ seek()
 	else if(uap->sbase == 2)
 		uap->off += fp->f_inode->i_size;
 	fp->f_un.f_offset = uap->off;
-	*(off_t *)&u.u_r = uap->off;
+	u.u_r.r_off = uap->off;
 }
 
 /*

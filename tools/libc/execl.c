@@ -8,5 +8,6 @@
 execl(f, a)
 char *f, *a;
 {
-	execve(f, &a, 0);
+	extern char **environ;
+	return(execve(f, &a, environ));
 }

@@ -56,7 +56,7 @@ unsigned *regs;
 	 * exec replaces the user stack entirely via set_usp().
 	 * Re-read it so we don't clobber the new SP at trap exit.
 	 */
-	if (num == 11 && u.u_error == 0)
+	if ((num == 11 || num == 59) && u.u_error == 0)
 		saved_usp = get_usp();
 
 	if (u.u_intflg) {
@@ -121,32 +121,26 @@ int usp;
 }
 
 /*
- * SEGTRAP handler.
- * Called when a segmentation trap occurs.
- * fcw = interrupted FCW, pc_hi = PC segment, pc_lo = PC offset.
+ * Only the listed cross-segment user accesses may recover a kernel fault.
+ * Z8001 SEGT is delivered after the offending instruction; the table holds
+ * that saved PC and a landing pad restoring the helper's original FCW/stack.
  */
-segtrap_handler(fcw, pc_hi, pc_lo)
+segtrap(regs)
+unsigned *regs;
 {
-	int pi;
-	pi = u.u_procp - proc;
-	putchar('X');
-	putchar('0' + pi);
-	putchar(':');
-	/* print pc_hi as 4 hex digits */
-	putchar("0123456789ABCDEF"[(pc_hi >> 12) & 0xF]);
-	putchar("0123456789ABCDEF"[(pc_hi >> 8) & 0xF]);
-	putchar("0123456789ABCDEF"[(pc_hi >> 4) & 0xF]);
-	putchar("0123456789ABCDEF"[pc_hi & 0xF]);
-	putchar('.');
-	putchar("0123456789ABCDEF"[(pc_lo >> 12) & 0xF]);
-	putchar("0123456789ABCDEF"[(pc_lo >> 8) & 0xF]);
-	putchar("0123456789ABCDEF"[(pc_lo >> 4) & 0xF]);
-	putchar("0123456789ABCDEF"[pc_lo & 0xF]);
-	if ((fcw & 0x4000) == 0) {
-		/* user mode trap: send SIGSEG */
-		psignal(u.u_procp, SIGSEG);
-	} else {
-		/* kernel mode trap: panic */
-		panic("segtrap");
+	extern unsigned ufixups[];
+	register unsigned *p;
+
+	if (regs[14] & 0x4000) {
+		if ((regs[14] & 0x8000) && regs[15] == 0x8100)
+			for (p = ufixups; p[0]; p += 2)
+				if (regs[16] == p[0]) {
+					regs[16] = p[1];
+					return;
+				}
+		panic("kernel access fault");
+		return;
 	}
+	psignal(u.u_procp, SIGSEG);
+	userret(regs, get_usp());
 }

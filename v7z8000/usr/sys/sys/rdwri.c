@@ -165,28 +165,42 @@ iomove(cp, n, flag)
 register caddr_t cp;
 register n;
 {
+	register t;
 
 	if (n==0)
 		return;
-	if (u.u_segflg == 1) {
-		/* kernel space: direct bcopy */
+	if(u.u_segflg != 1 &&
+	  (n&(NBPW-1)) == 0 &&
+	  ((int)cp&(NBPW-1)) == 0 &&
+	  ((int)u.u_base&(NBPW-1)) == 0) {
 		if (flag==B_WRITE)
-			bcopy(u.u_base, (caddr_t)cp, n);
+			if (u.u_segflg==0)
+				t = copyin(u.u_base, (caddr_t)cp, n);
+			else
+				t = copyiin(u.u_base, (caddr_t)cp, n);
 		else
-			bcopy((caddr_t)cp, u.u_base, n);
-	} else if (u.u_segflg == 2) {
-		if (flag==B_WRITE)
-			copyiin(u.u_base, (caddr_t)cp, n);
-		else
-			copyiout((caddr_t)cp, u.u_base, n);
-	} else {
-		/* user space: use copyin/copyout */
-		if (flag==B_WRITE)
-			copyin(u.u_base, (caddr_t)cp, n);
-		else
-			copyout((caddr_t)cp, u.u_base, n);
+			if (u.u_segflg==0)
+				t = copyout((caddr_t)cp, u.u_base, n);
+			else
+				t = copyiout((caddr_t)cp, u.u_base, n);
+		if (t) {
+			u.u_error = EFAULT;
+			return;
+		}
+		u.u_base += n;
+		u.u_offset += n;
+		u.u_count -= n;
+		return;
 	}
-	u.u_base += n;
-	u.u_offset += n;
-	u.u_count -= n;
+	if (flag==B_WRITE) {
+		do {
+			if ((t = cpass()) < 0)
+				return;
+			*cp++ = t;
+		} while (--n);
+	} else
+		do {
+			if(passc(*cp++) < 0)
+				return;
+		} while (--n);
 }

@@ -36,6 +36,8 @@ depend on the host harness.
   contain the entry table linked at `0x0200`.
 - `KERNEL_MACHINE_C`: CPU, MMU and configuration C sources.
 - `KERNEL_DRIVERS`: driver names from `dev/`, without the `.c` suffix.
+- `KERNEL_OPTIONAL_C`: optional shared services; defaults to `sys/fakemx.c`,
+  the original V7 disabled-multiplexor stubs.
 - `KERNEL_TEST_FILE`: optional board-specific host harness and image/test rules.
 
 The build records the source selection so switching configurations invalidates
@@ -64,11 +66,17 @@ The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 | `resume(p_addr, label)` | Switch u-area/kernel-stack mapping and restore the saved continuation atomically |
 | `copyuarea(child)` | Copy the current u-area, including the continuation saved before this call |
 | `copyproc(parent, child)` | Copy user data and, for split executables, instruction space |
+| `useracc(base, count, writing)` | Return nonzero if the complete user-data range permits the requested access; reject address wrap |
 
 The scheduler no longer writes MMU ports or derives user-bank numbers from
 process slots. The paged implementation owns those choices. Its copy routines
 restore the copy window before admitting interrupts, and `resume()` keeps
-interrupts masked until the new stack is valid.
+interrupts masked until the new stack is valid. Its full 64 KB user banks are
+mapped read/write, so `useracc()` currently checks only range wrap. A protected
+MMU must additionally check mappings and permissions. CPU support now recovers
+SEGT faults at specific user-access instructions; a board must suppress invalid
+bus operations and report SEGT for that path to operate. See the
+[user-copy contract](../../../../doc/kernel-technical-reference.md#shared-user-copy-policy-and-machine-helper-contract).
 
 ## Adding a machine or MMU
 
@@ -87,3 +95,18 @@ current kernel stack. This organization makes implementations selectable; it
 does not add missing MMU hardware, memory protection, swapping, stack growth,
 or full SEG executables. Restoring that upper-layer functionality remains
 separate work.
+
+## Common TTY and optional multiplexor interfaces
+
+A configuration provides `linesw` and `nldisp`. The emulated machine installs
+ordinary V7 discipline zero, with no alternate disciplines. `ttioccomm()` returns
+1 when it recognizes a request, including requests failing with `u_error`, and
+0 without setting an error for requests a driver may handle itself. Console
+fallback sets `ENOTTY`. Device close calls receive V7's `(dev, flag, channel)`;
+ordinary drivers can ignore the third argument.
+
+`fakemx.c` satisfies shared filesystem/TTY references without an active
+multiplexor and makes syscall 56 return `EINVAL`. Changing `KERNEL_OPTIONAL_C`
+can select another implementation, but a real multiplexor also needs its
+configured device and channel lifecycle; restoring these interfaces alone does
+not install one.

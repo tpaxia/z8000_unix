@@ -30,6 +30,7 @@ class ClockObservedCPU : public z8001_device {
 public:
     bool clock_pending() const { return (m_irq_req & Z8000_NVI) != 0; }
     uint64_t clock_accepted = 0;
+    void access_fault() { m_irq_req |= Z8000_SEGTRAP; }
 protected:
     uint16_t GET_FCW(uint32_t vec) override {
         // Count actual NVI dispatches, independently of the latch accounting.
@@ -50,6 +51,30 @@ public:
                 m_pages[seg][page] = seg * 32 + page;
         }
         set_upage(62);
+    }
+
+    // Test-only denied bus access. Normal fixed-bank mappings stay unchanged.
+    void set_fault(ClockObservedCPU *cpu, char kind, unsigned offset) {
+        m_cpu = cpu; m_fault_kind = kind; m_fault_offset = offset;
+    }
+    void arm_fault() { m_fault_armed = true; }
+    unsigned fault_count = 0;
+
+    bool denied(uint32_t addr, unsigned size, bool writing) {
+        if (!m_fault_armed || !m_cpu) return false;
+        unsigned seg = (addr >> 16) & 0x7f, off = addr & 0xffff;
+        if (seg <= 1 || seg == 127 || off > m_fault_offset ||
+            off + size <= m_fault_offset) return false;
+        unsigned fcw = m_cpu->get_fcw();
+        if (m_fault_kind == 'u') {
+            if (fcw & 0x4000) return false;
+        } else {
+            if ((fcw & 0xc000) != 0xc000 || writing != (m_fault_kind == 'w'))
+                return false;
+        }
+        fault_count++;
+        m_cpu->access_fault();
+        return true;  // Suppress the failed write/read, like an external MMU.
     }
 
     void set_trace(bool enable) { m_trace = enable; }
@@ -94,26 +119,30 @@ public:
     }
 
     u8 read_byte(u32 addr) override {
-        return m_phys->read_byte(translate(addr));
+        return denied(addr, 1, false) ? 0 : m_phys->read_byte(translate(addr));
     }
 
     u16 read_word(u32 addr) override {
-        return m_phys->read_word(translate(addr));
+        return denied(addr, 2, false) ? 0 : m_phys->read_word(translate(addr));
     }
 
     void write_byte(u32 addr, u8 val) override {
-        m_phys->write_byte(translate(addr), val);
+        if (!denied(addr, 1, true)) m_phys->write_byte(translate(addr), val);
     }
 
     void write_word(u32 addr, u16 val) override {
-        m_phys->write_word(translate(addr), val);
+        if (!denied(addr, 2, true)) m_phys->write_word(translate(addr), val);
     }
 
     void write_word(u32 addr, u16 val, u16 mask) override {
-        m_phys->write_word(translate(addr), val, mask);
+        if (!denied(addr, 2, true)) m_phys->write_word(translate(addr), val, mask);
     }
 
 private:
+    ClockObservedCPU *m_cpu = nullptr;
+    bool m_fault_armed = false;
+    char m_fault_kind = 0;
+    unsigned m_fault_offset = 0;
     MemoryRegion *m_phys;
     uint16_t m_pages[128][32];
     uint8_t m_iseg[128];
@@ -524,9 +553,20 @@ int main(int argc, char* argv[]) {
     uint64_t measure_ticks = 0;
     const char *measure_marker = "# ";
 
+    char fault_kind = 0;
+    unsigned fault_offset = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:")) != -1) {
         switch (opt) {
+            case 'F': {
+                char extra;
+                if (sscanf(optarg, "%c:%x%c", &fault_kind, &fault_offset, &extra) != 2 ||
+                    (fault_kind != 'r' && fault_kind != 'w' && fault_kind != 'u') ||
+                    fault_offset > 0xffff) {
+                    fprintf(stderr, "-F requires r:hex, w:hex or u:hex\n"); return 1;
+                }
+                break;
+            }
             case 't': trace = true; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
@@ -551,13 +591,17 @@ int main(int argc, char* argv[]) {
                         "[-d hd-image] [-i console-input] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
-                        "[-o saved-hd-image] [-P user-memory.tsv]\n", argv[0]);
+                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex]\n", argv[0]);
                 return 1;
         }
     }
     if ((wait_output != nullptr) != has_later_input) {
         fprintf(stderr, "-w and -I must be supplied together\n");
         return 1;
+    }
+
+    if (fault_kind && !wait_output) {
+        fprintf(stderr, "-F requires -w/-I to arm after guest setup\n"); return 1;
     }
 
     printf("Z8001 Kernel Test Driver\n");
@@ -573,6 +617,7 @@ int main(int argc, char* argv[]) {
 
     // Create Z8001 CPU (memory access goes through MMU)
     ClockObservedCPU cpu;
+    if (fault_kind) mmu.set_fault(&cpu, fault_kind, fault_offset);
 
     // Create I/O ports with DMA controller, MMU access, and CPU reference
     KernelIOPorts io(&memory, &mmu, &cpu);
@@ -638,6 +683,8 @@ int main(int argc, char* argv[]) {
 
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
+        if (fault_kind && io.console_output().find(wait_output) != std::string::npos)
+            mmu.arm_fault();
         // Sample before injection: the previous pulse has had a full slice
         // to be accepted. A still-set latch at injection proves a merged tick.
         if (measure_ticks && !measuring &&
@@ -696,7 +743,8 @@ int main(int argc, char* argv[]) {
         }
         // Stop if halted AND all input delivered AND enough time for pipe to finish
         if (!measure_ticks && cpu.is_halted() && !console_input[input_idx] &&
-            !waiting_for_output && idle_after_input > 500) {
+            !waiting_for_output && idle_after_input > 500 &&
+            (!expect || io.console_output().find(expect) != std::string::npos)) {
             break;
         }
     }
@@ -754,6 +802,7 @@ int main(int argc, char* argv[]) {
         return ok ? 0 : 1;
     }
 
+    if (fault_kind) printf("MMU denied accesses: %u\n", mmu.fault_count);
     printf("\nConsole output: \"");
     for (char c : output) {
         if (c == '\n') printf("\\n");

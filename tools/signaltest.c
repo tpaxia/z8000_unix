@@ -51,6 +51,13 @@ char **argv;
 	int (*old)();
 	char *args[3];
 
+	if (argc == 2 && strcmp(argv[1], "exit") == 0)
+		return(SIGTERM);
+	if (argc == 2 && strcmp(argv[1], "term") == 0) {
+		signal(SIGTERM, SIG_DFL);
+		kill(getpid(), SIGTERM);
+		return(1);
+	}
 	if (argc == 2)
 		return(signal(SIGTERM, SIG_IGN) != SIG_DFL ||
 		    signal(SIGINT, SIG_DFL) != SIG_IGN);
@@ -100,6 +107,13 @@ char **argv;
 	} else
 		check("longjmp", n == SIGTERM);
 
+	/* Normal exit and signal death use different bytes of wait status. */
+	pid = fork();
+	if (pid == 0)
+		_exit(SIGTERM);
+	check("normal exit status", pid > 0 && wait(&status) == pid &&
+	    status == (SIGTERM << 8));
+
 	/* Fork inherits the libc handler table and kernel disposition. */
 	seen = 0;
 	signal(SIGTERM, handler);
@@ -113,10 +127,10 @@ char **argv;
 		_exit(2);
 	}
 	n = wait(&status);
-	if (n != pid || status != (SIGTERM << 8) || seen != 0)
+	if (n != pid || status != SIGTERM || seen != 0)
 		printf("signal: fork pid=%d wait=%d status=%x seen=%d\n", pid, n, status, seen);
 	check("fork and default second delivery", pid > 0 &&
-	    n == pid && status == (SIGTERM << 8) && seen == 0);
+	    n == pid && status == SIGTERM && seen == 0);
 	signal(SIGTERM, SIG_DFL);
 
 	/* V7 keeps SIGILL/SIGTRAP handlers installed after delivery. */
@@ -146,7 +160,7 @@ char **argv;
 		_exit(1);
 	}
 	check("unusable signal stack", pid > 0 && wait(&status) == pid &&
-	    status == (SIGSEGV << 8));
+	    status == SIGSEGV);
 	signal(SIGTERM, SIG_DFL);
 
 	if (!failed)

@@ -8,8 +8,10 @@
 #include "../h/user.h"
 #include "../h/tty.h"
 #include "../h/proc.h"
+#include "../h/mx.h"
 #include "../h/inode.h"
 #include "../h/file.h"
+#include "../h/reg.h"
 #include "../h/conf.h"
 
 char	partab[];
@@ -98,9 +100,196 @@ register struct tty *tp;
 ttyclose(tp)
 register struct tty *tp;
 {
+
 	tp->t_pgrp = 0;
 	wflushtty(tp);
 	tp->t_state = 0;
+}
+
+/*
+ * stty/gtty writearound
+ */
+stty()
+{
+	u.u_arg[2] = u.u_arg[1];
+	u.u_arg[1] = TIOCSETP;
+	ioctl();
+}
+
+gtty()
+{
+	u.u_arg[2] = u.u_arg[1];
+	u.u_arg[1] = TIOCGETP;
+	ioctl();
+}
+
+/*
+ * ioctl system call
+ * Check legality, execute common code, and switch out to individual
+ * device routine.
+ */
+ioctl()
+{
+	register struct file *fp;
+	register struct inode *ip;
+	register struct a {
+		int	fdes;
+		int	cmd;
+		caddr_t	cmarg;
+	} *uap;
+	register dev_t dev;
+	register fmt;
+
+	uap = (struct a *)u.u_ap;
+	if ((fp = getf(uap->fdes)) == NULL)
+		return;
+	if (uap->cmd==FIOCLEX) {
+		u.u_pofile[uap->fdes] |= EXCLOSE;
+		return;
+	}
+	if (uap->cmd==FIONCLEX) {
+		u.u_pofile[uap->fdes] &= ~EXCLOSE;
+		return;
+	}
+	ip = fp->f_inode;
+	fmt = ip->i_mode & IFMT;
+	if (fmt != IFCHR && fmt != IFMPC) {
+		u.u_error = ENOTTY;
+		return;
+	}
+	dev = (dev_t)ip->i_un.i_rdev;
+	(*cdevsw[major(dev)].d_ioctl)(dev, uap->cmd, uap->cmarg, fp->f_flag);
+}
+
+/*
+ * Common code for several tty ioctl commands
+ */
+ttioccomm(com, tp, addr, dev)
+register struct tty *tp;
+caddr_t addr;
+{
+	unsigned t;
+	int s;
+	struct tc chars;
+	struct ttiocb iocb;
+	extern int nldisp;
+
+	switch(com) {
+
+	/*
+	 * get discipline number
+	 */
+	case TIOCGETD:
+		t = tp->t_line;
+		if (copyout((caddr_t)&t, addr, sizeof(t)))
+			u.u_error = EFAULT;
+		break;
+
+	/*
+	 * set line discipline
+	 */
+	case TIOCSETD:
+		if (copyin(addr, (caddr_t)&t, sizeof(t))) {
+			u.u_error = EFAULT;
+			break;
+		}
+		if (t >= nldisp) {
+			u.u_error = ENXIO;
+			break;
+		}
+		if (tp->t_line)
+			(*linesw[tp->t_line].l_close)(tp);
+		if (t)
+			(*linesw[t].l_open)(dev, tp, addr);
+		if (u.u_error==0)
+			tp->t_line = t;
+		break;
+
+	/*
+	 * prevent more opens on channel
+	 */
+	case TIOCEXCL:
+		tp->t_state |= XCLUDE;
+		break;
+	case TIOCNXCL:
+		tp->t_state &= ~XCLUDE;
+		break;
+
+	/*
+	 * Set new parameters
+	 */
+	case TIOCSETP:
+	case TIOCSETN:
+		if (copyin(addr, (caddr_t)&iocb, sizeof(iocb))) {
+			u.u_error = EFAULT;
+			return(1);
+		}
+		if (com == TIOCSETP)
+			wflushtty(tp);
+		s = spl5();
+		tp->t_ispeed = iocb.ioc_ispeed;
+		tp->t_ospeed = iocb.ioc_ospeed;
+		tp->t_erase = iocb.ioc_erase;
+		tp->t_kill = iocb.ioc_kill;
+		tp->t_flags = iocb.ioc_flags;
+		splx(s);
+		break;
+
+	/*
+	 * send current parameters to user
+	 */
+	case TIOCGETP:
+		iocb.ioc_ispeed = tp->t_ispeed;
+		iocb.ioc_ospeed = tp->t_ospeed;
+		iocb.ioc_erase = tp->t_erase;
+		iocb.ioc_kill = tp->t_kill;
+		iocb.ioc_flags = tp->t_flags;
+		if (copyout((caddr_t)&iocb, addr, sizeof(iocb)))
+			u.u_error = EFAULT;
+		break;
+
+	/*
+	 * Hang up line on last close
+	 */
+
+	case TIOCHPCL:
+		tp->t_state |= HUPCLS;
+		break;
+
+	case TIOCFLUSH:
+		flushtty(tp);
+		break;
+
+	/*
+	 * ioctl entries to line discipline
+	 */
+	case DIOCSETP:
+	case DIOCGETP:
+		(*linesw[tp->t_line].l_ioctl)(com, tp, addr);
+		break;
+
+	/*
+	 * set and fetch special characters
+	 */
+	case TIOCSETC:
+		if (copyin(addr, (caddr_t)&chars, sizeof(chars))) {
+			u.u_error = EFAULT;
+			break;
+		}
+		s = spl5();
+		bcopy((caddr_t)&chars, (caddr_t)&tun, sizeof(chars));
+		splx(s);
+		break;
+
+	case TIOCGETC:
+		if (copyout((caddr_t)&tun, addr, sizeof(struct tc)))
+			u.u_error = EFAULT;
+		break;
+
+	default:
+		return(0);
+	}
+	return(1);
 }
 
 /*
@@ -162,7 +351,7 @@ register struct tty *tp;
 	spl5();
 	while ((tp->t_flags&(RAW|CBREAK))==0 && tp->t_delct==0
 	    || (tp->t_flags&(RAW|CBREAK))!=0 && tp->t_rawq.c_cc==0) {
-		if ((tp->t_state&CARR_ON)==0) {
+		if ((tp->t_state&CARR_ON)==0 || tp->t_chan!=NULL) {
 			return(0);
 		}
 		sleep((caddr_t)&tp->t_rawq, TTIPRI);
@@ -228,7 +417,9 @@ register char *pb, *pe;
 	tandem = tp->t_flags&TANDEM;
 	if (tp->t_flags&RAW) {
 		b_to_q(pb, pe-pb, &tp->t_rawq);
-		wakeup((caddr_t)&tp->t_rawq);
+		if (tp->t_chan)
+			sdata(tp->t_chan); else
+			wakeup((caddr_t)&tp->t_rawq);
 	} else {
 		tp->t_flags &= ~TANDEM;
 		while (pb < pe)
@@ -251,6 +442,7 @@ register c;
 register struct tty *tp;
 {
 	register int t_flags;
+	register struct chan *cp;
 
 	tk_nin += 1;
 	c &= 0377;
@@ -281,7 +473,10 @@ register struct tty *tp;
 		if (c==tun.t_quitc || c==tun.t_intrc) {
 			flushtty(tp);
 			c = (c==tun.t_intrc) ? SIGINT:SIGQUIT;
-			signal(tp->t_pgrp, c);
+			if (tp->t_chan)
+				scontrol(tp->t_chan, M_SIG, c);
+			else
+				signal(tp->t_pgrp, c);
 			return;
 		}
 		if (c=='\r' && t_flags&CRMOD)
@@ -297,7 +492,9 @@ register struct tty *tp;
 	if (t_flags&(RAW|CBREAK)||(c=='\n'||c==tun.t_eofc||c==tun.t_brkc)) {
 		if ((t_flags&(RAW|CBREAK))==0 && putc(0377, &tp->t_rawq)==0)
 			tp->t_delct++;
-		wakeup((caddr_t)&tp->t_rawq);
+		if ((cp=tp->t_chan)!=NULL)
+			sdata(cp); else
+			wakeup((caddr_t)&tp->t_rawq);
 	}
 	if (t_flags&ECHO) {
 		ttyoutput(c, tp);
@@ -526,6 +723,8 @@ register struct tty *tp;
 		while (tp->t_outq.c_cc > TTHIWAT) {
 			ttstart(tp);
 			tp->t_state |= ASLEEP;
+			if (tp->t_chan)
+				return((caddr_t)&tp->t_outq);
 			sleep((caddr_t)&tp->t_outq, TTOPRI);
 		}
 		spl0();
@@ -535,129 +734,4 @@ register struct tty *tp;
 	}
 	ttstart(tp);
 	return(NULL);
-}
-
-/*
- * stty/gtty syscalls.
- * Copy struct sgttyb to/from tty struct.
- */
-stty()
-{
-	u.u_arg[2] = u.u_arg[1];
-	u.u_arg[1] = TIOCSETP;
-	ioctl();
-}
-
-gtty()
-{
-	u.u_arg[2] = u.u_arg[1];
-	u.u_arg[1] = TIOCGETP;
-	ioctl();
-}
-
-/*
- * ioctl system call.
- * u_arg[0] = fd
- * u_arg[1] = ioctl command
- * u_arg[2] = data pointer
- */
-ioctl()
-{
-	register struct file *fp;
-	register struct inode *ip;
-	register dev_t dev;
-	register int cmd;
-
-	fp = getf(u.u_arg[0]);
-	if (fp == NULL)
-		return;
-	ip = fp->f_inode;
-	cmd = u.u_arg[1];
-
-	/* FIOCLEX/FIONCLEX work on any fd */
-	if (cmd == FIOCLEX) {
-		u.u_pofile[u.u_arg[0]] |= EXCLOSE;
-		return;
-	}
-	if (cmd == FIONCLEX) {
-		u.u_pofile[u.u_arg[0]] &= ~EXCLOSE;
-		return;
-	}
-
-	if ((ip->i_mode & IFMT) != IFCHR) {
-		u.u_error = ENOTTY;
-		return;
-	}
-	dev = (dev_t)ip->i_un.i_rdev;
-	(*cdevsw[major(dev)].d_ioctl)(dev, cmd, u.u_arg[2], fp->f_flag);
-}
-
-/*
- * ttioccomm - common ioctl handler for TTY devices.
- */
-ttioccomm(com, tp, addr, dev)
-register struct tty *tp;
-caddr_t addr;
-{
-	struct ttiocb iocb;
-	register int s;
-
-	switch(com) {
-
-	case TIOCGETP:
-		iocb.ioc_ispeed = tp->t_ispeed;
-		iocb.ioc_ospeed = tp->t_ospeed;
-		iocb.ioc_erase = tp->t_erase;
-		iocb.ioc_kill = tp->t_kill;
-		iocb.ioc_flags = tp->t_flags;
-		if (copyout((caddr_t)&iocb, addr, sizeof(iocb)) < 0)
-			u.u_error = EFAULT;
-		break;
-
-	case TIOCSETP:
-	case TIOCSETN:
-		if (copyin(addr, (caddr_t)&iocb, sizeof(iocb))) {
-			u.u_error = EFAULT;
-			break;
-		}
-		if (com == TIOCSETP)
-			wflushtty(tp);
-		s = spl5();
-		tp->t_ispeed = iocb.ioc_ispeed;
-		tp->t_ospeed = iocb.ioc_ospeed;
-		tp->t_erase = iocb.ioc_erase;
-		tp->t_kill = iocb.ioc_kill;
-		tp->t_flags = iocb.ioc_flags;
-		splx(s);
-		break;
-
-	case TIOCGETC:
-		if (copyout((caddr_t)&tun, addr, sizeof(struct tc)) < 0)
-			u.u_error = EFAULT;
-		break;
-
-	case TIOCSETC:
-		if (copyin(addr, (caddr_t)&tun, sizeof(struct tc)))
-			u.u_error = EFAULT;
-		break;
-
-	case TIOCEXCL:
-		tp->t_state |= XCLUDE;
-		break;
-
-	case TIOCNXCL:
-		tp->t_state &= ~XCLUDE;
-		break;
-
-	case TIOCHPCL:
-		tp->t_state |= HUPCLS;
-		break;
-
-	case TIOCFLUSH:
-		flushtty(tp);
-		break;
-
-	default:
-		u.u_error = ENOTTY;
-	}
 }

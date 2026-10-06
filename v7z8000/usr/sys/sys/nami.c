@@ -11,12 +11,11 @@
  * an inode. Note that the inode is locked.
  *
  * func = function called to get next char of name
+ *	&uchar if name is in user space
  *	&schar if name is in system space
  * flag = 0 if name is sought
  *	1 if name is to be created
  *	2 if name is to be deleted
- *
- * Z8000 adaptation: removed mpxip handling.
  */
 struct inode *
 namei(func, flag)
@@ -64,6 +63,8 @@ cloop:
 
 	cp = &u.u_dbuf[0];
 	while (c != '/' && c != '\0' && u.u_error == 0 ) {
+		if (mpxip!=NULL && c=='!')
+			break;
 		if(cp < &u.u_dbuf[DIRSIZ])
 			*cp++ = c;
 		c = (*func)();
@@ -72,6 +73,12 @@ cloop:
 		*cp++ = '\0';
 	while(c == '/')
 		c = (*func)();
+	if (c == '!' && mpxip != NULL) {
+		iput(dp);
+		plock(mpxip);
+		mpxip->i_count++;
+		return(mpxip);
+	}
 
 seloop:
 	/*
@@ -124,7 +131,7 @@ eloop:
 	 * Release previous if it exists.
 	 */
 
-	if((((unsigned)u.u_offset)&BMASK) == 0) {
+	if((u.u_offset&BMASK) == 0) {
 		if(bp != NULL)
 			brelse(bp);
 		bp = bread(dp->i_dev,
@@ -143,7 +150,7 @@ eloop:
 	 * If they do not match, go back to eloop.
 	 */
 
-	bcopy(bp->b_un.b_addr+(((unsigned)u.u_offset)&BMASK), (caddr_t)&u.u_dent,
+	bcopy(bp->b_un.b_addr+(u.u_offset&BMASK), (caddr_t)&u.u_dent,
 		sizeof(struct direct));
 	u.u_offset += sizeof(struct direct);
 	if(u.u_dent.d_ino == 0) {
@@ -211,7 +218,7 @@ uchar()
 	register c;
 
 	c = fubyte(u.u_dirp++);
-	if (c == -1)
+	if(c == -1)
 		u.u_error = EFAULT;
 	return(c);
 }

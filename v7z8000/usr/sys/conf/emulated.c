@@ -45,9 +45,14 @@ struct cdevsw cdevsw[] = {
 	{ 0 }
 };
 
+/* Discipline zero is ordinary V7 tty processing; no alternate is installed. */
+extern int ttyopen(), ttread(), ttyinput(), ttstart();
+extern char *ttwrite();
 struct linesw linesw[] = {
-	{ 0 }
+	{ ttyopen, nulldev, ttread, ttwrite, nodev, ttyinput, ttstart,
+	  nulldev, ttstart, nulldev }
 };
+int nldisp = sizeof(linesw) / sizeof(linesw[0]);
 
 /* Boot devices and interrupt wiring for the emulated machine. */
 devinit()

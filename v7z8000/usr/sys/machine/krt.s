@@ -51,6 +51,45 @@
 	jr	nvi_dispatch		! 0x0204: NVI handler entry (clock)
 	jr	vi_dispatch		! 0x0206: VI handler entry (devices)
 	jr	epu_dispatch		! 0x0208: SEG call from EPU service
+	jr	seg_dispatch		! 0x020a: SEGTRAP, entered in SEG+SYS
+
+! SEGTRAP uses the same saved-register layout as syscall entry.
+seg_dispatch:
+	push	@r14, r12
+	push	@r14, r11
+	push	@r14, r10
+	push	@r14, r9
+	push	@r14, r8
+	push	@r14, r7
+	push	@r14, r6
+	push	@r14, r5
+	push	@r14, r4
+	push	@r14, r3
+	push	@r14, r2
+	push	@r14, r1
+	push	@r14, r0
+	ld	r0, #0x4000
+	ldctl	fcw, r0
+	ld	r0, sp
+	push	@sp, r0
+	call	_segtrap
+	add	sp, #2
+	ld	r0, #0xC000
+	ldctl	fcw, r0
+	pop	r0, @r14
+	pop	r1, @r14
+	pop	r2, @r14
+	pop	r3, @r14
+	pop	r4, @r14
+	pop	r5, @r14
+	pop	r6, @r14
+	pop	r7, @r14
+	pop	r8, @r14
+	pop	r9, @r14
+	pop	r10, @r14
+	pop	r11, @r14
+	pop	r12, @r14
+	iret
 
 ! EPU service supplies a full saved frame in R9. Entered by SEG CALL.
 epu_dispatch:
@@ -213,6 +252,9 @@ _save:
 
 ! =============================================================================
 ! Cross-segment memory access functions.
+! Bulk helpers reject offset+count > 64KB; word helpers reject odd offsets.
+! Only the user access instructions have SEGTRAP fixups (table at file end).
+! Recovery returns -1 after restoring the original FCW and helper frame.
 !
 ! These temporarily switch to SEG+SYS mode for segmented memory access.
 ! In SEG mode, @rr2 (indirect via register pair r2:r3) gives segmented
@@ -237,9 +279,18 @@ _fubyte:
 	ldctl	fcw, r0			! SEG+SYS
 	! --- SEG mode: only IR/reg/imm instructions ---
 	ldb	rl0, @r2		! load byte from seg:off
+.Lufault0:
 	ldctl	fcw, r9			! NONSEG+SYS
 	! --- back to NONSEG mode ---
 	and	r0, #0x00FF		! zero-extend
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover0:
+	ldctl	fcw, r9
+.Lubad0:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -255,8 +306,17 @@ _subyte:
 	ld	r1, #0xC000
 	ldctl	fcw, r1			! SEG+SYS
 	ldb	@r2, rl0		! store byte to seg:off
+.Lufault1:
 	ldctl	fcw, r9			! NONSEG+SYS
 	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover1:
+	ldctl	fcw, r9
+.Lubad1:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -267,11 +327,23 @@ _fuword:
 	ld	r13, sp
 	ld	r2, _useg
 	ld	r3, 4(r13)
+	ld	r0, r3
+	and	r0, #1
+	jr ne,	.Lubad2
 	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	r0, @r2			! load word from seg:off
+.Lufault2:
 	ldctl	fcw, r9			! NONSEG+SYS
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover2:
+	ldctl	fcw, r9
+.Lubad2:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -282,13 +354,25 @@ _suword:
 	ld	r13, sp
 	ld	r2, _useg
 	ld	r3, 4(r13)
+	ld	r0, r3
+	and	r0, #1
+	jr ne,	.Lubad3
 	ld	r8, 6(r13)		! value (R8 caller-saved)
 	ldctl	r9, fcw			! preserve caller interrupt state
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ld	@r2, r8			! store word to seg:off
+.Lufault3:
 	ldctl	fcw, r9			! NONSEG+SYS
 	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover3:
+	ldctl	fcw, r9
+.Lubad3:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -303,6 +387,13 @@ _copyin:
 	ld	r3, 4(r13)		! from: user offset
 	ld	r8, 6(r13)		! to: kernel address (R8 caller-saved)
 	ld	r9, 8(r13)		! count (R9 caller-saved)
+	ld	r0, r3
+	test	r0
+	jr eq,	.Lurange4
+	neg	r0
+	cp	r9, r0
+	jr ugt,	.Lubad4
+.Lurange4:
 	cp	r9, #0
 	jr eq,	.Lcidone
 .Lciloop:
@@ -310,6 +401,7 @@ _copyin:
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ldb	rl0, @r2		! load byte from user space
+.Lufault4:
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldb	@r8, rl0		! store byte to kernel
 	inc	r3, #1			! advance user offset
@@ -318,6 +410,14 @@ _copyin:
 	jr ne,	.Lciloop
 .Lcidone:
 	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover4:
+	ldctl	fcw, r1
+.Lubad4:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -336,6 +436,13 @@ _copyout:
 	ld	r3, 6(r13)		! to: user offset
 	ld	r1, 8(r13)		! count (R1 caller-saved)
 	ld	r8, _useg		! R8 = segment (R8 caller-saved, constant)
+	ld	r0, r3
+	test	r0
+	jr eq,	.Lurange5
+	neg	r0
+	cp	r1, r0
+	jr ugt,	.Lubad5
+.Lurange5:
 	cp	r1, #0
 	jr eq,	.Lcodone
 .Lcoloop:
@@ -344,6 +451,7 @@ _copyout:
 	ld	r9, r3			! R9 = user offset copy
 	ldctl	fcw, r5			! SEG+SYS
 	ldb	@r8, rl0		! store byte to user space via @RR8
+.Lufault5:
 	ldctl	fcw, r4			! NONSEG+SYS
 	inc	r3, #1			! advance user offset
 	dec	r1, #1
@@ -352,6 +460,16 @@ _copyout:
 	ldk	r0, #0
 	pop	r5, @sp
 	pop	r4, @sp			! restore R4
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover5:
+	ldctl	fcw, r4
+.Lubad5:
+	ld	r0, #-1
+	pop	r5, @sp
+	pop	r4, @sp
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -367,9 +485,18 @@ _fuibyte:
 	ldctl	fcw, r0			! SEG+SYS
 	! --- SEG mode: only IR/reg/imm instructions ---
 	ldb	rl0, @r2		! load byte from seg:off
+.Lufault6:
 	ldctl	fcw, r9			! NONSEG+SYS
 	! --- back to NONSEG mode ---
 	and	r0, #0x00FF		! zero-extend
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover6:
+	ldctl	fcw, r9
+.Lubad6:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -385,8 +512,17 @@ _suibyte:
 	ld	r1, #0xC000
 	ldctl	fcw, r1			! SEG+SYS
 	ldb	@r2, rl0		! store byte to seg:off
+.Lufault7:
 	ldctl	fcw, r9			! NONSEG+SYS
 	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover7:
+	ldctl	fcw, r9
+.Lubad7:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -399,6 +535,13 @@ _copyiin:
 	ld	r3, 4(r13)		! from: user offset
 	ld	r8, 6(r13)		! to: kernel address (R8 caller-saved)
 	ld	r9, 8(r13)		! count (R9 caller-saved)
+	ld	r0, r3
+	test	r0
+	jr eq,	.Lurange8
+	neg	r0
+	cp	r9, r0
+	jr ugt,	.Lubad8
+.Lurange8:
 	cp	r9, #0
 	jr eq,	.Lcidone_i
 .Lciloop_i:
@@ -406,6 +549,7 @@ _copyiin:
 	ld	r0, #0xC000
 	ldctl	fcw, r0			! SEG+SYS
 	ldb	rl0, @r2		! load byte from user space
+.Lufault8:
 	ldctl	fcw, r1			! NONSEG+SYS
 	ldb	@r8, rl0		! store byte to kernel
 	inc	r3, #1			! advance user offset
@@ -414,6 +558,14 @@ _copyiin:
 	jr ne,	.Lciloop_i
 .Lcidone_i:
 	ldk	r0, #0
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover8:
+	ldctl	fcw, r1
+.Lubad8:
+	ld	r0, #-1
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -432,6 +584,13 @@ _copyiout:
 	ld	r3, 6(r13)		! to: user offset
 	ld	r1, 8(r13)		! count (R1 caller-saved)
 	ld	r8, _iseg		! R8 = segment (R8 caller-saved, constant)
+	ld	r0, r3
+	test	r0
+	jr eq,	.Lurange9
+	neg	r0
+	cp	r1, r0
+	jr ugt,	.Lubad9
+.Lurange9:
 	cp	r1, #0
 	jr eq,	.Lcodone_i
 .Lcoloop_i:
@@ -440,6 +599,7 @@ _copyiout:
 	ld	r9, r3			! R9 = user offset copy
 	ldctl	fcw, r5			! SEG+SYS
 	ldb	@r8, rl0		! store byte to user space via @RR8
+.Lufault9:
 	ldctl	fcw, r4			! NONSEG+SYS
 	inc	r3, #1			! advance user offset
 	dec	r1, #1
@@ -448,6 +608,16 @@ _copyiout:
 	ldk	r0, #0
 	pop	r5, @sp
 	pop	r4, @sp			! restore R4
+	ld	sp, r13
+	pop	r13, @sp
+	ret
+
+.Lurecover9:
+	ldctl	fcw, r4
+.Lubad9:
+	ld	r0, #-1
+	pop	r5, @sp
+	pop	r4, @sp
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -714,3 +884,20 @@ _fprun:
 	pop r4,@sp
 	pop r13,@sp
 	ret
+
+! SEGTRAP fixups: post-access PC, recovery PC; only user bus accesses.
+	.data
+	.globl	_ufixups
+_ufixups:
+	.word	.Lufault0, .Lurecover0
+	.word	.Lufault1, .Lurecover1
+	.word	.Lufault2, .Lurecover2
+	.word	.Lufault3, .Lurecover3
+	.word	.Lufault4, .Lurecover4
+	.word	.Lufault5, .Lurecover5
+	.word	.Lufault6, .Lurecover6
+	.word	.Lufault7, .Lurecover7
+	.word	.Lufault8, .Lurecover8
+	.word	.Lufault9, .Lurecover9
+	.word	0, 0
+	.text

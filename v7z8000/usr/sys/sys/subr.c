@@ -123,16 +123,20 @@ daddr_t bn;
  * Pass back  c  to the user at his location u_base;
  * update u_base, u_count, and u_offset.  Return -1
  * on the last character of the user's read.
- * u_segflg distinguishes kernel vs user address space.
+ * u_segflg selects user data (0), kernel (1), or user instructions (2).
  */
 passc(c)
 register c;
 {
+	register id;
 
-	if(u.u_segflg)
+	if((id = u.u_segflg) == 1)
 		*u.u_base = c;
 	else
-		subyte(u.u_base, c);
+		if((id?suibyte(u.u_base, c):subyte(u.u_base, c)) < 0) {
+			u.u_error = EFAULT;
+			return(-1);
+		}
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;
@@ -144,18 +148,21 @@ register c;
  * write call at location u_base;
  * update u_base, u_count, and u_offset.  Return -1
  * when u_count is exhausted.
- * u_segflg distinguishes kernel vs user address space.
+ * u_segflg selects user data (0), kernel (1), or user instructions (2).
  */
 cpass()
 {
-	register c;
+	register c, id;
 
 	if(u.u_count == 0)
 		return(-1);
-	if(u.u_segflg)
+	if((id = u.u_segflg) == 1)
 		c = *u.u_base;
 	else
-		c = fubyte(u.u_base);
+		if((c = id==0?fubyte(u.u_base):fuibyte(u.u_base)) < 0) {
+			u.u_error = EFAULT;
+			return(-1);
+		}
 	u.u_count--;
 	u.u_offset++;
 	u.u_base++;

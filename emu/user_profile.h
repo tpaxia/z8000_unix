@@ -27,7 +27,7 @@ public:
         if (cpu.get_fcw() & 0x4000) return; // system/normal FCW bit
         unsigned seg = (address >> 16) & 127;
         auto &p = processes[seg];
-        if (p.pending == 11) {
+        if (p.pending == 11 || p.pending == 59) {
             // Successful exec starts the new image at zero; failure resumes
             // the old syscall wrapper. Preserve the old record on failure.
             if (!(address & 65535)) {
@@ -53,7 +53,7 @@ public:
         unsigned seg = (pc >> 16) & 127;
         auto &p = self.processes[seg];
         if (number == 1) self.finish(seg);
-        else if (number == 11) {
+        else if (number == 11 || number == 59) {
             p.pending = number;
             p.pending_path.clear();
             unsigned offset = self.cpu.get_reg(1);
