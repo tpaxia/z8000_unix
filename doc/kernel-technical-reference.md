@@ -168,7 +168,7 @@ conversion, without implementing finite arithmetic itself.
 `tools/fpe/glue.c` and generated `epu.az8` replace the private C arithmetic
 engine in Unix `libv7.a`; PCC's existing `float.az8` calling convention remains.
 The standalone compiler CPU tests retain `PCC-z8000/z8000/lib/softfp.c`, because
-their machine has no Unix service. Kernel C now uses the existing `c2z8.py`
+their machine has no Unix service. Kernel C now uses the native C `oz8`
 compaction pass and shared csv/cret. `bout2bin.py` rejects a kernel whose
 text/data/BSS reaches the MMU copy window at 0xe000.
 
@@ -417,6 +417,13 @@ in the active libraries.
 Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
 Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).
+
+PCC now emits `ld r8,#frame_size; call csv` and `jp cret` directly. The shared
+helpers in `PCC-z8000/z8000/lib/csv.az8` preserve the existing frame layout and
+R4–R7, R10–R12, R14 and R13, leaving R0–R3 return values untouched. R8/R9 are
+call-clobbered scratch registers. Unix libc archives include the helpers;
+the kernel links its own copy. No assembly postprocessor is required for
+these entry/return sequences.
 
 ## Terminal control
 

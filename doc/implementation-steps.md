@@ -905,11 +905,105 @@ object-only linking, and failures in preprocessing, compilation, assembly and
 linking. Checks also verify temporary-file cleanup. Logs and results are in
 `tests/build/native-cc/`.
 
-This is a complete native C compilation pipeline for programs that fit its
-segments. The initial compiler binaries still require host-side compaction
-to build. A native compaction pass (or equivalent code-generation changes),
-compiler rebuilds inside Unix, and peak heap/stack measurements remain before
-claiming self-hosting.
+This establishes a complete native C compilation pipeline for programs that
+fit its segments. At this step the initial compiler binaries still required
+host-side compaction; Step 27 removes that size requirement. Compiler rebuilds
+inside Unix and peak heap/stack measurements remain before claiming self-hosting.
+
+## Step 27: Shared Function Entry and Return Emitted by PCC
+
+PCC's front end now emits `ld r8,#_F...; call csv` directly, and the back end
+emits `jp cret` at the return label. Both one-pass and two-pass compilation
+use these sequences. The existing helpers retain the fixed frame, argument
+offsets, callee-saved registers, and R0–R3 return values; this is compatible
+with older inline-frame C and hand-written assembly using the same ABI.
+
+Both Unix libc archives now supply `csv.b`. Standalone compiler tests and
+runtime builds link it explicitly; the kernel already linked its own copy.
+The optional Python optimizer recognizes the new output and continues its
+other instruction and branch simplifications. It can still convert older
+inline-frame assembly, but new output does not need that conversion.
+
+The native compiler passes now fit even without that optimizer:
+
+| Pass | Text without Python optimization | Text with it | Data | BSS |
+|------|---------------------------------:|-------------:|-----:|----:|
+| Front | 64,084 | 60,640 | 13,764 | 22,338 |
+| Back | 45,960 | 43,564 | 10,464 | 9,630 |
+
+The unoptimized front has 1,450 bytes below the largest even text size;
+the optimized front has 4,894. These are code margins, not measurements of
+heap/stack headroom. The default build retains the remaining optimizations.
+To reproduce the build without running the Python optimizer:
+
+```
+python3 tools/native-cc/build.py --no-compact
+python3 tools/native-cc/test.py
+python3 tools/pcc-native/test.py
+python3 tools/pcc-native/test.py extra
+```
+
+`tools/pcc-native/build.py --no-compact` also builds just the passes and their
+runtime without applying the optimizer. These are still cross-build scripts;
+the compiler has not yet rebuilt itself inside Unix.
+
+Direct entry/return generation also reduces the ordinary native tools, whose
+builds do not use the Python optimizer: assembler text is 51,884 bytes, linker
+28,840, driver 18,032, and preprocessor 26,432.
+
+Validation covers all 25 native compiler cases with optimization disabled,
+all six driver integration suites in both optimized and unoptimized builds,
+and the host compiler gate components. The existing `float_general` one-bit
+decimal-parser difference remains. Against compiler revision `7a2036c`, all
+520 changed assembly files in the source-corpus comparison differ only in
+function entry/return sequences; the reviewed baselines were refreshed,
+including earlier source changes. Kernel boot, libc, split I/D, preemption,
+signal and terminal tests pass.
+
+## Step 28: Native Assembly Optimizer
+
+`PCC-z8000/z8000/oz8.c` implements the remaining assembly optimizations in
+K&R C and runs under Unix as `/lib/oz8`. The two-pass driver now supports
+`cc -O`, including `-O -S`, `-O -c` and split I/D linking with `-i`.
+It removes unreachable instructions and redundant moves, redirects branches,
+eliminates jumps to following labels, shortens zero loads and small stack
+adjustments, and combines compatible word pairs into long operations.
+Shared function entry/return sequences still come directly from PCC.
+
+The pass streams through temporary files, so input size is independent of
+the 64 KB data address space. Its optional jump map has a 24,000-byte
+accounting budget; when full, further entries are skipped without changing
+program semantics. Input lines must be shorter than 512 bytes. It is intended
+for current PCC-generated C assembly using `csv`, not arbitrary assembler
+programs. Errors and handled termination signals remove its temporary files;
+an optimizer failure stops the driver before assembly/linking.
+
+Native `oz8` uses 21,524 bytes of text, 932 of data and 1,922 of BSS, plus
+dynamic storage and stack. The driver now uses 18,036 bytes of text. The
+compiler passes remain at 60,640 bytes of text for the front end and 43,564
+for the back end, with the data/BSS sizes recorded in Step 27 unchanged.
+Peak compiler heap/stack usage and a native compiler rebuild remain untested.
+
+The compiler cross-build and kernel build now use a host build of the same
+C optimizer. Python `c2z8.py` remains a regression reference and converter
+for older inline-frame assembly, not a production build dependency.
+
+Validation includes byte-for-byte comparison with the Python reference over
+520 generated source-corpus files, branch/register-pair fixtures, execution
+after jump-map saturation, overlong-line rejection, and all 80 optimized
+compiler regressions. The native optimizer processes an 82,889-byte assembly
+file under Unix and produces exactly the reference output. Driver tests cover
+optimized/unoptimized combined and split executables, intermediate output,
+failure propagation and temporary-file cleanup. The compiler gate components
+and kernel boot, libc, split I/D, preemption, signal and terminal checks pass.
+
+Reproduce with:
+
+```
+make -C PCC-z8000/z8000/test optimizer
+python3 tools/native-cc/build.py
+python3 tools/native-cc/test.py
+```
 
 ## Current State
 

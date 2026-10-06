@@ -53,9 +53,9 @@ $(LIBC_DIR)/%.b: $(LIBC_DIR)/%.az8
 $(LIBC_DIR)/%.az8: $(LIBC_DIR)/%.c $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
-libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) Makefile
+libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b Makefile
 	rm -f $@
-	ar cr $@ $(LIBC_ASM_OBJS) $(LIBC_C_OBJS)
+	ar cr $@ $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b
 
 # =============================================================================
 # libv7.a - the Seventh Edition C library
@@ -85,7 +85,7 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     sbrk execl execv
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
     $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
-    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b
+    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b $(LIBV7_DIR)/csv.b
 
 $(LIBV7_DIR)/%.az8: $(V7LIBC)/stdio/%.c $(CZ8)
 	@mkdir -p $(LIBV7_DIR)
@@ -106,6 +106,10 @@ $(LIBV7_DIR)/softfp.az8: fpe/glue.c $(CZ8)
 $(LIBV7_DIR)/epu.az8: fpe/wrappers.py
 	@mkdir -p $(LIBV7_DIR)
 	python3 $< $@
+
+$(LIBV7_DIR)/csv.az8: $(PCC_ROOT)/lib/csv.az8
+	@mkdir -p $(LIBV7_DIR)
+	cp $< $@
 
 $(LIBV7_DIR)/float.az8: $(PCC_ROOT)/lib/float.az8
 	@mkdir -p $(LIBV7_DIR)

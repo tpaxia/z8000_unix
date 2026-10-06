@@ -4,7 +4,7 @@ root=Path(__file__).resolve().parents[2];w=root/"tests/build/native-pcc"; proto=
 def run(cmd,**kw): return subprocess.run(list(map(str,cmd)),capture_output=True,check=True,timeout=60,**kw)
 # Generated programs execute in the standalone CPU harness, which has no
 # Unix EPU service. Keep its reference runtime separate from Unix libc.
-run(['make','-C',pcc/'test','softfp.b'])
+run(['make','-C',pcc/'test','softfp.b','csv.b'])
 r=run(['cpp','-nostdinc','-undef','-I'+str(root/'v7z8000/usr/include'),Path(__file__).with_name('runner.c')])
 r=run([pcc/'cz8/cz8'],input=r.stdout);(w/'runner.az8').write_bytes(r.stdout)
 run([pcc/'az8/az8','-o','runner.b','runner.az8'],cwd=w)
@@ -49,7 +49,7 @@ $
  # V7 atof can round decimal constants differently from host strtod;
  # retain differences and execute every generated program below.
  run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=w)
- run([pcc/'ldz8','-x',pcc/'test/crt0.b','-R','8',w/(name+'.b'),pcc/'test/liblong.b',pcc/'test/libfloat.b',pcc/'test/softfp.b',pcc/'test/exit.b','-o',w/(name+'.bout')])
+ run([pcc/'ldz8','-x',pcc/'test/crt0.b','-R','8',w/(name+'.b'),pcc/'test/liblong.b',pcc/'test/libfloat.b',pcc/'test/softfp.b',pcc/'test/exit.b',pcc/'test/csv.b','-o',w/(name+'.bout')])
  r=run([pcc/'test/run_emu',w/(name+'.bout'),'-e',str({'hello':42,'arith':120}.get(name,0)),'-c','10000000'])
  (w/(name+'-execute.log')).write_bytes(r.stdout+r.stderr)
  rec['execute']=True; records.append(rec);print(rec,flush=True)

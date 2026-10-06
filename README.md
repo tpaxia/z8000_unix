@@ -50,10 +50,10 @@ The Portable C Compiler is the historical V7 Unix compiler and was designed to b
 Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
 An experimental native two-pass toolchain is available under Unix, including
-`cc`, preprocessing, assembly and linking. Build its disk with
+`cc`, preprocessing, native `-O` assembly optimization, assembly and linking. Build its disk with
 `python3 tools/native-cc/build.py` and run its guest tests with
 `python3 tools/native-cc/test.py`. See [native compiler setup and remaining
-self-hosting work](doc/implementation-steps.md#step-26-native-c-compiler-driver).
+self-hosting work](doc/implementation-steps.md#step-28-native-assembly-optimizer).
 
 ### Emulator
 

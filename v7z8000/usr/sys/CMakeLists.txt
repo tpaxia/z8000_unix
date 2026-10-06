@@ -17,6 +17,12 @@ set(PCC_ROOT "${CMAKE_SOURCE_DIR}/../../../PCC-z8000/z8000" CACHE PATH "PCC tool
 set(CZ8 "${PCC_ROOT}/cz8/cz8")
 set(AZ8 "${PCC_ROOT}/az8/az8")
 set(LDZ8 "${PCC_ROOT}/ldz8")
+set(OZ8 "${B}/oz8")
+add_custom_command(OUTPUT "${OZ8}"
+    COMMAND cc -std=gnu89 -O -w -Wno-return-mismatch -Wno-int-conversion
+            -o "${OZ8}" "${PCC_ROOT}/oz8.c"
+    DEPENDS "${PCC_ROOT}/oz8.c"
+    COMMENT "Building host copy of native assembly optimizer")
 
 set(EMU_DIR "${CMAKE_SOURCE_DIR}/../../../z8000_emu" CACHE PATH "z8000_emu directory")
 set(TOOLS_DIR "${CMAKE_SOURCE_DIR}/../../../tools" CACHE PATH "Tools directory")
@@ -25,7 +31,7 @@ set(DRIVER_DIR "${CMAKE_SOURCE_DIR}/../../../emu" CACHE PATH "Emulator front end
 # --- Generate PCC compile helper script (avoids shell quoting issues) ---
 set(PCC_COMPILE_SH "${B}/pcc_compile.sh")
 file(WRITE "${PCC_COMPILE_SH}" [=[#!/bin/sh
-# Usage: pcc_compile.sh <include_dir> <source.c> <cz8_path> <output.az8>
+# Usage: pcc_compile.sh <include_dir> <source.c> <cz8_path> <output.az8> <oz8_path>
 # cz8 writes assembly to stdout and diagnostics to stderr. Diagnostics are
 # left on stderr so warnings are seen, and any preprocessor or compiler
 # failure fails the build instead of leaving truncated assembly behind.
@@ -38,7 +44,7 @@ if [ $status -ne 0 ]; then
 	echo "cz8 failed on $2" >&2
 	exit 1
 fi
-python3 "$5" < "$4.raw" > "$4" || exit 1
+"$5" < "$4.raw" > "$4" || exit 1
 rm -f "$4.raw"
 ]=])
 
@@ -99,8 +105,8 @@ function(pcc_compile_c subdir name)
 
     add_custom_command(OUTPUT "${B}/${AZ8_REL}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${subdir}"
-        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}" "${PCC_ROOT}/c2z8.py"
-        DEPENDS "${SRC}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}" "${PCC_ROOT}/c2z8.py"
+        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}" "${OZ8}"
+        DEPENDS "${SRC}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}" "${OZ8}"
         COMMENT "PCC: ${subdir}/${name}.c → .az8"
     )
     add_custom_command(OUTPUT "${B}/${B_REL}"

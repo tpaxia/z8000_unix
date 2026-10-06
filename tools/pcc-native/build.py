@@ -1,6 +1,8 @@
 from pathlib import Path
 import subprocess,sys,struct,json
 sys.dont_write_bytecode=True
+if any(arg != '--no-compact' for arg in sys.argv[1:]):
+ raise SystemExit('usage: build.py [--no-compact]')
 root=Path(__file__).resolve().parents[2];w=root/'tests/build/native-pcc';pcc=root/'PCC-z8000/z8000';tools=root/'tools'
 def run(c,**kw):
  r=subprocess.run(list(map(str,c)),capture_output=True,**kw)
@@ -12,11 +14,11 @@ run(['make','-C',pcc/'az8'])
 run(['make','-C',pcc/'test','../ldz8'])
 run(['make','-C',tools,'libv7.a','libc/crt0.b','v7mkfs','sh','init'])
 run([sys.executable,Path(__file__).with_name('prepare.py'),w])
-import importlib.util
-spec=importlib.util.spec_from_file_location('c2z8',pcc/'c2z8.py');opt=importlib.util.module_from_spec(spec);spec.loader.exec_module(opt)
-compact=opt.compact
-(w/'csv.az8').write_bytes((pcc/'lib/csv.az8').read_bytes())
-run([pcc/'az8/az8','-o','csv.b','csv.az8'],cwd=w)
+if '--no-compact' in sys.argv[1:]:
+ compact=lambda assembly: assembly
+else:
+ run(['make','-C',pcc/'test','../oz8'])
+ def compact(assembly): return run([pcc/'oz8'],input=assembly.encode()).stdout.decode()
 names=run(['ar','t',tools/'libv7.a']).stdout.decode().split()
 paths=[]
 for n in names:
@@ -41,7 +43,7 @@ for phase, sources in [('front','cgram xdefs scan pftn trees optim code local co
   (d/(name+'.az8')).write_text(compact(compiled.stdout.decode()))
   run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=d)
   objects.append(d/(name+'.b'))
- run([pcc/'ldz8','-i','-x',tools/'libc/crt0.b',*objects,w/'csv.b',w/'libv7.a','-o',d/phase])
+ run([pcc/'ldz8','-i','-x',tools/'libc/crt0.b',*objects,w/'libv7.a','-o',d/phase])
  header=struct.unpack('>8H',(d/phase).read_bytes()[:16])
  report[phase]={'text':header[1],'data':header[2],'bss':header[3]}
  print(phase,report[phase],flush=True)

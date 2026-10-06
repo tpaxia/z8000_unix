@@ -34,6 +34,7 @@ def image(extra_files=None):
         'etc/init': ROOT / 'tools/init', 'lib/cpp': WORK / 'cpp',
         'lib/front': PASSES / 'target-front/front',
         'lib/back': PASSES / 'target-back/back',
+        'lib/oz8': WORK / 'oz8',
         'lib/crt0.b': ROOT / 'tools/libc/crt0.b',
         'lib/libc.a': ROOT / 'tools/libv7.a',
         'usr/src/hello.c': ROOT / 'tools/native-cc/hello.c',
@@ -50,7 +51,7 @@ def image(extra_files=None):
         for part in parts[:-1]:
             node = node.setdefault(part, {})
         mode = '755' if parts[0] in ('bin', 'etc') or target in (
-            'lib/cpp', 'lib/front', 'lib/back') else '644'
+            'lib/cpp', 'lib/front', 'lib/back', 'lib/oz8') else '644'
         node[parts[-1]] = '---' + mode + ' 0 0 ' + str(source)
 
     def directory(node):
@@ -68,9 +69,10 @@ def image(extra_files=None):
     run([ROOT / 'tools/v7mkfs', WORK / 'hd.img', WORK / 'proto'])
 
 
-def build():
+def build(no_compact=False):
     WORK.mkdir(parents=True, exist_ok=True)
-    run([sys.executable, ROOT / 'tools/pcc-native/build.py'])
+    run([sys.executable, ROOT / 'tools/pcc-native/build.py',
+         *(['--no-compact'] if no_compact else [])])
     run([sys.executable, ROOT / 'tools/native-binutils/build.py'])
     regen = module('regen', PCC / 'cz8/regen_cgram.py')
     yaccdir = WORK / 'yacc'
@@ -83,6 +85,7 @@ def build():
     for name, sources, flags in [
         ('cpp', [cppsrc / 'cpp.c', yaccdir / 'y.tab.c'], ['-I' + str(cppsrc)]),
         ('cc', [PCC / 'ccz8.c'], ['-DTWOPASS']),
+        ('oz8', [PCC / 'oz8.c'], []),
     ]:
         objects = []
         for source in sources:
@@ -100,4 +103,6 @@ def build():
 
 
 if __name__ == '__main__':
-    build()
+    if any(arg != '--no-compact' for arg in sys.argv[1:]):
+        raise SystemExit('usage: build.py [--no-compact]')
+    build('--no-compact' in sys.argv[1:])

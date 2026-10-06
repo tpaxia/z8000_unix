@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 sys.dont_write_bytecode = True
-from build import ROOT, PCC, WORK, run, compile_c, image
+from build import ROOT, PCC, WORK, BINUTILS, run, compile_c, image, module
 
 
 def test(selected=()):
@@ -58,6 +58,19 @@ main() {
          ROOT / 'tools/libv7.a', '-o', WORK / 'front'])
     # Install the environment-checking front-end wrapper as an executable.
     extra['bin/front'] = WORK / 'front'
+    # A substitute optimizer makes driver failure propagation observable.
+    (WORK / 'failopt.c').write_text('main() { return 1; }\n')
+    compile_c(WORK / 'failopt.c', WORK / 'failopt.b')
+    run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'failopt.b',
+         ROOT / 'tools/libv7.a', '-o', WORK / 'failopt'])
+    extra['bin/oz8'] = WORK / 'failopt'
+    reference = module('c2_reference', PCC / 'c2z8.py')
+    assembly = (BINUTILS / 'az8/ins.az8').read_text()
+    assert len(assembly) > 65536
+    (WORK / 'opt.az8').write_text(assembly)
+    (WORK / 'opt.want').write_text(reference.compact(assembly))
+    extra['tmp/opt.az8'] = WORK / 'opt.az8'
+    extra['tmp/opt.want'] = WORK / 'opt.want'
     options = '-I/tmp/include -DVALUE=2 -DREMOVE -UREMOVE'
     plans = {}
     for mode in ['0407', '0411']:
@@ -66,18 +79,22 @@ main() {
             '0 - /bin/cc ' + flag + options + ' -B/bin/ -t0 input.c helper.c -o result',
             '0 - /tmp/result', '0 - /bin/check ' + mode + ' result',
         ]
+        plans['opt-' + mode] = [
+            '0 - /bin/cc -O ' + flag + options + ' input.c helper.c -o result',
+            '0 - /tmp/result', '0 - /bin/check ' + mode + ' result',
+        ]
     plans['stages'] = [
         '0 pre.i /bin/cc -E ' + options + ' input.c',
         '0 - /bin/check pre pre.i',
         '0 - /bin/cc -P ' + options + ' input.c',
         '0 - /bin/check pre input.i',
-        '0 - /bin/cc -S ' + options + ' input.c helper.c',
+        '0 - /bin/cc -O -S ' + options + ' input.c helper.c',
         '0 - /bin/check asm input.az8',
         '0 - /bin/cc -i input.az8 helper.az8 -o result',
         '0 - /tmp/result', '0 - /bin/check 0411 result',
     ]
     plans['objects'] = [
-        '0 - /bin/cc -c ' + options + ' input.c helper.c',
+        '0 - /bin/cc -O -c ' + options + ' input.c helper.c',
         '0 - /bin/check 0407 input.b',
         '0 - /bin/cc input.b helper.b -o result',
         '0 - /tmp/result', '0 - /bin/check 0407 result',
@@ -86,10 +103,27 @@ main() {
         '0 - /bin/cc /usr/src/hello.c', '0 - /tmp/a.out',
         '0 - /bin/check 0407 a.out', '0 - /bin/check absent hello.b',
     ]
+    # Feed assembly on stdin through the shell; runner redirects stdout.
+    (WORK / 'opt.sh').write_text('/lib/oz8 < /tmp/opt.az8\n')
+    extra['tmp/opt.sh'] = WORK / 'opt.sh'
+    plans['optimizer'] = [
+        '0 opt.out /bin/sh /tmp/opt.sh',
+        '0 - /bin/check same opt.out opt.want',
+    ]
+    (WORK / 'long.az8').write_text('x' * 1024 + '\n')
+    (WORK / 'long.sh').write_text('/lib/oz8 < /tmp/long.az8\n')
+    extra['tmp/long.az8'] = WORK / 'long.az8'
+    extra['tmp/long.sh'] = WORK / 'long.sh'
+    plans['opt-errors'] = [
+        '1 - /bin/cc -O -B/bin/ -t1 helper.c -o rejected',
+        '0 - /bin/check absent rejected',
+        '1 long.out /bin/sh /tmp/long.sh',
+        '0 - /bin/check',
+    ]
     plans['errors'] = []
     for source in ['badcpp.c', 'badfront.c', 'badasm.az8', 'badlink.c']:
         plans['errors'].extend(['1 - /bin/cc ' + source + ' -o result', '0 - /bin/check'])
-    for option in ['-o', '-R', '-t0', '-O']:
+    for option in ['-o', '-R', '-t0', '-p']:
         plans['errors'].extend(['1 - /bin/cc ' + option, '0 - /bin/check'])
     if set(selected) - plans.keys():
         raise ValueError('unknown test case: ' + ', '.join(set(selected) - plans.keys()))
@@ -104,16 +138,18 @@ main() {
         (WORK / 'plan').write_text('\n'.join(plan) + '\n')
         extra['tmp/plan'] = WORK / 'plan'
         image(extra)
-        result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', '2000000000',
+        cycles = '12000000000' if name == 'optimizer' else '2000000000'
+        result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', cycles,
             '-d', WORK / 'hd.img', '-i', 'runner\\n', '-w', 'NATIVE CC DONE',
-            '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True, timeout=60)
+            '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True,
+            timeout=240 if name == 'optimizer' else 60)
         (WORK / (name + '.log')).write_bytes(result.stdout + result.stderr)
         if result.returncode or b'NATIVE CC PASS' not in result.stdout:
             print(result.stdout.decode(errors='replace')[-4000:])
             raise RuntimeError(name + ' failed; see log')
         if name == 'default':
             assert b'Hello from native C' in result.stdout
-        elif name != 'errors':
+        elif name not in ('errors', 'optimizer', 'opt-errors'):
             assert b'DRIVER_OK' in result.stdout
         records.append({'case': name, 'commands': len(plan), 'passed': True})
         print(records[-1], flush=True)
