@@ -1,0 +1,27 @@
+/* Emulated/FPGA paged-MMU register contract. Addresses are normal word I/O. */
+#define MM_UPAGE 0x00b0
+#define MM_SWAPSIZE 0x00b2
+#define MM_WPAGE 0x00b4
+#define MM_IMAP 0x00b8
+#define MM_RAMSIZE 0x00ba
+#define MM_PAGESEL 0x00bc
+#define MM_PAGEFRAME 0x00be
+#define MM_FAULT 0x00c0
+#define MM_FSEG 0x00c2
+#define MM_FLOW 0x00c4
+#define MM_FHIGH 0x00c6
+#define MM_PCSEG 0x00c8
+#define MM_PC 0x00ca
+#define MM_ACK 0x00cc
+#define MM_STACKSEL 0x00d0
+#define MM_STACKBASE 0x00d2
+#define MM_RO 0x8000
+#define MM_SYS 0x4000
+#define MF_VALID 1
+#define MF_WRITE 2
+#define MF_READ 4
+#define MF_FETCH 8
+#define MF_UNMAP 16
+#define MF_PROT 32
+#define MF_WARN 64
+#define MF_MIXED 128

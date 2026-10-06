@@ -1362,10 +1362,111 @@ including recursive make all; all 92 libc archive members and the native
 compiler parser match their host-built counterparts. Runtime suites and the
 compiler ratchet pass with the final 16-process configuration.
 
+## V7 upper-layer restoration: batch 6, resource maps and RAM sizing
+
+Restored V7's first-fit resource-map allocator and map declarations. Replaced
+the private u-area bitmap and removed the unused segment allocator. The core
+map uses 2 KB frames; `USIZE=64` now describes the actual 4 KB u-area/system
+stack in V7 accounting clicks. The map is sized from board-reported installed
+RAM, excluding fixed user banks and the dedicated EPU service.
+
+The emulator's `-R KiB` setting controls the board RAM-size register and real
+bus availability. Accesses to absent RAM cannot alias populated memory.
+Fork returns EAGAIN on storage exhaustion and rolls back its provisional slot;
+exit returns frames to the map. Test coverage includes original allocation
+and coalescing logic, hardware bounds, repeated exhaustion/reaping/reuse in
+both executable layouts, odd RAM tails and insufficient-memory boot rejection.
+
+This first increment retained fixed user-bank reservations: with NPROC=16 they
+consumed 2112 KiB before the u-area pool. The follow-up below replaces those
+reservations. Neither increment enables swapping or shared text.
+
+Validation: all existing runtime suites, 13 combined/split memory guest
+scenarios, host physical-bus bounds and the 691-file compiler ratchet pass.
+The kernel-only build and all ten native compiler pipeline cases also pass.
+
+## Batch 6 continued: on-demand user-bank backing
+
+Replaced per-slot physical reservations with core-map allocation of a 4 KiB
+u-area and one or two 64 KiB user banks. Logical segments remain stable;
+indexed MMU ports map them to allocated physical frames. Only ROM/kernel
+(128 KiB) and the EPU service are reserved at boot. Fork rolls back partial
+allocations, exit frees all backing, and split exec acquires its additional
+bank before altering the old image. Combined exec returns the instruction bank.
+Init's user bank and fresh instruction banks are cleared before use.
+
+The combined memory probe now runs with init and shell at 332 KiB, the split
+probe at 396 KiB. Whole-bank allocation still requires contiguous space;
+page-level estabur/expand and shared text/swap remain separate work.
+
+Validation: boot and all runtime suites, 17 memory guest scenarios, host MMU
+bounds/remapping, the kernel-only build, the 691-file compiler ratchet and all
+ten native compiler pipeline cases pass. Memory scenarios cover every partial
+split-fork allocation boundary, failed exec preservation and repeated layout
+changes at constrained RAM.
+
+## Batch 6 continued: page-granular sections and real break allocation
+
+Replaced whole-bank backing with separate text/data/stack extents rounded to
+2 KiB pages. `estabur` validates and commits layouts; `expand` and `sbreak`
+allocate/release data storage. Resize failure preserves old mappings and size
+accounting. New pages and the exposed part of a retained partial page are zeroed.
+Fork copies mapped sections only; unmapped gaps reject kernel transfers with
+EFAULT and ordinary user accesses with SIGSEGV. Extents remain contiguous, and
+growth temporarily needs both old and replacement storage.
+
+Exec reserves a minimum 4 KiB stack including arguments, enlarged when arguments
+plus 256 bytes need more. Automatic stack growth remains deferred: current SEGT
+delivery does not provide general instruction restart/backout. Bourne shell
+workspace stores now acquire heap space explicitly instead of relying on the
+PDP-11-style SIGSEGV retry path. Long word expansion and here-documents exercise
+those checks. Allocation failures retain the shell's prior break pointer.
+
+Validation: runtime suites, 17 memory scenarios including both layouts at
+256/258/320 KiB, host MMU tests, kernel-only build, compiler ratchet, ten native
+compiler pipeline cases and the recursive-stack/profile/persistence probe pass.
+
+## Batch 6 combined follow-up: stack backout, shared text and swapping
+
+Added bus-visible first-word PC and fault-address/reason latches to the emulated
+MMU, together with read-only/system-only page flags and stack write warnings.
+Z8001 SEGT remains a post-instruction trap. Warnings preserve successful stores;
+failed LD/LDM stores and selected CALL/PUSH forms can grow the stack and retry
+with explicit SP backout. Failed reads, read-modify-write, protection violations
+and unsupported forms remain SIGSEGV. Signal delivery grows its frame area first.
+This does not invent Z8003/4 ABORT or hidden emulator register rollback.
+
+Shared 0411 text now has inode ownership, resident/reference counts, ITEXT write
+exclusion and immutable swap backing. Fork shares its read-only physical pages;
+exec prepares text before replacing the old image; exit releases references.
+The final reference frees RAM, swap and the inode. No unused sticky-text cache
+is retained. The common exec argument buffer is serialized across sleeping I/O.
+
+The kernel itself now uses split I/D, keeping its 16-bit C ABI. ROM and kernel
+D/I banks reserve 192 KiB; vectors are in ROM data space at 0:1000. Code remains
+at logical 1:0200, backed by physical bank 2, with kernel data starting at 1:0000.
+A separate handler-data.bin joins the boot artifacts. This removes the combined
+kernel's pressure against the e000 copy window without moving the u-area/stack.
+
+Memory pressure swaps other eligible processes to a dedicated ATA secondary unit.
+The root disk remains unit zero. Process 0 loads runnable nonresident images;
+fork can write its saved child continuation directly to swap when two copies do
+not fit in RAM. A private bounce buffer uses the configured block driver, with
+interrupts enabled while waiting and bounded physical-copy masking. Swap size is
+reported by the board; -S 0 disables it. Exhaustion rolls back allocations.
+
+Validation covers 25 memory scenarios, including page-skipping stack frames,
+CALL/PUSH backout, unsafe retry rejection, successful warning stores below SP,
+text inode lifetime, low-RAM/full/disabled swap and direct-to-swap fork at 256 KiB.
+The runtime suites, 692-file compiler ratchet (32 kernel files), kernel-only build,
+all ten native compiler cases and the profile/persistence probe pass.
+Raw physio, core dumps, ptrace, scattered-page allocation and general instruction
+restart remain separate work; contiguous growth can still return ENOMEM.
+
 ## Planned Steps
 
-- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), continuing with resource maps and real memory sizing (batch 6). Ordinary cache restoration is complete; panic-specific flushing and physical/swap I/O remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
+- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), continuing with raw physical I/O, core dumping and tracing after batch 6. Resource maps, RAM sizing, page-granular estabur/expand, conservative stack backout/growth, shared text and whole-process swapping are implemented. Ordinary cache restoration is complete; panic-specific flushing and raw physical I/O remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
 - **More commands**: extend beyond the boot disk and native development tools, including ls, wc and grep
 - **Multi-stage pipelines**: `ls | grep foo | wc`
-- **Missing kernel features**: ptrace/core dumps, automatic stack growth, `physio`/swap and unsupported syscalls
+- **Missing kernel features**: ptrace/core dumps, raw `physio` and unsupported syscalls
 - **Native build coverage**: extend the development environment to remaining V7 commands and kernel builds

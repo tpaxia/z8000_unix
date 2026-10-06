@@ -106,7 +106,7 @@ unsigned usp;
 		 * from user memory. Reserve room for the trampoline's saves/call.
 		 */
 		if ((usp & 1) || usp < 136 ||
-		    usp - 136 < (unsigned)ctob(u.u_dsize)) {
+		    usp - 136 < (unsigned)ctob(u.u_dsize) || !grow(usp-136)) {
 			n = SIGSEG;
 			goto die;
 		}

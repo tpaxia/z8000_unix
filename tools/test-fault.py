@@ -22,7 +22,7 @@ run(['make','-C',tools,'libv7.a','libc/crt0.b','sh','init','v7mkfs'])
 pre = run(['cpp','-nostdinc','-undef','-I'+str(root/'v7z8000/usr/include'),tools/'faulttest.c'])
 (work/'fault.az8').write_bytes(run([pcc/'cz8/cz8'],input=pre))
 (work/'regs.az8').write_bytes((tools/'faultregs.az8').read_bytes())
-(work/'pad.az8').write_text('.text\n.zerow 20000\n')
+(work/'pad.az8').write_text('.text\n.zerow 20000\n.bss\n.comm _execpad,40000\n')
 for name in ['fault','regs','pad']:
     run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=work)
 for name, flags, extra in [('faultn',[],[]),('faulti',['-i'],[]),('faultbig',['-i'],[work/'pad.b'])]:
@@ -53,10 +53,10 @@ for name in ['faultn','faulti']:
                        ('readbyte','w'),('writepart','r'),('writebytepart','r'),
                        ('readpart','w'),('readbytepart','w'),('path','r'),('argv','r'),('epu','r'),
                        ('signal','w'),('exec','w'),('user','u')]:
-        args=[build/'test_driver','-c','400000000','-d',work/'hd.img',
+        args=[build/'test_driver','-c',('1500000000' if mode=='exec' else '400000000'),'-d',work/'hd.img',
               '-i',name+' '+mode+'\\n','-x','fault: passed']
         if kind:
-            args+=['-w','fault: ready','-I','go\\nexit\\n','-F',kind+':9000']
+            args+=['-w','fault: ready','-I','go\\nexit\\n','-F',kind+(':'+('f000' if mode=='signal' else '9000'))]
         else:
             args+=['-w','fault: passed','-I','exit\\n']
         r=subprocess.run(list(map(str,args)),cwd=build,capture_output=True,timeout=60)

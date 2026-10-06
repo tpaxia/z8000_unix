@@ -170,16 +170,16 @@ LOCAL VOID	addg(as1,as2,as3)
 	s1=as1;
 	WHILE c = *s1++
 	DO	IF (c &= STRIP)==0
-		THEN	*s2++='/';
+		THEN	stakput(s2,'/');
 			break;
 		FI
-		*s2++=c;
+		stakput(s2,c);
 	OD
 	s1=as2;
-	WHILE *s2 = *s1++ DO s2++ OD
+	WHILE (stakroom(s2+1), *s2 = *s1++) DO s2++ OD
 	IF s1=as3
-	THEN	*s2++='/';
-		WHILE *s2++ = *++s1 DONE
+	THEN	stakput(s2,'/');
+		WHILE stakput(s2,*++s1) DONE
 	FI
 	makearg(endstak(s2));
 }

@@ -9,11 +9,11 @@
 #define	NMOUNT	2		/* number of mountable file systems */
 #define	MAXMEM	(64*32)		/* max core per process - first # is Kw */
 #define	MAXUPRC	25		/* max processes per user */
-#define	SSIZE	20		/* initial stack size (*64 bytes) */
+#define	SSIZE	64		/* minimum reserved stack, including arguments (*64 bytes) */
 #define	SINCR	20		/* increment of stack (*64 bytes) */
 #define	NOFILE	20		/* max open files per process */
 #define	CANBSIZ	256		/* max size of typewriter line */
-#define	CMAPSIZ	50		/* size of core allocation area */
+#define	CMAPSIZ	66		/* size of core allocation area */
 #define	SMAPSIZ	50		/* size of swap allocation area */
 #define	NCALL	20		/* max simultaneous time callouts */
 #define	NPROC	16		/* room for recursive make, shell and compiler */
@@ -76,7 +76,7 @@
 #define	BSHIFT	9		/* LOG2(BSIZE) */
 #define	NMASK	0177		/* NINDIR-1 */
 #define	NSHIFT	7		/* LOG2(NINDIR) */
-#define	USIZE	16		/* size of user block (*64) */
+#define	USIZE	64		/* u-area and system stack: 4KB (*64) */
 #define	NULL	0
 #define	CMASK	0		/* default mask for file creation */
 #define	NODEV	(dev_t)(-1)

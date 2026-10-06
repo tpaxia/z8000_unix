@@ -6,6 +6,7 @@
 #include "../h/inode.h"
 #include "../h/file.h"
 #include "../h/seg.h"
+#include "../h/text.h"
 
 /*
  * System calls: fork, exit, wait, exec.
@@ -77,9 +78,9 @@ exit(rv)
 	xfree();
 	acct();
 	/*
-	 * Free the u-area frames.
+	 * Free the user banks and u-area frames.
 	 */
-	frame_free(p->p_addr);
+	freemem(p);
 	p->p_stat = SZOMB;
 	((struct xproc *)p)->xp_xstat = rv;
 	((struct xproc *)p)->xp_utime = u.u_cutime + u.u_utime;
@@ -148,6 +149,7 @@ loop:
 fork()
 {
 	register struct proc *p1, *p2;
+	int n;
 
 	p2 = NULL;
 	for(p1 = &proc[0]; p1 < &proc[NPROC]; p1++) {
@@ -159,7 +161,12 @@ fork()
 		goto out;
 	}
 	p1 = u.u_procp;
-	if(newproc()) {
+	n = newproc();
+	if(n < 0) {
+		u.u_error = EAGAIN;
+		goto out;
+	}
+	if(n) {
 		/* child */
 		u.u_r.r_val1 = p1->p_pid;
 		u.u_r.r_val2 = 1;	/* child indicator */
@@ -187,7 +194,7 @@ out:
  * then builds the user stack with argc/argv[]/envp[]/strings.
  *
  * Simplified from V7: no swap for argument collection,
- * no text sharing, no SUID/SGID.
+ * shared 0411 text, no SUID/SGID.
  *
  * u_arg[0] = pathname (user pointer)
  * u_arg[1] = argv (user pointer to array of user pointers)
@@ -202,7 +209,18 @@ exec()
 	exece();
 }
 
+static int execlock;
 exece()
+{
+	/* Argument staging is shared kernel storage and readi may sleep. */
+	while (execlock) sleep((caddr_t)&execlock, PZERO);
+	execlock = 1;
+	doexec();
+	execlock = 0;
+	wakeup((caddr_t)&execlock);
+}
+
+doexec()
 {
 	register struct inode *ip;
 	register unsigned i;
@@ -218,6 +236,9 @@ exece()
 	unsigned strbase;
 	long datasize, filesize;
 	int sep;
+	unsigned stacksize;
+	struct text *xp, *oldtext;
+	extern struct text *textget();
 
 	/*
 	 * Look up executable.
@@ -333,17 +354,25 @@ exece()
 		goto bad;
 	}
 
-	u.u_sep = sep;
-	sureg();
+	xp = NULL;
+	u.u_procp->p_flag |= SLOCK;
+	if (sep && !(xp = textget(ip, u.u_exdata.ux_tsize))) goto bad;
+	oldtext = u.u_procp->p_textp;
+	u.u_procp->p_textp = xp;
+	stacksize = ((long)nc+(na+ne+3)*2+17+256+63)/64;
+	if (stacksize < SSIZE) stacksize = SSIZE;
+	if (estabur((unsigned)(sep ? ((long)u.u_exdata.ux_tsize+63)>>6 : 0),
+	    (unsigned)((datasize+63)>>6),
+	    stacksize, sep, 0) < 0) {
+		u.u_procp->p_textp = oldtext;
+		textput(xp);
+		u.u_error = ENOMEM;
+		goto bad;
+	}
+	textput(oldtext);
 	u.u_offset = sizeof(u.u_exdata);
 	if (sep) {
-		/* I-space helpers address the backing bank through the data bus. */
-		u.u_base = 0;
-		u.u_count = u.u_exdata.ux_tsize;
-		u.u_segflg = 2;
-		readi(ip);
-		if (u.u_error || u.u_count)
-			goto badimage;
+		u.u_offset += u.u_exdata.ux_tsize;
 	} else {
 		u.u_exdata.ux_dsize += u.u_exdata.ux_tsize;
 		u.u_exdata.ux_tsize = 0;
@@ -432,12 +461,7 @@ exece()
 	 */
 	setregs();
 
-	/*
-	 * Set up u-area for new program.
-	 */
-	u.u_tsize = (u.u_exdata.ux_tsize + 63L) >> 6;
-	u.u_dsize = btoc(u.u_exdata.ux_dsize + u.u_exdata.ux_bsize);
-	u.u_ssize = 1;		/* minimal stack */
+	/* minimal stack */
 
 	/*
 	 * Set return PC to entry point.
@@ -458,6 +482,7 @@ exece()
 	 */
 	set_usp(usp);
 
+	u.u_procp->p_flag &= ~SLOCK;
 	iput(ip);
 	return;
 
@@ -466,6 +491,7 @@ badimage:
 	psignal(u.u_procp, SIGKIL);
 	u.u_error = EIO;
 bad:
+	u.u_procp->p_flag &= ~SLOCK;
 	iput(ip);
 }
 

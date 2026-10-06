@@ -133,7 +133,6 @@ register struct proc *p;
 		return;
 	}
 	p->p_stat = SRUN;
-	p->p_flag |= SLOAD;	/* always in-core on Z8000 */
 	setrq(p);
 	if(p->p_pri < curpri)
 		runrun++;
@@ -195,7 +194,7 @@ loop:
 	 * Search for highest-priority runnable process
 	 */
 	for(p=runq; p!=NULL; p=p->p_link) {
-		if((p->p_stat==SRUN) && (p->p_flag&SLOAD)) {
+		if (p->p_stat == SRUN) {
 			if(p->p_pri < n) {
 				pp = p;
 				pq = q;
@@ -212,12 +211,25 @@ loop:
 		idle();
 		goto loop;
 	}
+	if (!(p->p_flag&SLOAD) && swapin(p) < 0) {
+		/* A runnable resident can release memory or swap space. */
+		for (p = runq, q = NULL; p; q = p, p = p->p_link)
+			if (p->p_stat == SRUN && (p->p_flag&SLOAD)) break;
+		if (!p) { idle(); goto loop; }
+		pq = q;
+		n = p->p_pri;
+	}
+	/* Device completions during swapin may have changed the run queue. */
+	spl6();
+	for (q = runq, pq = NULL; q != p; pq = q, q = q->p_link) ;
 	q = pq;
 	if(q == NULL)
 		runq = p->p_link;
 	else
 		q->p_link = p->p_link;
-	curpri = n;
+	curpri = p->p_pri;
+	/* Give the selected process its turn after a long swap transfer. */
+	runrun = 0;
 	spl0();
 	n = p->p_flag&SSWAP;
 	p->p_flag &= ~SSWAP;
@@ -226,7 +238,7 @@ loop:
 
 /*
  * Create a new process -- the internal version of sys fork.
- * Returns 1 in the new process, 0 in the old.
+ * Returns 1 in the new process, 0 in the old, -1 on allocation failure.
  *
  * Machine support allocates and copies the child u-area and address space.
  * The saved continuation supplies the child return path without a trampoline.
@@ -236,6 +248,7 @@ newproc()
 	struct proc *p, *up;
 	register struct proc *rpp, *rip;
 	register n;
+	int resident;
 
 	p = NULL;
 	/*
@@ -255,7 +268,7 @@ retry:
 			goto retry;
 	}
 	if ((rpp = p)==NULL)
-		panic("no procs");
+		return(-1);
 
 	/*
 	 * make proc entry for new proc
@@ -264,7 +277,7 @@ retry:
 	up = rip;
 	rpp->p_stat = SRUN;
 	rpp->p_clktim = 0;
-	rpp->p_flag = SLOAD;
+	rpp->p_flag = SLOAD|SLOCK;
 	rpp->p_uid = rip->p_uid;
 	rpp->p_pgrp = rip->p_pgrp;
 	rpp->p_nice = rip->p_nice;
@@ -275,13 +288,13 @@ retry:
 	rpp->p_cpu = 0;
 
 	/*
-	 * Allocate u-area frames for child process.
+	 * Allocate child u-area and user backing before increasing references.
 	 */
-	n = frame_alloc();
-	if (n == 0)
-		panic("no frames");
-	rpp->p_addr = n;
-	rpp->p_size = 1024;		/* 64KB = 1024 clicks of 64 bytes */
+	resident = newmem(rpp) == 0;
+	if (!resident && nswap <= 1) {
+		rpp->p_stat = NULL;
+		return(-1);
+	}
 
 	/*
 	 * Bump reference counts on open files, cdir, rdir.
@@ -311,9 +324,19 @@ retry:
 	}
 
 	/* Machine support copies the saved u-area and user address spaces. */
-	copyuarea(rpp);
-	copyproc(rip, rpp);
+	if (resident) {
+		copyuarea(rpp);
+		copyproc(rip, rpp);
+	} else if (forkswap(rpp) < 0) {
+		for (n = 0; n < NOFILE; n++)
+			if (u.u_ofile[n]) u.u_ofile[n]->f_count--;
+		u.u_cdir->i_count--;
+		if (u.u_rdir) u.u_rdir->i_count--;
+		rpp->p_stat = NULL;
+		return(-1);
+	}
 
+	rpp->p_flag &= ~SLOCK;
 	setrq(rpp);
 	rpp->p_flag |= SSWAP;
 	return(0);

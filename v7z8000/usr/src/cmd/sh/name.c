@@ -254,6 +254,7 @@ LOCAL STRING	staknam(n)
 {
 	REG STRING	p;
 
+	stakroom(staktop+length(n->namid)+length(n->namval)+1);
 	p=movstr(n->namid,staktop);
 	p=movstr("=",p);
 	p=movstr(n->namval,p);

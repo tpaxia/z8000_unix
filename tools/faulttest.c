@@ -19,6 +19,7 @@ main(argc, argv) int argc; char **argv;
 	long t;
 	struct stat st;
 	if(argc != 2) return(1);
+	if (brk((char *)0x9020) < 0) return(2);
 	p=(char *)0x9000;
 	for(i=0;i<16;i++) { p[i]='a'+i; data[i]='a'+i; }
 	p[-2]='x'; p[-1]='y';

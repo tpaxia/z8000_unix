@@ -4,8 +4,8 @@ Audited against the checked-in pristine `v7unix/usr/sys` tree after kernel
 configuration commit `14e85a1` (compiler `67a8dcc`). This is a source audit and
 restoration plan. Batches 1–5 and access-fault recovery are implemented and
 tested within the scopes below. Batch 4 covers ordinary cache operation; panic
-flushing remains deferred. Batch 6 begins with resource maps and real memory
-sizing; the remaining proposals are not claims of runtime support.
+flushing remains deferred. Batch 6 now includes resource maps and installed RAM
+sizing, page-granular section allocation and real estabur/expand sizing. The current batch adds conservative stack backout/growth, shared read-only text and whole-process swapping. Raw physical I/O, core dumps and ptrace remain unimplemented.
 
 The objective is to retain V7 policy and interfaces above replaceable CPU,
 MMU and device mechanisms. Driver improvements are outside this audit except
@@ -31,7 +31,7 @@ Differences fall into four categories:
 - **Restorable shared code:** upper-layer rewrites or declarations for which
   there is no inherent Z8000 requirement.
 - **Missing facility:** code removed along with an entire feature, such as
-  swapping, shared text or multiplexed channels.
+  raw physical I/O, core dumping or multiplexed channels.
 - **Behavioral discrepancy:** observable departure from V7 that needs a
   deliberate correction and an independent regression test.
 
@@ -66,7 +66,7 @@ The [machine-helper contract](kernel-technical-reference.md#shared-user-copy-pol
 records required fault behavior. The following machine-layer step now rejects
 address wrap and recovers SEGT faults at the user-access instructions. Policy
 tests inject helper failures; additional guest tests exercise actual bus denial
-and CPU trap delivery. The fixed-bank MMU still maps full user banks read/write.
+and CPU trap delivery. Allocated pages remain read/write; unused gaps are now unmapped.
 
 ### Syscall numbering and exec interfaces reconciled (batch 5)
 
@@ -98,14 +98,14 @@ Paths in this table are relative to `v7z8000/usr/sys`.
 | `sys/nami.c` | Restored byte-for-byte in batch 3; lookup/create beyond a 64 KB directory offset pass. |
 | `sys/iget.c` | Keep big-endian three-byte disk-address conversion. Batch 3 restored the multiplexed-inode exception alongside its supporting declarations. Do not reinstate PDP-11 byte order. |
 | `sys/rdwri.c`, `sys/subr.c` | Batch 2 restored shared copy dispatch/error accounting as described above. Treat extra offset casts as convergence candidates, not proven compiler requirements. |
-| `sys/bio.c` | Batch 4 restored V7 ordinary cache code, DISKMON counters and word clearing. Physical-map release, swap and raw-I/O remain excluded pending their machine/device contracts. |
+| `sys/bio.c` | Batch 4 restored V7 ordinary cache code, DISKMON counters and word clearing. Physical-map release and raw-I/O remain excluded; whole-process swap now has a separate machine-layer transfer buffer. |
 | `dev/tty.c` | Batch 3 restored original shared control flow, multiplexor callbacks, discipline controls and the common-handler return contract; retains validated/interrupt-protected parameter updates. |
 | `sys/prf.c` | `panic()` still omits `update()`. Batch 4 source review found that normal flushing can wait on buffers owned by the panicking path; a bounded panic-specific protocol remains separate. |
 | `sys/clock.c` | FCW tests and call signature are architecture adaptations. Profiling and disk/CPU instrumentation were removed. Keep shared accounting/callout policy and place CPU predicates/clock acknowledgement behind machine interfaces. |
-| `sys/main.c` | Extra console open/dup bootstrap, relocated global tables, no core/swap map initialization or process-0 swapper. Restore generic initialization as those facilities return; retain configuration boot-device selection. |
-| `sys/slp.c` | `sched()`, `swapin()` and real `expand()` removed; `setrun()` forces `SLOAD`; fork assumes fixed user banks and panics on u-area exhaustion. Shared scheduling is retained, but restoring memory policy needs more than changing source paths. |
-| `sys/sys1.c` | Fork/exit/wait and exec were substantially rewritten. Exec lacks shared text and set-ID handling; argument collection uses a fixed kernel buffer. Saved-register/stack construction is still embedded in shared code and should move behind CPU helpers. Preserve current executable validation and split-I/D support. |
-| `sys/sig.c` | Signal-frame construction is Z8000/EPU-specific and belongs behind a `sendsig`-style interface. Common selection/default-action policy can converge; core dumping, tracing and stack growth are missing. Fix wait status first. |
+| `sys/main.c` | Extra console open/dup bootstrap, relocated global tables, core-map initialization delegated to the MMU; a dedicated swap map and residency-aware process-0 scheduler. Configuration retains boot-device selection. |
+| `sys/slp.c` | The original monolithic swapper remains adapted; residency transitions and `expand()` are machine services. `setrun()` preserves residency; fork allocates sections or writes a child image directly to swap, returning EAGAIN if both fail. Machine-layer expand now resizes data storage. Shared scheduling is retained, but restoring memory policy needs more than changing source paths. |
+| `sys/sys1.c` | Fork/exit/wait and exec were substantially rewritten. Exec supports shared 0411 text but lacks set-ID handling; argument collection uses a serialized fixed kernel buffer. Saved-register/stack construction is still embedded in shared code and should move behind CPU helpers. Preserve current executable validation and split-I/D support. |
+| `sys/sig.c` | Signal-frame construction is Z8000/EPU-specific and belongs behind a `sendsig`-style interface. Common selection/default-action policy can converge; core dumping and tracing remain missing; signal frames now request stack growth; wait status was fixed in batch 1. |
 | `sys/sysent.c` | Preserve register-based dispatch, but reconcile interface numbering and optional syscalls explicitly. Reserved V7 slots should not be counted as missing implemented features. |
 
 ## Headers and optional features
@@ -124,9 +124,9 @@ its offsets against the actual target `struct proc`.
 
 `acct.h` is a stub. `reg.h`/`seg.h` need Z8000 definitions rather than PDP-11
 register constants. Table sizes in `param.h` are tuning decisions, while the
-context-label size is ABI. Its `USIZE` remains 16 clicks (1 KB), although the
-current MMU allocates/maps a 4 KB u-area/stack window. Reconcile that accounting
-before importing code that allocates, swaps or dumps `USIZE` clicks.
+context-label size is ABI. Batch 6 corrects `USIZE` to 64 clicks (4 KB), matching the current
+u-area/system-stack mapping. `p_addr` still names only that separately allocated
+window; text/data/stack have separate page-rounded core-map allocations. Swapping and dumping require further work.
 
 Batch 3 installs V7's [sys/fakemx.c](../v7z8000/usr/sys/sys/fakemx.c) and
 restores the associated filesystem/TTY branches. The selected configuration
@@ -149,23 +149,25 @@ copy, preventing a partial access fault from changing live terminal state.
 
 The following omissions form a dependency chain, not independent file copies:
 
-1. Restore V7's resource-map allocator (`malloc.c`, `map.h`) and define the
-   allocation units/ownership expected by generic process code.
-2. Implement real `estabur()`/`expand()` semantics and space validation behind
-   the selected MMU. Current `paged.c` functions are no-ops; `sbreak()` updates
-   accounting without allocation and only enforces a fixed upper limit.
-3. Restore shared-text management (`text.c`, `text.h`) and its inode lifecycle.
-   `xrele()`, `xfree()` and `xumount()` are currently empty stubs in `machine/cpu.c`.
-4. Restore raw/swap I/O policy through a machine/device transfer interface.
-   Original `physio()` directly consults PDP-11 UISA/UDSA, and swap buffers
-   encode physical addresses in `b_addr`/`b_xmem`; those mechanisms must change.
-   The driver must honor `B_PHYS`, transfer length, completion and residual/error
-   contracts. We need that support, not a production-quality controller driver.
-5. Restore swapper policy, fork/expand allocation failure behavior and shared
-   text accounting. `p_addr` currently names just the separately allocated
-   u-area, whereas original V7 process-memory policy gives it broader meaning.
-6. Restore stack growth, core dumping and ptrace with CPU register access and
-   memory-fault support. Keep the existing safe Z8000 signal/EPU restoration.
+1. Resource maps and installed RAM sizing are implemented. Core-map units are
+   2 KiB frames; V7 accounting uses 64-byte clicks. User sections allocate on demand.
+2. `estabur()` validates and commits page-rounded text/data/stack extents;
+   `expand()` and `sbreak()` resize real data storage with rollback on failure.
+   Gaps are unmapped. Stack warnings and a conservative Z8001 software-backout
+   whitelist now enable automatic stack growth; arbitrary instruction restart
+   and scattered-page allocation remain absent.
+3. Shared 0411 text lifecycle is implemented in `sys/text.c`, with inode write
+   exclusion, resident/reference counts and an immutable swap copy. Idle/sticky
+   text caching is omitted; there are no unreferenced texts for xrele/xumount.
+4. Whole-process swap transfers use machine physical-copy helpers and the block
+   driver. Raw `physio()` and bus-map ownership remain future work; the original
+   PDP-11 UISA/UDSA and b_xmem mechanisms are not portable interfaces.
+5. Memory pressure evicts other unlocked processes; the scheduler loads runnable
+   nonresident processes. Fork can create its child directly on swap. This is
+   synchronous policy, not a byte-for-byte restoration of V7 sched(). Contiguous
+   growth still reserves a replacement before releasing the old extent.
+6. Core dumping and ptrace still need CPU register and memory-access interfaces.
+   Preserve safe Z8000 signal/EPU restoration and the explicit retry whitelist.
 
 V7 `ureg.c` is useful as an interface/policy reference, not an implementation
 to copy: its mapping registers are specifically PDP-11 hardware. Likewise,
@@ -199,7 +201,7 @@ that current syscall/driver contracts satisfy every restored caller.
 | 3 (complete) | Restore optional multiplexor declarations/stubs and filesystem/TTY call sites; restore common ioctl contract | Directory traversal and large offsets, open/dup/close, pipes, ioctl fallback, ordinary/raw/cbreak TTY behavior; no active multiplexor required |
 | 4 (ordinary cache complete; panic flush deferred) | Restore remaining ordinary buffer-cache code and instrumentation; review panic flush separately | Cache reuse, delayed writes, read-ahead, async completion, error propagation and reboot persistence |
 | 5 (complete) | Reconcile syscall numbering and exec interfaces in one kernel/libc/image migration | All native tools rebuilt; exec/execve environment, umask/chroot and EPU signal return verified |
-| 6 | Resource maps, real memory sizing, shared text, physical I/O and swapping, then stack/core/trace facilities | Allocation exhaustion without kernel panic, fork/exec isolation, text lifetime, raw/swap transfers, growth faults and trace/core correctness |
+| 6 (memory allocation, text, swap and stack growth implemented) | Raw physical I/O, core dumping and tracing remain | Allocation exhaustion without kernel panic, fork/exec isolation, text lifetime, raw/swap transfers, growth faults and trace/core correctness |
 
 Do not make a lower diff-line count the acceptance criterion. Preserve tested
 port fixes and validate observable V7 behavior. Existing passing tests need
@@ -272,8 +274,8 @@ victims, asynchronous release, error handling and continuation after failure.
 A real-kernel write/sync/save/reboot test verifies full and partial blocks.
 Existing runtime suites and the 690-file compiler ratchet pass.
 
-`swap()`, `physio()` and mapped-I/O cleanup still require real lower-layer
-support. Panic-time `update()` was deliberately not restored: source review
+At batch 4, `swap()`, `physio()` and mapped-I/O cleanup still required lower-layer
+support. Batch 6 supplies whole-process swap; raw/mapped I/O remains absent. Panic-time `update()` was deliberately not restored: source review
 shows a possible wait on a buffer already owned by the panicking path. This
 is a documented remaining behavioral difference, not a tested panic-flush
 implementation. See the [cache reference](kernel-technical-reference.md#buffer-cache-and-asynchronous-disk-requests).
@@ -296,3 +298,52 @@ slept retrying fork with every slot occupied). NPROC is now 16, adding 224 bytes
 of BSS. The ABI regression also fills the table, checks EAGAIN, reaps children
 and verifies subsequent process/exec reuse. All runtime suites and the full
 690-file compiler ratchet pass with the enlarged configuration.
+
+## Batch 6: resource maps and RAM sizing
+
+Restored `map.h` unchanged and `malloc.c` with only its allocation-unit comment
+adapted. The comparable shared tree now has 45 files, 24 byte-identical to V7.
+The emulated board reports installed RAM through port 0x00BA, and its bus
+rejects absent physical memory. Core-map seeding excludes ROM/kernel
+and EPU service. `USIZE` now matches the actual 4 KB kernel stack/u-area.
+Fork allocation failure returns EAGAIN without leaving a process slot or
+additional file/inode references behind.
+
+`estabur`/`expand` now allocate text/data/stack extents in 2 KiB units, retaining
+contiguity within each section. Exec and heap growth reserve replacement storage
+before committing; shrinking releases complete pages, and regrowth clears newly
+exposed bytes. Fork copies mapped sections only. `useracc` rejects gaps; user
+accesses there raise SIGSEGV. The configured initial stack is at least 4 KiB;
+the follow-up below adds conservative growth/backout, shared text and swapping.
+Scattered physical pages remain outside the current allocator.
+
+Bourne shell workspace allocation is explicit because its original SIGSEGV-driven
+heap growth depended on instruction restart. This is a CPU/MMU compatibility
+adaptation, not a compiler workaround. Header dependencies now rebuild all shell
+objects after changes to its allocation macros.
+
+`test-memory` covers physical bounds, page rounding, partial rollback, heap
+zeroing/growth/shrink, gap faults, fork isolation and reuse, failed exec, layout
+changes and large shell words/here-documents. Low-memory cases use 256, 258 and
+320 KiB. All 31 kernel files and 20 shell files compile and assemble. Runtime
+suites, 17 memory guest scenarios, the compiler ratchet, kernel-only build,
+native compiler pipeline and recursive-stack/profile probe pass.
+
+## Batch 6 combined follow-up: text, protection, swap and stack faults
+
+The kernel now has separate instruction/data spaces, reserving 192 KiB for
+ROM and its two banks. Shared 0411 text, ITEXT lifetime/write exclusion and
+resident counts live in sys/text.c. The selected MMU supplies physical copies,
+whole-process swap, fault latches and page permissions. Swap uses a separate
+ATA unit, never the root filesystem. Fork has a direct-to-swap fallback.
+
+The Z8001 implementation grows the stack after successful write warnings or
+whitelisted failed stores/CALL/PUSH with software backout. It rejects failed
+reads, unsafe read-modify-write operations and unsupported instruction forms.
+This leaves a deliberate architectural limitation versus a fully restartable
+MMU/CPU; it does not emulate Z8003/4 ABORT on a Z8001.
+
+The memory suite covers warning growth, page-skipping stores, CALL/PUSH backout,
+unsafe retry rejection, inode lifetime, shared mappings, full/disabled swap,
+low-RAM process churn and private-data isolation. Original ordinary cache code
+remains intact; raw physio and asynchronous bus-map ownership are still absent.

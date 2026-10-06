@@ -103,11 +103,11 @@ STRING	catpath(path,name)
 	REG STRING	scanp = path,
 			argp = locstak();
 
-	WHILE *scanp ANDF *scanp!=COLON DO *argp++ = *scanp++ OD
-	IF scanp!=path THEN *argp++='/' FI
+	WHILE *scanp ANDF *scanp!=COLON DO stakput(argp,*scanp++) OD
+	IF scanp!=path THEN stakput(argp,'/') FI
 	IF *scanp==COLON THEN scanp++ FI
 	path=(*scanp ? scanp : 0); scanp=name;
-	WHILE (*argp++ = *scanp++) DONE
+	WHILE (stakput(argp,*scanp++)) DONE
 	return(path);
 }
 
@@ -351,7 +351,7 @@ LOCAL INT	split(s)
 
 	LOOP	sigchk(); argp=locstak()+BYTESPERWORD;
 		WHILE (c = *s++, !any(c,ifsnod.namval) && c)
-		DO *argp++ = c OD
+		DO stakput(argp,c) OD
 		IF argp==staktop+BYTESPERWORD
 		THEN	IF c
 			THEN	continue;

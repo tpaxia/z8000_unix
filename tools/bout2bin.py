@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Convert a.out to flat binary (strip 16-byte header, emit text+data).
+"""Extract boot images from a.out.
 
-Used for kernel handler.bin which is loaded at a fixed address.
+0407 emits text+data. Split kernels emit text after the reserved 512-byte trap
+area to handler.bin and initialized data to a separate handler-data.bin.
 
 a.out header: 8 x 16-bit big-endian words (16 bytes)
   a_magic, a_text, a_data, a_bss, a_syms, a_entry, a_trsize, a_drsize
@@ -10,8 +11,8 @@ import struct
 import sys
 
 def main():
-    if len(sys.argv) != 3:
-        print(f"usage: {sys.argv[0]} input output.bin", file=sys.stderr)
+    if len(sys.argv) not in (3, 4):
+        print(f"usage: {sys.argv[0]} input text.bin [data.bin]", file=sys.stderr)
         sys.exit(1)
 
     with open(sys.argv[1], 'rb') as f:
@@ -24,14 +25,22 @@ def main():
     magic, tsize, dsize, bsize, ssize, entry, trsize, drsize = \
         struct.unpack('>8H', data[:16])
 
-    if magic != 0o407:
-        print(f"error: bad magic {oct(magic)}, expected 0407", file=sys.stderr)
+    if len(data) < 16 + tsize + dsize:
+        sys.exit('error: truncated text/data image')
+
+    if magic not in (0o407, 0o411):
+        print(f"error: bad magic {oct(magic)}, expected 0407 or 0411", file=sys.stderr)
         sys.exit(1)
 
-    if sys.argv[1].endswith('handler.bout') and 0x200 + tsize + dsize + bsize > 0xe000:
+    if magic == 0o411:
+        if len(sys.argv) != 4 or tsize < 512 or tsize > 65536 or dsize + bsize > 0xe000:
+            sys.exit('error: invalid split kernel layout or missing data output')
+        with open(sys.argv[3], 'wb') as f:
+            f.write(data[16+tsize:16+tsize+dsize])
+    if magic == 0o407 and sys.argv[1].endswith('handler.bout') and 0x200 + tsize + dsize + bsize > 0xe000:
         sys.exit('error: kernel overlaps MMU copy window at 0xe000')
 
-    content = data[16:16 + tsize + dsize]
+    content = data[16 + (512 if magic == 0o411 else 0):16 + tsize + (dsize if magic == 0o407 else 0)]
 
     with open(sys.argv[2], 'wb') as f:
         f.write(content)

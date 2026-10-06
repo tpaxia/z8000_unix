@@ -75,7 +75,7 @@ set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     rom.o rom.lst rom.coff rom.bin
     trap.o trap.lst trap.coff kernel.bin
     krt.az8 krt.b arith.az8 arith.b
-    handler.bout handler.bin
+    handler.bout handler.bin handler-data.bin
     root.img hd.img
 )
 
@@ -153,5 +153,17 @@ add_custom_target(test-abi
     DEPENDS kernel test_driver disk_image
     WORKING_DIRECTORY "${B}"
     COMMENT "Testing V7 syscall numbers and exec environments in both layouts"
+    VERBATIM
+)
+
+add_executable(memory_test "${DRIVER_DIR}/memory_test.cpp")
+target_link_libraries(memory_test PRIVATE z8000)
+target_include_directories(memory_test PRIVATE "${EMU_DIR}/src")
+add_custom_target(test-memory
+    COMMAND ./memory_test
+    COMMAND python3 "${TOOLS_DIR}/test-memory.py" "${B}"
+    DEPENDS kernel test_driver disk_image memory_test
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing resource maps, physical RAM bounds and low-memory fork recovery"
     VERBATIM
 )

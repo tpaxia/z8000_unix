@@ -7,9 +7,6 @@
 #include "../h/inode.h"
 #include "../h/buf.h"
 
-xrele(ip) struct inode *ip; {}
-xfree() {}
-xumount(dev) {}
 acct() {}
 
 /*

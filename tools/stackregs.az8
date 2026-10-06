@@ -1,0 +1,30 @@
+! Stack recovery probes; forms from Z8000 CPU Technical Manual CALL/PUSH/INC.
+	.text
+	.globl _callgrow
+	.globl _pushgrow
+	.globl _rmwgrow
+_callgrow:
+	push @sp,r4
+	ld r4,sp
+	sub sp,#8192
+	call .Lreturn
+	ld sp,r4
+	pop r4,@sp
+	clr r0
+	ret
+.Lreturn:
+	ret
+_pushgrow:
+	push @sp,r4
+	ld r4,sp
+	sub sp,#8192
+	push @sp,#0x1234
+	pop r0,@sp
+	ld sp,r4
+	pop r4,@sp
+	ret
+_rmwgrow:
+	sub sp,#8192
+	inc @sp,#1
+	ld r1,#99
+	sc #1

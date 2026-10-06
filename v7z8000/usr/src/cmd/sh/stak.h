@@ -19,8 +19,9 @@
 #define		relstak()	(staktop-stakbot)
 #define		absstak(x)	(stakbot+Rcheat(x))
 #define		setstak(x)	(staktop=absstak(x))
-#define		pushstak(c)	(*staktop++=(c))
-#define		zerostak()	(*staktop=0)
+#define		stakput(p,c)	(stakroom((p)+1), *(p)++=(c))
+#define		pushstak(c)	stakput(staktop,c)
+#define		zerostak()	(stakroom(staktop+1), *staktop=0)
 
 /* Used to address an item left on the top of
  * the stack (very temporary)

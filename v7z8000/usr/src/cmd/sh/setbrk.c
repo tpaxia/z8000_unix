@@ -17,6 +17,6 @@ BYTPTR sbrk();
 setbrk(incr)
 {
 	REG BYTPTR	a=sbrk(incr);
-	brkend=a+incr;
+	IF a != (BYTPTR)-1 THEN brkend=a+incr FI
 	return((INT)a);
 }

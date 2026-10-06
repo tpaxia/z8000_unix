@@ -33,6 +33,10 @@ See [software EPU service](doc/kernel-technical-reference.md#software-epu-servic
 
 Trap handlers must briefly enter SEG+SYS mode (forced by CPU hardware on trap entry) to access the segmented system stack pointer (RR14), then switch to NONSEG+SYS for C code execution.
 
+The kernel also uses split I/D. The emulated board supports shared read-only
+0411 text, conservative stack-fault backout and automatic growth, and whole-process
+swapping to a dedicated ATA unit. See the [memory contract](doc/kernel-technical-reference.md#shared-text-and-swapping).
+
 ### MMU: Segment Numbers as Map Set Selectors
 
 Instead of using the Z8001's segmentation with Zilog's Z8010 base+limit MMU, the 7-bit segment number is repurposed as a map set selector for a custom paged MMU. This combines hardware-assisted context selection with fine-grained paged translation: each segment number selects a map set, context switching is free (segment number is embedded in PC), and the kernel accesses user memory by constructing pointers with the target process's segment number.
@@ -115,20 +119,21 @@ The upper-layer restoration has completed batches 1–5, including user-access
 fault recovery, shared filesystem/TTY interfaces, ordinary buffer-cache behavior
 and syscall compatibility. The configured process limit is 16 so recursive
 native builds have room for command shells and compiler passes. Resource maps
-and real memory sizing are next; see the [restoration audit](doc/v7-upper-layer-audit.md).
+and installed RAM sizing now support page-granular text/data/stack extents,
+real `estabur`/`expand` sizing and an unmapped heap/stack gap; see the [restoration audit](doc/v7-upper-layer-audit.md).
 
 To run the current kernel regression targets:
 
 ```sh
 cmake --build v7z8000/usr/sys/build --target \
   test test-libc test-signal test-preempt test-tty test-split test-fpe \
-  test-copy test-fault test-v7-interfaces test-bio test-abi
+  test-copy test-fault test-v7-interfaces test-bio test-abi test-memory
 python3 PCC-z8000/z8000/test/ratchet/run.py
 ```
 
 These cover both executable layouts, copy/fault recovery, filesystem and TTY
 contracts, queued disk I/O and reboot persistence, syscall numbers and process
-exhaustion. Native self-hosting and development-environment rebuilds use the
+exhaustion at installed RAM limits. Native self-hosting and development-environment rebuilds use the
 separate Step 29/30 commands linked above.
 
 ## Files

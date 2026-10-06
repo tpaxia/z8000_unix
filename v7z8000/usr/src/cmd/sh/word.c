@@ -30,16 +30,16 @@ word()
 	WHILE (c=nextc(0), space(c)) DONE
 	IF !eofmeta(c)
 	THEN	REP	IF c==LITERAL
-			THEN	*argp++=(DQUOTE);
+			THEN	stakput(argp,DQUOTE);
 				WHILE (c=readc()) ANDF c!=LITERAL
-				DO *argp++=(c|QUOTE); chkpr(c) OD
-				*argp++=(DQUOTE);
-			ELSE	*argp++=(c);
+				DO stakput(argp,c|QUOTE); chkpr(c) OD
+				stakput(argp,DQUOTE);
+			ELSE	stakput(argp,c);
 				IF c=='=' THEN wdset |= alpha FI
 				IF !alphanum(c) THEN alpha=0 FI
 				IF qotchar(c)
 				THEN	d=c;
-					WHILE (*argp++=(c=nextc(d))) ANDF c!=d
+					WHILE (stakput(argp,c=nextc(d))) ANDF c!=d
 					DO chkpr(c) OD
 				FI
 			FI

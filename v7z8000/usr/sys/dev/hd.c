@@ -9,7 +9,7 @@
  * IDE hard drive driver for Z8000.
  *
  * Interrupt-driven ATA PIO driver — VI interrupt on command completion.
- * Single drive, whole disk, LBA addressing.
+ * Two drives, whole disk, LBA addressing.
  *
  * hdstrategy() queues the request and starts the controller if idle.
  * The emulator asserts VI when the operation completes.
@@ -97,7 +97,7 @@ hdstart()
 	outb(HD_SN, blkno & 0xFF);
 	outb(HD_CL, (blkno >> 8) & 0xFF);
 	outb(HD_CH, 0);
-	outb(HD_DH, 0xE0);
+	outb(HD_DH, 0xE0 | ((minor(bp->b_dev)&1)<<4));
 	if (bp->b_flags & B_READ)
 		outb(HD_CMD, CMD_READ);
 	else {

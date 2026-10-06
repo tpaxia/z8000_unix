@@ -48,6 +48,7 @@ main()
 
 	/* Root, pipe and swap devices belong to the machine configuration. */
 	devinit();
+	swapinit();
 
 	printf("boot\n");
 	clkstart();
@@ -88,9 +89,13 @@ main()
 	 * V7 style: newproc() returns 1 in child, 0 in parent.
 	 * Child copies icode to user segment and enters user mode.
 	 */
-	if (newproc()) {
+	i = newproc();
+	if (i < 0)
+		panic("no memory for init");
+	if (i) {
 		/* Child (process 1) */
-		estabur(0, btoc(szicode), 0, 0, 0);	/* no-op */
+		if (estabur(0, btoc(szicode), SSIZE, 0, 0) < 0)
+			panic("no memory for icode");
 		copyout((caddr_t)icode, (caddr_t)0, szicode);
 		return;		/* returns to krt.s boot_entry -> retu() -> user mode */
 	}

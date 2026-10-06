@@ -59,7 +59,9 @@ devinit()
 {
 	rootdev = makedev(1, 0);
 	pipedev = rootdev;
-	swapdev = rootdev;
+	swapdev = makedev(1, 1);
+	nswap = inw(0x00b2);
+	swplo = 0;
 }
 
 devintr(vector)

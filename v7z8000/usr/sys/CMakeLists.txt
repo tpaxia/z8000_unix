@@ -162,7 +162,7 @@ foreach(source IN LISTS KERNEL_ASM)
 endforeach()
 
 # Shared V7 services. Machine configuration never changes this list.
-foreach(name main bio alloc iget nami rdwri subr fio prf slp
+foreach(name main bio malloc text alloc iget nami rdwri subr fio prf slp
              sys1 sys2 sys3 sys4 pipe sig sysent clock prim)
     pcc_compile_c(sys ${name})
 endforeach()
@@ -204,19 +204,19 @@ foreach(f ${HANDLER_B_FILES})
 endforeach()
 
 add_custom_command(OUTPUT ${B}/handler.bout
-    COMMAND ${LDZ8} -x -R 200 ${HANDLER_B_FILES} -o handler.bout
+    COMMAND ${LDZ8} -i -x ${HANDLER_B_FILES} -o handler.bout
     DEPENDS ${HANDLER_B_ABS} "${LDZ8}" "${CONFIG_STAMP}"
     COMMENT "Linking handler.bout"
 )
-add_custom_command(OUTPUT ${B}/handler.bin
-    COMMAND python3 "${TOOLS_DIR}/bout2bin.py" handler.bout handler.bin
+add_custom_command(OUTPUT ${B}/handler.bin ${B}/handler-data.bin
+    COMMAND python3 "${TOOLS_DIR}/bout2bin.py" handler.bout handler.bin handler-data.bin
     DEPENDS ${B}/handler.bout "${TOOLS_DIR}/bout2bin.py"
     COMMENT "Building handler.bin"
 )
 
 # Kernel artifacts are independent of the host emulator/test harness.
 add_custom_target(kernel ALL DEPENDS
-    ${B}/rom.bin ${B}/kernel.bin ${B}/handler.bin ${B}/fpe.bin)
+    ${B}/rom.bin ${B}/kernel.bin ${B}/handler.bin ${B}/handler-data.bin ${B}/fpe.bin)
 
 add_custom_command(OUTPUT ${B}/fpe.bin
     COMMAND ${CMAKE_COMMAND} -E make_directory ${B}/fpe

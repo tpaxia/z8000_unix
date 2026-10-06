@@ -24,7 +24,7 @@ The PSAP register points to the PSA base. Vector addresses are `PSA_ADDR() + m_v
 
 ### PSAPSEG Register Format
 
-The PSAPSEG control register stores the segment in encoded format: `(seg_num << 8) | 0x8000`. For segment 1, this is `0x8100`. The emulator's `PSA_ADDR()` uses `segmented_addr((m_psapseg << 16) | m_psapoff)` which requires this encoding.
+The PSAPSEG control register stores the segment in encoded format: `(seg_num << 8) | 0x8000`. The current ROM installs `PSAPSEG=0x8000`, `PSAPOFF=0x1000`: vectors are at data address `0:1000`. The emulator's `PSA_ADDR()` uses `segmented_addr((m_psapseg << 16) | m_psapoff)` which requires this encoding.
 
 ## CPU Mode Transitions
 
@@ -265,15 +265,19 @@ main() (sys/main.c):
 
 ## Paged MMU
 
-The emulated MMU provides 128 segments x 32 pages x 2KB pages, identity-mapped on construction. UPAGE and WPAGE remap page pairs within segment 1; IMAP selects a separate instruction bank for each logical segment:
+The emulated MMU provides 128 segments x 32 pages x 2KB pages, with only ROM, kernel and EPU banks identity-mapped on construction. User banks start unmapped. UPAGE and WPAGE remap page pairs within segment 1; IMAP selects a separate instruction bank for each logical segment:
 
 ### MMU Control Ports
 
 | Port | Width | Name | Function |
 |------|-------|------|----------|
 | 0x00B0 | word | UPAGE | KDSA6 equivalent: sets seg1 pages 30-31 to frame pair (value, value+1) |
+| 0x00B2 | word, read-only | SWAPSIZE | Dedicated swap unit size in 512-byte blocks |
 | 0x00B4 | word | WPAGE | Copy window: sets seg1 pages 28-29 to frame pair (value, value+1) |
 | 0x00B8 | word | IMAP | High byte: logical segment; low byte: instruction backing segment (7 bits each) |
+| 0x00BA | word, read-only | RAMSIZE | Installed low RAM in 2 KB frames (at most 4096) |
+| 0x00BC | word | PAGESEL | Select page-table entry: `(segment << 5) | page` |
+| 0x00BE | word | PAGEFRAME | Set physical frame plus RO/SYS flags; `0xffff` unmaps it |
 
 ### Address Translation
 
@@ -290,7 +294,69 @@ physical = (frame << 11) | pg_off
 
 The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
 
-Process 0's u-area is at frame 62 (identity-mapped: seg1 page 30 = frame 62). Forked processes get frames from `frame_alloc()` starting at frame `(2*NPROC+1)*32`, which is 1056 with `NPROC` = 16: everything below is reserved for the kernel, user data banks, and user instruction banks.
+Process 0's u-area is at frame 62 (identity-mapped). Other processes allocate
+u-areas and user banks from the resource map starting at physical frame 96.
+
+### Physical memory sizing and resource maps
+
+`mmuinit()` reads RAMSIZE and seeds V7's `coremap` with frames from 96 up to
+`min(physmem, 4064)`, exclusive. Only the first 192 KiB (ROM, kernel data, kernel instructions) and
+the dedicated EPU service bank are reserved. The emulator retains the EPU
+bank when less low RAM is installed; absent physical accesses raise SEGTRAP.
+
+`sys/malloc.c` retains V7 first-fit allocation and adjacent-range coalescing;
+only its unit comment differs. `h/map.h` is unchanged. Core-map units are
+2 KB frames; process accounting uses 64-byte clicks. `USIZE=64` represents
+the 4 KB u-area/system stack. `p_addr` names its two-frame allocation;
+`p_size` includes that allocation and private data/stack pages; shared text is
+accounted separately. For a nonresident process, `p_addr` is its swap block.
+`swapmap` is seeded from the dedicated swap device, excluding block zero; `maxmem=MAXMEM` is the I+D bank limit in accounting clicks.
+
+Machine-layer `newmem()` allocates a u-area and copies the parent's section
+sizes. User text, data and stack are separate contiguous physical extents,
+rounded to 2 KiB pages. Logical segment numbers remain tied to process slots;
+PAGESEL/PAGEFRAME map data from address zero and stack at the top of data space.
+Split text gets a read-only mapping shared by processes executing the same inode. Unused pages, including the heap/stack gap,
+are unmapped. Fork copies private sections and takes a shared-text reference. Failure rolls back all
+provisional storage before publishing the child; exit releases every extent.
+
+`estabur(nt, nd, ns, sep, xrw)` validates 64-byte click sizes and page-rounded
+space limits, then acquires all replacement extents before committing mappings
+and u-area accounting. Exec uses it before destroying the old image, so ENOMEM
+preserves that image. `expand(total_clicks)` resizes data with text, stack and
+u-area sizes fixed; `sbreak()` uses it for real heap allocation and release.
+`brk(0)` retains the port's click-rounded query interface. New pages are cleared;
+regrowth also clears the newly exposed portion of a retained partial page.
+`p_size` accounts for the u-area and actual allocated pages.
+
+Growth relocates a section to a larger contiguous extent while preserving its
+contents. Shrink releases a data/text suffix or a stack prefix. This is V7-style
+contiguous-section allocation at page granularity, not arbitrary scattered
+physical-page allocation. Fragmentation or the temporary replacement allocation
+can cause ENOMEM even when the final image alone would fit. CMAPSIZ covers four
+extents per user process, three provisional replacements and the map terminator.
+Only process context performs allocation and remapping.
+
+The initial stack reserves at least `SSIZE=64` clicks (4 KiB), including startup
+arguments. Exec enlarges this reservation if arguments plus 256 bytes of spare
+stack require more, then rounds it to pages. Stack write warnings extend it
+before overflow; supported failed stores can also trigger growth with software
+backout. Other user gaps raise SIGSEGV; covered kernel user-copy faults return
+EFAULT. `useracc()` checks every data-space page in the requested range.
+Private combined-space text/data remain writable, as required for 0407.
+
+The Bourne shell now explicitly reserves heap workspace before stores. Its
+original SIGSEGV-driven break extension required restarting a failed store.
+Shell word construction, expansions, environment construction and here-documents
+use bounds checks; failed break requests preserve its previous break pointer.
+Other user programs must request heap memory before using it.
+
+`test-memory` checks the target allocator and sizing helpers, host MMU bounds,
+partial fork and resize rollback, low-RAM exhaustion/reaping/reuse, failed exec,
+layout transitions, heap zeroing/isolation/reclamation, gap EFAULT/SIGSEGV and
+large shell workspace. The low-RAM workloads run at 256, 258 and 320 KiB in both
+layouts. The driver reports unmapped accesses separately from accesses to absent
+physical RAM; valid mappings must never reach absent RAM.
 
 ### Separate Instruction and Data Spaces
 
@@ -299,16 +365,16 @@ initialized data starts at data address zero. Ordinary 0407 programs retain a
 combined layout. Both use 16-bit pointers and NONSEG execution. Each space has
 64 KB of addresses; the a.out header limits an individual section to 65,535
 bytes, and executable text must have even length. Data, BSS, heap, arguments,
-and stack share the data space. The exec loader reserves at least 256 bytes
-beyond the initial arguments for stack growth; this is not a guarantee that a
-program's eventual heap and stack will fit.
+and stack share the data space. The exec loader reserves a mapped stack of at least 4 KiB, enlarged when
+startup arguments plus 256 bytes require more. Heap and stack pages must not
+overlap; the stack does not grow automatically.
 
 For process slot `i`, the logical/data segment is `S=i+1`. A split process uses
 backing segment `S+NPROC` for instructions. `u.u_sep` records the layout;
 `sureg()` selects the instruction bank and sets `useg`/`iseg` for kernel copies.
 The emulator routes instruction fetches and PC-relative program accesses
 through this selection, while data and stack accesses retain their original
-mapping. The kernel stays combined. Fork copies both banks for a split process;
+mapping. The kernel stays combined. Fork copies the mapped text, data and stack sections;
 exec can change between layouts. Text is neither shared nor write-protected.
 This mapping is implemented in the emulated machine; FPGA hardware still needs
 an equivalent instruction/data bus mapping.
@@ -357,10 +423,11 @@ access memory; a final byte at `0xffff` remains valid. `rdwr()` calls the select
 MMU's `useracc()` before starting a read/write, preventing a long request from
 wrapping across multiple buffer-cache blocks or byte transfers.
 
-The current MMU maps each complete user bank read/write. Accordingly,
-`useracc()` checks address wrap, not a nonexistent heap/stack gap or read-only
-text. A null pointer is not inherently unmapped in this layout. Future MMUs
-must extend this interface to check their actual mappings and permissions.
+The current MMU maps private data/stack read/write and shared text read-only and leaves unused pages
+unmapped. `useracc()` checks address wrap and every covered data-space page,
+including a request spanning the heap/stack gap. A null pointer is not inherently
+unmapped when data starts at zero. Future protected MMUs must also check access
+permissions.
 
 The SEGTRAP vector now enters the runtime at `0x020a`, saves the same registers
 as syscall entry, and calls `segtrap()`. For a kernel fault, `ufixups` recognizes
@@ -370,7 +437,7 @@ Z8001 SEGT is accepted after the instruction, as specified in the CPU manual
 IRET to the matching recovery label. That label restores the helper caller's
 FCW, including interrupt enables, and unwinds the helper frame with return -1.
 No global recovery pointer or shared continuation is needed. Kernel faults
-outside those sites panic; user faults enter normal SIGSEGV delivery.
+outside those sites panic; user faults use the stack-growth checks above or normal SIGSEGV delivery.
 
 Exec argument-vector faults now return `EFAULT`; a fault after exec has replaced
 the old image takes the existing fatal-image path. Signal-frame store failures
@@ -380,7 +447,7 @@ partially restored state.
 
 This mechanism requires a functioning system stack and MMU hardware that
 suppresses invalid accesses and raises SEGT. It does not recover arbitrary
-kernel bugs, supply demand paging, or introduce per-page protection policy.
+kernel bugs, supply demand paging, or provide general instruction restart.
 
 `test-copy` compiles the actual three shared functions with the real target
 headers and user structure, relocating `u` into the test program and replacing
@@ -410,6 +477,76 @@ container does not determine CPU addressing mode: object headers and
 relocations, followed by the linker and loader, determine that. Current
 executable support is NONSEG 0407 combined space and 0411 separate I/D;
 full segmented executables require further toolchain and loader work.
+
+### Kernel split I/D layout
+
+The kernel is also linked as 0411, with 16-bit pointers. Its instruction space
+uses logical segment 1, backing map 126 and physical bank 2 (frames 64–95).
+Data starts at logical `1:0000`, backed by bank 1; the copy window and u-area
+remain at `e000` and `f000`. ROM programs the I map before entering the kernel.
+`krt.s` reserves the first 512 instruction bytes for the separately assembled
+trap stubs; `handler.bin` begins at physical `2:0200`, and `handler-data.bin`
+is loaded at physical `1:0000`. The PSA copy lives in ROM at `0:1000` because
+vector fetches use the data bus. Kernel instruction storage counts against
+installed RAM. Images and the emulator must be rebuilt together.
+
+### Stack faults and protection
+
+`machine/mmu.h` defines the board contract. PAGEFRAME bits 15 and 14 mean
+read-only and system-only; `ffff` remains unmapped. Read-only applies to system
+writes too. Kernel/EPU maps are system-only; shared 0411 text is read-only.
+Normal processes remain NONSEG, so their ordinary accesses select their own
+logical segment. This does not add a segmented user ABI.
+
+The MMU observes first-word instruction fetch (external status 1101) and latches
+that logical PC, the fault segment, low/high access offsets and reasons. Ports
+`c0/c2/c4/c6/c8/ca` expose those six words; `cc` acknowledges them. Reason bits
+are VALID=1, WRITE=2, READ=4, FETCH=8, UNMAP=16, PROT=32, WARN=64, MIXED=128.
+`d0/d2` select a logical segment and its stack-warning base; `ffff` disables it.
+A normal-mode store into the lowest 256 bytes of the mapped stack succeeds and
+raises a warning. Growth is attempted when SP approaches that boundary; a warning
+never turns an otherwise valid store into SIGSEGV. Invalid or protected accesses are suppressed and raise SEGT.
+Different instructions/segments in one unacknowledged report set MIXED.
+
+Z8001 SEGT occurs after instruction completion. It is **not** Z8003/4 ABORT.
+`stackfault()` accepts warnings without replay, or grows and retries a small
+whitelist of nonsegmented instructions: LD/LDB/LDL stores, LDM stores, CALL/CALR,
+and register/immediate PUSH through R15. PUSH sources containing R15 are rejected.
+CALL/PUSH restore the implicit SP decrement before replay. Failed reads, fetches,
+read-modify-write operations, mixed reports, protection faults and unsupported
+instructions receive SIGSEGV. Growth also checks that the fault lies at or above
+the actual SP in the stack gap; arbitrary heap faults do not allocate memory.
+Signal delivery reserves stack space before building its frame. This is safe
+software backout for supported cases, not general demand paging or CPU rollback.
+
+### Shared text and swapping
+
+`sys/text.c` owns inode-backed text references, resident counts and immutable
+swap copies. The original V7 `struct text` is retained, including 64-byte click
+units for `x_size`; physical allocation rounds it to 2 KiB pages. Exec prepares the shared 0411 text before replacing the old layout;
+fork shares it; exit/exec drop references. ITEXT and inode references prevent
+writes while executable text is in use, including swapped-out users. Executing
+an inode already open for writing returns ETXTBSY. The last reference releases
+RAM, swap and the inode; there is no idle/sticky text cache. Exec serializes its
+shared argument buffer across sleeping disk reads.
+
+The board supplies a separate ATA unit (major 1, minor 1) for swap; root remains
+unit 0. Port `b2` reports its size in 512-byte blocks. `corealloc()` evicts other
+unlocked resident processes on allocation pressure. Private u-area/data/stack
+images are written completely before their frames are released. The last
+resident text reference writes its immutable swap copy and releases text RAM.
+The scheduler loads runnable nonresident processes before resuming their saved
+continuations; it rechecks the run queue after device interrupts during I/O.
+If a second fork image cannot fit, the saved child continuation and private
+sections are written directly to swap. Exhausted swap causes allocation failure,
+not a root-disk write or a kernel panic.
+
+Physical transfer uses a private 512-byte bounce buffer and the configured block
+driver. Copy-window masking is bounded to 16-byte transfers. Swap waits enable
+interrupts without sleeping on process 0's scheduler stack. This is whole-process
+swapping, not demand paging; allocation and victim selection are synchronous.
+Contiguous-section fragmentation and temporary resize reservations can still
+cause ENOMEM. Raw `physio`, bus-map ownership, core dumps and ptrace remain absent.
 
 ## RAM Disk DMA
 
@@ -606,8 +743,8 @@ and `DISKMON` accounting. `io_info.nbuf` is initialized to NBUF; `nread`,
 cache hits, and `bufcount[]` records the free-list position of reused buffers.
 These are diagnostic counters, not completion/durability statistics.
 
-The remaining exclusions are swap buffers/`swap()`, `physio()`, and `B_MAP`
-release. Current drivers do not create physical or bus-mapped requests. Those
+The ordinary cache still excludes `physio()` and `B_MAP` release.
+Whole-process swap uses its own machine-layer buffer and block-driver transfers. Current drivers do not create physical or bus-mapped requests. Those
 facilities require a machine/device transfer contract; no no-op `mapfree()`
 is substituted for real mapping ownership.
 

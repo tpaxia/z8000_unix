@@ -28,7 +28,7 @@ The ONIX operating system was a port of V7 Unix. Only about 60 lines of V7 C cod
 
 ## Proposed Design: Using Z8001 Segmentation to Select MMU Map Sets
 
-> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It supports split instruction/data spaces through an IMAP port selecting an instruction backing bank for each logical segment. It does not implement per-page protection bits or the normal-mode segment check described below. Two page pairs of the kernel's segment are remapped for the u-area and copy window. See `kernel-technical-reference.md`, Paged MMU.
+> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It supports split instruction/data spaces through an IMAP port selecting an instruction backing bank for each logical segment. PAGEFRAME now includes read-only and system-only bits; stack warning and fault-evidence latches support conservative software backout. The normal-mode cross-segment comparator described below remains a proposed extension; current user execution is NONSEG. Indexed PAGESEL/PAGEFRAME ports program user maps, with page-rounded contiguous text/data/stack extents allocated on demand from V7 coremap; intervening pages remain unmapped. User banks start unmapped. Two page pairs of the kernel's segment are remapped for the u-area and copy window. See `kernel-technical-reference.md`, Paged MMU.
 
 ### Core Concept
 

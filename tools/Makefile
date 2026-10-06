@@ -212,7 +212,7 @@ cat: $(LIBC_DIR)/crt0.b cat.b arith.b libc.a
 # =============================================================================
 # sh - /bin/sh (V7 Bourne shell)
 # =============================================================================
-%.az8: $(SHELL_SRC)/%.c $(CZ8)
+%.az8: $(SHELL_SRC)/%.c $(wildcard $(SHELL_SRC)/*.h) $(CZ8)
 	$(CPP) $(CPPFLAGS) -I$(SHELL_SRC) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
 %.b: %.az8

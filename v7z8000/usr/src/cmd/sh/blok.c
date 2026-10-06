@@ -71,6 +71,7 @@ VOID	addblok(reqd)
 		bloktop=BLK(rndstak);
 	FI
 	reqd += brkincr; reqd &= ~(brkincr-1);
+	stakroom(ADR(bloktop)+reqd+2*BYTESPERWORD+length(stakbot));
 	blokp=bloktop;
 	bloktop=bloktop->word=BLK(Rcheat(bloktop)+reqd);
 	bloktop->word=BLK(ADR(brkbegin)+1);

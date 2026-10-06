@@ -4,7 +4,7 @@
 !
 ! Provides the reset vector and initialization code that:
 ! 1. Sets up the system stack in segment 1
-! 2. Configures PSAP to point to the PSA table in segment 1
+! 2. Configures PSAP to point to the ROM data copy of the PSA
 ! 3. Uses IRET to jump to test code in segment 1 in NONSEG+SYS mode
 ! =============================================================================
 
@@ -36,19 +36,31 @@
 ! Running in SEG+SYS mode, segment 0
 ! =============================================================================
 init_start:
+	! Kernel I map uses backing bank 126, physical frames 64..95.
+	ld r1, #4032
+	ld r2, #0x4040
+	ld r3, #32
+map_kernel:
+	out #0x00bc, r1
+	out #0x00be, r2
+	inc r1, #1
+	inc r2, #1
+	djnz r3, map_kernel
+	ld r0, #0x017e
+	out #0x00b8, r0
 	! Set system stack pointer to segment 1, near top of 64KB
 	! In segmented mode, RR14 is the system stack pointer
 	! R14 = segment encoding, R15 = offset
 	ld	r14, #0x8100	! segment 1 (0x01 << 8 | 0x8000 long format)
 	ld	r15, #0xFFF0	! stack offset near top of segment
 
-	! Set PSAP to segment 1, offset 0x0000
-	! The PSA table lives at the beginning of the kernel segment
+	! Set PSAP to ROM data segment 0, offset 0x1000
+	! Vector data must remain accessible independently of the kernel I map
 	! PSAPSEG uses encoded segment format: (seg<<8)|0x8000
-	ld	r0, #0x8100
-	ldctl	psapseg, r0	! PSAP segment = 1 (encoded as 0x8100)
-	ld	r0, #0
-	ldctl	psapoff, r0	! PSAP offset = 0
+	ld	r0, #0x8000
+	ldctl	psapseg, r0	! PSAP segment = 0 (encoded as 0x8000)
+	ld	r0, #0x1000
+	ldctl	psapoff, r0	! PSA data copy at ROM offset 0x1000
 
 	! Set up normal-mode stack pointer (for user mode)
 	! Not used in this test, but initialize to something valid

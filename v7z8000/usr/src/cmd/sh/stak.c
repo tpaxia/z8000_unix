@@ -18,6 +18,17 @@ STKPTR		stakbot=nullstr;
 
 /* ========	storage allocation	======== */
 
+/* Z8001 SEGT does not retry the failed store. Reserve workspace first,
+ * rather than relying on V7's SIGSEGV-driven break extension.
+ */
+stakroom(end)
+STRING end;
+{
+	IF end < stakbot THEN error(nospace) FI
+	IF end > brkend ANDF setbrk(end-brkend) == -1
+	THEN error(nospace) FI
+}
+
 STKPTR	getstak(asize)
 	INT		asize;
 {	/* allocate requested stack */
@@ -25,6 +36,7 @@ STKPTR	getstak(asize)
 	REG INT		size;
 
 	size=round(asize,BYTESPERWORD);
+	stakroom(stakbot+size);
 	oldstak=stakbot;
 	staktop = stakbot += size;
 	return(oldstak);
@@ -35,7 +47,7 @@ STKPTR	locstak()
 	 * should be followed by `endstak'
 	 */
 	IF brkend-stakbot<BRKINCR
-	THEN	setbrk(brkincr);
+	THEN	IF setbrk(brkincr) == -1 THEN error(nospace) FI
 		IF brkincr < BRKMAX
 		THEN	brkincr += 256;
 		FI
@@ -53,7 +65,7 @@ STKPTR	endstak(argp)
 	REG STRING	argp;
 {	/* tidy up after `locstak' */
 	REG STKPTR	oldstak;
-	*argp++=0;
+	stakput(argp,0);
 	oldstak=stakbot; stakbot=staktop=(STKPTR)round(argp,BYTESPERWORD);
 	return(oldstak);
 }
@@ -80,5 +92,7 @@ stakchk()
 STKPTR	cpystak(x)
 	STKPTR		x;
 {
-	return(endstak(movstr(x,locstak())));
+	locstak();
+	stakroom(stakbot+length(x));
+	return(endstak(movstr(x,stakbot)));
 }

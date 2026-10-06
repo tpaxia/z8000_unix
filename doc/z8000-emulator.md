@@ -99,7 +99,7 @@ The kernel test driver supports `-F r:HEX`, `-F w:HEX`, and `-F u:HEX` with
 offset is denied and raises the CPU's SEGTRAP. Modes r/w restrict injection to
 kernel segmented reads/writes; u restricts it to user-mode accesses. The failed
 bus access is suppressed. Kernel/ROM/EPU-service banks are excluded. This test
-option leaves normal fixed-bank mappings unchanged and reports the denied-access
+option leaves normal user-bank mappings unchanged and reports the denied-access
 count. Run `cmake --build tests/build/kernel-config --target test-fault` for
 range, copy recovery, exec, signal-stack and direct-user-fault tests in both
 executable layouts. Expected-text runs stop at idle HALT only after their verdict
@@ -118,3 +118,41 @@ After changing the driver or profiler, rebuild each harness used for tests.
 In particular, native self-hosting prefers `tests/build/selfhost/host/test_driver`
 when present, and the development-environment runner uses that driver. See the
 [ABI rebuild sequence](kernel-technical-reference.md#user-program-startup).
+
+## Installed RAM size
+
+`test_driver -R KiB` selects installed low RAM in even KiB increments from
+128 to 8192 (default 8192). Read-only port 0x00BA reports the number of 2 KB
+frames to the kernel. The backing vector covers the bus address space, but
+MMU accesses to absent physical RAM are suppressed and raise SEGTRAP; they
+cannot wrap into available RAM. The dedicated EPU bank at 0x7f0000 remains
+available independently, and its stack pages still alias the current u-area.
+
+The kernel reserves 192 KiB for ROM/kernel and allocates user text, data and
+stack as page-rounded extents, plus a 4 KiB u-area per process. `test-memory`
+exercises both layouts at 320, 322, 384 and 8192 KiB, failed allocation/exec,
+heap growth/shrink, invalid gaps and shell workspace crossing page boundaries.
+PAGESEL (0xBC) and PAGEFRAME (0xBE) program mappings; user banks start unmapped.
+
+Reports distinguish `Absent RAM accesses` from `Unmapped accesses`. Both raise
+SEGTRAP, but the latter includes expected user gap faults and invalid-pointer
+tests. Successful ordinary workloads should report zero for both. Stack probes intentionally produce warnings and supported gap faults. Shared text
+has read-only protection; private data remains writable. See the [memory contract](kernel-technical-reference.md#physical-memory-sizing-and-resource-maps).
+
+### Shared text, faults and swap device
+
+`-S KiB` creates the dedicated, ephemeral ATA secondary unit used for swap
+(default 4096 KiB; zero disables swapping; maximum 16000 KiB). `-o` saves only
+the root unit. Swap traffic never uses the root filesystem's blocks. Final
+statistics report swap sectors read/written, peak simultaneous read-only text
+mappings, protection faults and stack warnings.
+
+The kernel now uses split I/D; rebuild `kernel.bin`, `handler.bin`,
+`handler-data.bin`, ROM and test_driver together. RAM below the 192 KiB fixed
+reservation is rejected before boot; the kernel also rejects RAM insufficient
+for the initial process. Usable program limits depend on contiguous allocations
+and temporary growth reservations, not only total free bytes.
+
+`test-memory` covers growth/backout, rejection of unsafe read-modify-write
+replay, shared text/inode write exclusion, low-RAM swapping and full swap.
+See the [MMU and swap contract](kernel-technical-reference.md#stack-faults-and-protection).

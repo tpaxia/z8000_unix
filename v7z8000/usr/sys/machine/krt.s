@@ -15,6 +15,7 @@
 !   Args at:  4(r13), 6(r13), ...
 
 	.text
+	.zerow 256	! reserve low instruction addresses for trap stubs
 	.globl	_inb
 	.globl	_inw
 	.globl	_insw

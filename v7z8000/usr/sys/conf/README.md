@@ -61,7 +61,9 @@ The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 | Interface | Contract |
 |---|---|
 | `mmuinit()` | Establish process 0's initial memory description |
-| `frame_alloc()` / `frame_free()` | Allocate/release the backing storage named by `p_addr` |
+| `newmem(child)` / `freemem(process)` | Allocate/release u-area and mapped sections; allocation returns -1 after full rollback on exhaustion |
+| `estabur(nt, nd, ns, sep, xrw)` | Validate and allocate page-rounded sections; failure preserves the old layout and accounting |
+| `expand(total_clicks)` | Resize data with text, stack and u-area sizes fixed; return -1/ENOMEM on failure |
 | `sureg()` | Select the current process's instruction/data mappings and user-access selectors |
 | `resume(p_addr, label)` | Switch u-area/kernel-stack mapping and restore the saved continuation atomically |
 | `copyuarea(child)` | Copy the current u-area, including the continuation saved before this call |
@@ -71,9 +73,9 @@ The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 The scheduler no longer writes MMU ports or derives user-bank numbers from
 process slots. The paged implementation owns those choices. Its copy routines
 restore the copy window before admitting interrupts, and `resume()` keeps
-interrupts masked until the new stack is valid. Its full 64 KB user banks are
-mapped read/write, so `useracc()` currently checks only range wrap. A protected
-MMU must additionally check mappings and permissions. CPU support now recovers
+interrupts masked until the new stack is valid. Its allocated sections are mapped read/write; `useracc()` checks range wrap
+and every covered page, rejecting the unmapped gap. A protected MMU must
+additionally check access permissions. CPU support now recovers
 SEGT faults at specific user-access instructions; a board must suppress invalid
 bus operations and report SEGT for that path to operate. See the
 [user-copy contract](../../../../doc/kernel-technical-reference.md#shared-user-copy-policy-and-machine-helper-contract).
@@ -92,9 +94,9 @@ user-access selectors consumed by CPU support. A different virtual layout or
 pointer model also requires coordinated header, trap and loader changes.
 The separate EPU service currently assumes segment 127 and an alias of the
 current kernel stack. This organization makes implementations selectable; it
-does not add missing MMU hardware, memory protection, swapping, stack growth,
-or full SEG executables. Restoring that upper-layer functionality remains
-separate work.
+requires each board to supply its MMU hardware contract. The emulated board
+now supplies protection, stack-warning/fault latches and whole-process swapping.
+Full SEG executables remain unsupported.
 
 ## Common TTY and optional multiplexor interfaces
 
@@ -110,3 +112,22 @@ multiplexor and makes syscall 56 return `EINVAL`. Changing `KERNEL_OPTIONAL_C`
 can select another implementation, but a real multiplexor also needs its
 configured device and channel lifecycle; restoring these interfaces alone does
 not install one.
+
+## Memory sizing
+
+The emulated MMU reads installed 2 KB frame count from port 0x00BA at boot.
+It seeds V7's resource map above the 192 KiB ROM/kernel reservation and below
+the EPU bank. A different machine must supply its own RAM discovery and
+reservation policy; generic allocation code stays in `sys/malloc.c`. The
+current core-map unit is a 2 KB frame, while process accounting uses 64-byte
+clicks. USIZE is 64 clicks for the 4 KB u-area and system stack. The emulated board reports a dedicated swap unit through port 0xB2;
+`swapinit` populates its block map. The MMU provides `newmem`, `freemem`, `estabur` and `expand` for section
+allocation, rollback and layout changes; the emulated implementation programs
+PAGESEL/PAGEFRAME (0xBC/0xBE). See the [memory contract](../../../../doc/kernel-technical-reference.md#physical-memory-sizing-and-resource-maps).
+
+Shared text ownership lives in `sys/text.c`. A replacement MMU must provide the
+physical allocation/copy and swap-transfer services it calls, together with
+process residency transitions used by the scheduler. The emulated implementation
+keeps those services in `machine/paged.c`; swap uses the configured block device.
+The split kernel reserves a separate instruction bank and keeps PSA vectors in
+ROM data space. See the kernel reference before reusing its reset/trap layout.

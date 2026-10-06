@@ -25,9 +25,7 @@ VOID	fault(sig)
 
 	signal(sig,fault);
 	IF sig==MEMF
-	THEN	IF setbrk(brkincr) == -1
-		THEN	error(nospace);
-		FI
+	THEN	error(nospace); /* workspace is reserved before stores on Z8001 */
 	ELIF sig==ALARM
 	THEN	IF flags&waiting
 		THEN	done();

@@ -3,6 +3,7 @@
 #include "../h/dir.h"
 #include "../h/user.h"
 #include "../h/proc.h"
+#include "mmu.h"
 
 extern int useg;
 
@@ -130,7 +131,12 @@ unsigned *regs;
 {
 	extern unsigned ufixups[];
 	register unsigned *p;
+	unsigned fault[6];
+	int i;
 
+	for (i = 0; i < 6; i++)
+		fault[i] = inw(MM_FAULT+2*i);
+	outw(MM_ACK, 0);
 	if (regs[14] & 0x4000) {
 		if ((regs[14] & 0x8000) && regs[15] == 0x8100)
 			for (p = ufixups; p[0]; p += 2)
@@ -141,6 +147,71 @@ unsigned *regs;
 		panic("kernel access fault");
 		return;
 	}
-	psignal(u.u_procp, SIGSEG);
+	if (!stackfault(regs, fault))
+		psignal(u.u_procp, SIGSEG);
 	userret(regs, get_usp());
+}
+
+/* Z8001 completes the faulting instruction. Only replay stores with no
+ * register/flag changes, or back out an implicit R15 decrement. Encodings:
+ * Z8000 CPU Technical Manual, CALL/CALR, LD, LDM and PUSH tables.
+ * MMU first-word/status latches are bus-visible state, not CPU rollback.
+ */
+stackfault(regs, f)
+unsigned *regs, *f;
+{
+	unsigned sp, op, hi, back, base;
+	int b;
+	if ((regs[14] & 0x8000) || !(f[0] & MF_VALID) ||
+	    (f[0] & (MF_FETCH|MF_PROT|MF_MIXED|MF_READ)) ||
+	    !(f[0] & MF_WRITE) || f[1] != u.u_procp-proc+1 ||
+	    f[4] != f[1])
+		return(0);
+	sp = get_usp();
+	base = (unsigned)(-(((u.u_ssize+31)/32)*2048));
+	if (!(f[0] & MF_UNMAP)) {
+		if (!(f[0] & MF_WARN)) return(0);
+		/* A warning reports a successful store. A valid mapped access
+		 * below SP must not become SIGSEGV, nor does failed pre-growth
+		 * invalidate that store. A later real fault can still fail. */
+		if (sp && base >= 256 && sp <= base+256)
+			grow(base-256);
+		return(1);
+	}
+	if (!sp || f[2] < sp || f[3] < f[2] || f[2] >= base)
+		return(0);
+	b = fuibyte(f[5]);
+	if (b < 0 || f[5] == 65535)
+		return(0);
+	op = b << 8;
+	b = fuibyte(f[5]+1);
+	if (b < 0)
+		return(0);
+	op |= b;
+	hi = op >> 8;
+	back = 0;
+	if ((op & 0xf000) == 0xd000 ||
+	    ((op & 0xbf0f) == 0x1f00))
+		back = 2;
+	else if ((op & 0x00f0) == 0x00f0 &&
+	    (hi == 0x93 || hi == 0x91 || op == 0x0df9)) {
+		/* Do not replay a push whose source includes the modified SP. */
+		if ((hi == 0x93 && (op & 15) == 15) ||
+		    (hi == 0x91 && (op & 15) >= 14))
+			return(0);
+		back = hi == 0x91 ? 4 : 2;
+	} else if (!(hi == 0x2e || hi == 0x2f || hi == 0x6e ||
+	    hi == 0x6f || hi == 0x32 || hi == 0x33 || hi == 0x72 ||
+	    hi == 0x73 || hi == 0x1d || hi == 0x5d || hi == 0x37 ||
+	    hi == 0x77 || (op & 0xbf0f) == 0x0c05 ||
+	    (op & 0xbf0f) == 0x0d05 || (op & 0xbf0f) == 0x1c09))
+		return(0);
+	if (back && sp > 65535-back)
+		return(0);
+	if (!grow(sp))
+		return(0);
+	set_usp(sp+back);
+	regs[15] = useg;
+	regs[16] = f[5];
+	return(1);
 }

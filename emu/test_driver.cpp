@@ -24,6 +24,7 @@
 #include <getopt.h>
 #include <z8000/z8000.h>
 #include "memory.h"
+#include "../v7z8000/usr/sys/machine/mmu.h"
 
 // Observe the existing request latch without changing interrupt delivery.
 class ClockObservedCPU : public z8001_device {
@@ -31,6 +32,7 @@ public:
     bool clock_pending() const { return (m_irq_req & Z8000_NVI) != 0; }
     uint64_t clock_accepted = 0;
     void access_fault() { m_irq_req |= Z8000_SEGTRAP; }
+    void set_opcode_bus(z8000_memory_bus *bus) { m_opcache.bus = bus; }
 protected:
     uint16_t GET_FCW(uint32_t vec) override {
         // Count actual NVI dispatches, independently of the latch accounting.
@@ -40,25 +42,98 @@ protected:
 };
 
 // Paged MMU: 128 segments x 32 pages x 2KB pages
-// Identity-mapped on construction; UPAGE/WPAGE ports remap specific pages.
+// System/service banks start identity-mapped; user banks start unmapped.
 class MMU : public z8000_memory_bus {
 public:
-    MMU(MemoryRegion *phys) : m_phys(phys), m_trace(false) {
-        // Identity map: frame = seg * 32 + page
+    MMU(MemoryRegion *phys, unsigned ram_frames)
+        : m_phys(phys), m_ram_frames(ram_frames), m_trace(false) {
+        // Bootstrap mappings; the kernel installs user page tables on allocation.
         for (int seg = 0; seg < 128; seg++) {
             m_iseg[seg] = seg;
-            for (int page = 0; page < 32; page++)
-                m_pages[seg][page] = seg * 32 + page;
+            m_stack_base[seg] = 0xffff;
+            for (int page = 0; page < 32; page++) {
+                m_pages[seg][page] = (seg <= 1 || seg == 127) ? seg * 32 + page : 0xffff;
+                m_attr[seg][page] = (seg <= 1 || seg == 127) ? MM_SYS : 0;
+            }
         }
         set_upage(62);
     }
 
-    // Test-only denied bus access. Normal fixed-bank mappings stay unchanged.
+    // Test-only denied bus access. The normal page attributes stay unchanged.
     void set_fault(ClockObservedCPU *cpu, char kind, unsigned offset) {
         m_cpu = cpu; m_fault_kind = kind; m_fault_offset = offset;
     }
     void arm_fault() { m_fault_armed = true; }
     unsigned fault_count = 0;
+    unsigned absent_count = 0;
+    unsigned unmapped_count = 0;
+    unsigned protection_count = 0, warning_count = 0, shared_text_peak = 0;
+    unsigned ram_frames() const { return m_ram_frames; }
+
+    // First-word fetch is externally visible as bus status 1101 (manual 2.3.4).
+    // These latches contain bus evidence, never a hidden CPU register snapshot.
+    void first_word(uint32_t address) { m_first_word = address; }
+    void latch(uint32_t address, unsigned size, unsigned reason) {
+        uint16_t seg = (address >> 16) & 127, lo = address & 65535;
+        uint16_t hi = lo + size - 1;
+        if (!m_fault_status) {
+            m_fault_seg = seg; m_fault_lo = lo; m_fault_hi = hi;
+            m_fault_pc = m_first_word;
+        } else {
+            if (seg != m_fault_seg || m_first_word != m_fault_pc) reason |= MF_MIXED;
+            if (lo < m_fault_lo) m_fault_lo = lo;
+            if (hi > m_fault_hi) m_fault_hi = hi;
+        }
+        m_fault_status |= MF_VALID | reason;
+        if (m_cpu) m_cpu->access_fault();
+    }
+    uint16_t fault_register(unsigned port) const {
+        switch (port) {
+        case MM_FAULT: return m_fault_status;
+        case MM_FSEG: return m_fault_seg;
+        case MM_FLOW: return m_fault_lo;
+        case MM_FHIGH: return m_fault_hi;
+        case MM_PCSEG: return (m_fault_pc >> 16) & 127;
+        case MM_PC: return m_fault_pc & 65535;
+        }
+        return 0;
+    }
+    void acknowledge() { m_fault_status = 0; }
+    void stack_select(uint16_t seg) { m_stack_select = seg & 127; }
+    void stack_base(uint16_t base) { m_stack_base[m_stack_select] = base; }
+
+    bool absent(uint32_t addr, unsigned size, bool writing = false, bool program = false) {
+        unsigned reason = writing ? MF_WRITE : MF_READ;
+        if (program) reason |= MF_FETCH;
+        uint32_t physical = translate(addr);
+        unsigned seg = (addr >> 16) & 127, page = (addr >> 11) & 31;
+        bool system = !m_cpu || (m_cpu->get_fcw() & 0x4000);
+        if ((physical >> 11) == 0xffff) {
+            unmapped_count++;
+            latch(addr, size, reason | MF_UNMAP);
+            return true;
+        }
+        if ((writing && (m_attr[seg][page] & MM_RO)) ||
+            (!system && (m_attr[seg][page] & MM_SYS))) {
+            protection_count++;
+            latch(addr, size, reason | MF_PROT);
+            return true;
+        }
+        // The EPU engine has dedicated storage, independent of low RAM.
+        if (!((physical >= 0x7f0000 && physical + size <= 0x800000) ||
+            physical + size <= m_ram_frames * 2048)) {
+            absent_count++;
+            latch(addr, size, reason | MF_PROT);
+            return true;
+        }
+        if (!system && writing && !program && m_stack_base[seg] != 0xffff &&
+            (addr & 65535) >= m_stack_base[seg] &&
+            (addr & 65535) < unsigned(m_stack_base[seg]) + 256) {
+            warning_count++;
+            latch(addr, size, reason | MF_WARN); // Store succeeds; no replay needed.
+        }
+        return false;
+    }
 
     bool denied(uint32_t addr, unsigned size, bool writing) {
         if (!m_fault_armed || !m_cpu) return false;
@@ -73,7 +148,7 @@ public:
                 return false;
         }
         fault_count++;
-        m_cpu->access_fault();
+        latch(addr, size, (writing ? MF_WRITE : MF_READ) | MF_PROT);
         return true;  // Suppress the failed write/read, like an external MMU.
     }
 
@@ -105,6 +180,20 @@ public:
         m_iseg[(value >> 8) & 0x7f] = value & 0x7f;
     }
 
+    // General page-table access. Select and frame writes are separate bus cycles.
+    void select_page(uint16_t value) { m_page_select = value & 4095; }
+    void set_page(uint16_t frame) {
+        m_attr[m_page_select >> 5][m_page_select & 31] = frame & (MM_RO|MM_SYS);
+        m_pages[m_page_select >> 5][m_page_select & 31] = frame == 0xffff ? frame : frame & ~(MM_RO|MM_SYS);
+        if (frame != 0xffff && (frame & MM_RO) && !(frame & MM_SYS)) {
+            unsigned owners = 0;
+            for (unsigned seg = 2; seg < 127; seg++)
+                if ((m_attr[seg][m_page_select & 31] & MM_RO) &&
+                    m_pages[seg][m_page_select & 31] == (frame & ~(MM_RO|MM_SYS))) owners++;
+            if (owners > shared_text_peak) shared_text_peak = owners;
+        }
+    }
+
     uint32_t instruction_address(uint32_t addr) const {
         return (uint32_t(m_iseg[(addr >> 16) & 0x7f]) << 16) | (addr & 0xffff);
     }
@@ -119,31 +208,43 @@ public:
     }
 
     u8 read_byte(u32 addr) override {
-        return denied(addr, 1, false) ? 0 : m_phys->read_byte(translate(addr));
+        return (absent(addr, 1) || denied(addr, 1, false)) ? 0 : m_phys->read_byte(translate(addr));
     }
 
     u16 read_word(u32 addr) override {
-        return denied(addr, 2, false) ? 0 : m_phys->read_word(translate(addr));
+        return (absent(addr, 2) || denied(addr, 2, false)) ? 0 : m_phys->read_word(translate(addr));
     }
 
     void write_byte(u32 addr, u8 val) override {
-        if (!denied(addr, 1, true)) m_phys->write_byte(translate(addr), val);
+        if (!absent(addr, 1, true) && !denied(addr, 1, true)) m_phys->write_byte(translate(addr), val);
     }
 
     void write_word(u32 addr, u16 val) override {
-        if (!denied(addr, 2, true)) m_phys->write_word(translate(addr), val);
+        if (!absent(addr, 2, true) && !denied(addr, 2, true)) m_phys->write_word(translate(addr), val);
     }
 
     void write_word(u32 addr, u16 val, u16 mask) override {
-        if (!denied(addr, 2, true)) m_phys->write_word(translate(addr), val, mask);
+        if (!absent(addr, 2, true) && !denied(addr, 2, true)) m_phys->write_word(translate(addr), val, mask);
     }
 
+    u8 program_byte(u32 addr) {
+        return (absent(addr, 1, false, true) || denied(addr, 1, false)) ? 0 : m_phys->read_byte(translate(addr));
+    }
+    u16 program_word(u32 addr) {
+        return (absent(addr, 2, false, true) || denied(addr, 2, false)) ? 0 : m_phys->read_word(translate(addr));
+    }
 private:
+    uint16_t m_fault_status = 0, m_fault_seg = 0, m_fault_lo = 0, m_fault_hi = 0;
+    uint32_t m_first_word = 0, m_fault_pc = 0;
+    uint16_t m_stack_select = 0, m_stack_base[128];
+    uint16_t m_attr[128][32];
     ClockObservedCPU *m_cpu = nullptr;
     bool m_fault_armed = false;
     char m_fault_kind = 0;
     unsigned m_fault_offset = 0;
     MemoryRegion *m_phys;
+    unsigned m_ram_frames;
+    uint16_t m_page_select = 0;
     uint16_t m_pages[128][32];
     uint8_t m_iseg[128];
     bool m_trace;
@@ -156,18 +257,24 @@ class InstructionBus : public z8000_memory_bus {
 public:
     explicit InstructionBus(MMU &mmu) : m_mmu(mmu) {}
     UserProfile *profile = nullptr;
-    u8 read_byte(u32 a) override { return m_mmu.read_byte(m_mmu.instruction_address(a)); }
+    u8 read_byte(u32 a) override { return m_mmu.program_byte(m_mmu.instruction_address(a)); }
     u16 read_word(u32 a) override {
         if (profile) profile->sample(a);
-        return m_mmu.read_word(m_mmu.instruction_address(a));
+        return m_mmu.program_word(m_mmu.instruction_address(a));
     }
     void write_byte(u32 a, u8 v) override { m_mmu.write_byte(m_mmu.instruction_address(a), v); }
     void write_word(u32 a, u16 v) override { m_mmu.write_word(m_mmu.instruction_address(a), v); }
     void write_word(u32 a, u16 v, u16 mask) override {
         m_mmu.write_word(m_mmu.instruction_address(a), v, mask);
     }
-private:
+protected:
     MMU &m_mmu;
+};
+
+class FirstWordBus : public InstructionBus {
+public:
+    explicit FirstWordBus(MMU &mmu) : InstructionBus(mmu) {}
+    u16 read_word(u32 a) override { m_mmu.first_word(a); return InstructionBus::read_word(a); }
 };
 
 // Extended IOPorts with DMA controller for RAM disk
@@ -214,6 +321,8 @@ public:
         return true;
     }
 
+    unsigned swap_reads = 0, swap_writes = 0;
+    void swap_size(unsigned kib) { m_swap.resize(kib * 1024); }
     bool load_hd(const char *filename) {
         FILE *f = fopen(filename, "rb");
         if (!f) {
@@ -293,6 +402,11 @@ public:
     u16 read_word(u16 addr, int mode) override {
         addr &= 0xFFFE;
         u16 val = 0xDEAD;
+        if (mode == 0 && addr >= MM_FAULT && addr <= MM_PC)
+            return m_mmu->fault_register(addr);
+        if (mode == 0 && addr == MM_SWAPSIZE) return m_swap.size()/512;
+        if (mode == 0 && addr == 0x00BA)
+            val = m_mmu->ram_frames();
         if (mode == 0 && addr == 0x01F0 && m_ata_active && !m_ata_writing) {
             // ATA DATA read: return next word from sector buffer (big-endian)
             if (m_ata_buf_idx < 256) {
@@ -367,6 +481,15 @@ public:
         if (mode != 0) return;
 
         switch (addr) {
+            case MM_ACK: m_mmu->acknowledge(); break;
+            case MM_STACKSEL: m_mmu->stack_select(val); break;
+            case MM_STACKBASE: m_mmu->stack_base(val); break;
+            case 0x00BC:  // PAGESEL: 7-bit logical segment, 5-bit page
+                m_mmu->select_page(val);
+                break;
+            case 0x00BE:  // PAGEFRAME: physical frame; 0xffff leaves it unmapped
+                m_mmu->set_page(val);
+                break;
             case 0x00B8:  // IMAP: logical segment in high byte, I backing bank in low
                 m_mmu->set_imap(val);
                 break;
@@ -429,16 +552,23 @@ private:
     }
 
     void do_ata_cmd(u8 cmd) {
+        auto &disk = (m_ata_dh & 0x10) ? m_swap : m_hd;
         unsigned lba = m_ata_sn | ((unsigned)m_ata_cl << 8);
         unsigned disk_off = lba * 512;
 
+        if ((m_ata_dh & 0x10) && disk_off + 512 > disk.size()) {
+            m_ata_status = 0x41; m_ata_error = 0x10;
+            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+            return;
+        }
         if (cmd == 0x20) {
+            if (m_ata_dh & 0x10) swap_reads++;
             // READ SECTORS: load sector into buffer, set DRQ
             memset(m_ata_buf, 0, 512);
-            if (disk_off < m_hd.size()) {
-                size_t avail = m_hd.size() - disk_off;
+            if (disk_off < disk.size()) {
+                size_t avail = disk.size() - disk_off;
                 if (avail > 512) avail = 512;
-                memcpy(m_ata_buf, m_hd.data() + disk_off, avail);
+                memcpy(m_ata_buf, disk.data() + disk_off, avail);
             }
             m_ata_buf_idx = 0;
             m_ata_active = true;
@@ -461,12 +591,14 @@ private:
     }
 
     void ata_flush_write() {
+        auto &disk = (m_ata_dh & 0x10) ? m_swap : m_hd;
         unsigned lba = m_ata_sn | ((unsigned)m_ata_cl << 8);
         unsigned disk_off = lba * 512;
-        if (disk_off + 512 > m_hd.size()) {
-            m_hd.resize(disk_off + 512, 0);
+        if (disk_off + 512 > disk.size()) {
+            disk.resize(disk_off + 512, 0);
         }
-        memcpy(m_hd.data() + disk_off, m_ata_buf, 512);
+        if (m_ata_dh & 0x10) swap_writes++;
+        memcpy(disk.data() + disk_off, m_ata_buf, 512);
         m_ata_active = false;
         m_ata_status = 0x40;  // DRDY, clear DRQ
         m_ata_error = 0;
@@ -478,7 +610,7 @@ private:
     MMU *m_mmu;
     z8001_device *m_cpu;
     std::vector<uint8_t> m_disk;
-    std::vector<uint8_t> m_hd;
+    std::vector<uint8_t> m_hd, m_swap;
     std::string m_console_buf;
     std::queue<uint8_t> m_console_rx;
     u8 m_dma_blk_hi, m_dma_blk_lo;
@@ -555,9 +687,28 @@ int main(int argc, char* argv[]) {
 
     char fault_kind = 0;
     unsigned fault_offset = 0;
+    unsigned ram_kib = 8192, swap_kib = 4096;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:")) != -1) {
         switch (opt) {
+            case 'S': {
+                char *end;
+                unsigned long value = strtoul(optarg, &end, 10);
+                if (*end || !*optarg || value > 16000) {
+                    fprintf(stderr, "-S requires swap KiB from 0 to 16000\n"); return 1;
+                }
+                swap_kib = value; break;
+            }
+            case 'R': {
+                char *end;
+                unsigned long value = strtoul(optarg, &end, 10);
+                if (*end || !*optarg || value < 128 || value > 8192 || value % 2) {
+                    fprintf(stderr, "-R requires even RAM KiB from 128 to 8192\n");
+                    return 1;
+                }
+                ram_kib = value;
+                break;
+            }
             case 'F': {
                 char extra;
                 if (sscanf(optarg, "%c:%x%c", &fault_kind, &fault_offset, &extra) != 2 ||
@@ -591,7 +742,7 @@ int main(int argc, char* argv[]) {
                         "[-d hd-image] [-i console-input] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
-                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex]\n", argv[0]);
+                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB]\n", argv[0]);
                 return 1;
         }
     }
@@ -607,33 +758,40 @@ int main(int argc, char* argv[]) {
     printf("Z8001 Kernel Test Driver\n");
     printf("========================\n");
 
-    // Create 8MB memory region (Z8001 segmented address space)
+    // Backing store for the bus address space; MMU rejects absent low RAM.
     MemoryRegion memory(0x800000);
     memory.set_name("MEM");
     memory.set_trace(mem_trace);
 
     // Create paged MMU wrapping physical memory
-    MMU mmu(&memory);
+    MMU mmu(&memory, ram_kib / 2);
+    printf("Installed low RAM: %u KiB; EPU bank reserved separately\n", ram_kib);
 
     // Create Z8001 CPU (memory access goes through MMU)
     ClockObservedCPU cpu;
-    if (fault_kind) mmu.set_fault(&cpu, fault_kind, fault_offset);
+
 
     // Create I/O ports with DMA controller, MMU access, and CPU reference
     KernelIOPorts io(&memory, &mmu, &cpu);
 
     printf("Loading binaries:\n");
 
+    if (ram_kib < 192) {
+        fprintf(stderr, "insufficient memory: ROM/kernel banks require 192 KiB\n");
+        return 1;
+    }
     // Load ROM at segment 0 (physical address 0x000000)
     if (!load_file(memory, "rom.bin", 0x000000))
         return 1;
 
-    // Load kernel at segment 1 (physical address 0x010000)
-    if (!load_file(memory, "kernel.bin", 0x010000))
+    // Kernel instruction storage is physical bank 2. PSA vectors use ROM data.
+    if (!load_file(memory, "kernel.bin", 0x020000))
         return 1;
 
-    // Load C handler at segment 1, offset 0x0200
-    if (!load_file(memory, "handler.bin", 0x010200))
+    if (!load_file(memory, "kernel.bin", 0x001000)) return 1;
+    if (!load_file(memory, "handler-data.bin", 0x010000)) return 1;
+    // Kernel text starts at logical 1:0200, backed by physical bank 2.
+    if (!load_file(memory, "handler.bin", 0x020200))
         return 1;
     if (!load_file(memory, "fpe.bin", 0x7f0000))
         return 1;
@@ -641,12 +799,16 @@ int main(int argc, char* argv[]) {
     // Load disk images
     if (!io.load_disk("root.img"))
         return 1;
+    io.swap_size(swap_kib);
     if (!io.load_hd(disk_image))
         return 1;
 
     InstructionBus instructions(mmu);
     cpu.set_memory(&mmu);
     cpu.set_program_memory(&instructions);
+    FirstWordBus first_words(mmu);
+
+    cpu.set_opcode_bus(&first_words);
     cpu.set_io(&io);
     cpu.set_trace(trace);
     cpu.set_reg_trace(reg_trace);
@@ -654,11 +816,14 @@ int main(int argc, char* argv[]) {
 
     // Reset CPU - reads reset vector from address 0x000000
     cpu.reset();
+    cpu.step(); // Reset vector cycles precede normal/system protection.
+    mmu.set_fault(&cpu, fault_kind, fault_offset);
     FILE *profile_output = profile_file ? fopen(profile_file, "w") : nullptr;
     if (profile_file && !profile_output) { perror(profile_file); return 1; }
     UserProfile profile(cpu, mmu, profile_output);
     if (profile_output) {
         instructions.profile = &profile;
+        first_words.profile = &profile;
         cpu.set_trap_callback(UserProfile::trap, &profile);
     }
 
@@ -802,6 +967,11 @@ int main(int argc, char* argv[]) {
         return ok ? 0 : 1;
     }
 
+    printf("Absent RAM accesses: %u\n", mmu.absent_count);
+    printf("Unmapped accesses: %u\n", mmu.unmapped_count);
+    printf("Shared text peak mappings: %u\n", mmu.shared_text_peak);
+    printf("Swap sectors: %u read, %u written\n", io.swap_reads, io.swap_writes);
+    printf("Protection faults: %u; stack warnings: %u\n", mmu.protection_count, mmu.warning_count);
     if (fault_kind) printf("MMU denied accesses: %u\n", mmu.fault_count);
     printf("\nConsole output: \"");
     for (char c : output) {
