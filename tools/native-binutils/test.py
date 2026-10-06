@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run native az8/ldz8 in Unix; compare objects and executables with host tools."""
 import json
+import argparse
 import sys
 sys.dont_write_bytecode = True
 from build import ROOT, PCC, WORK, run, compile_c
@@ -8,7 +9,9 @@ from build import ROOT, PCC, WORK, run, compile_c
 SYSBUILD = ROOT / 'v7z8000/usr/sys/build'
 
 
-def test():
+def test(native_az8=None, native_ldz8=None):
+    native_az8 = native_az8 or WORK / 'az8/az8'
+    native_ldz8 = native_ldz8 or WORK / 'ldz8/ldz8'
     compile_c(ROOT / 'tools/native-binutils/runner.c', WORK / 'runner.b')
     run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'runner.b',
          ROOT / 'tools/libv7.a', '-o', WORK / 'runner'])
@@ -36,10 +39,17 @@ main() {
     (WORK / 'lib.a').unlink(missing_ok=True)
     run(['ar', 'cr', WORK / 'lib.a', WORK / 'unused.b', WORK / 'helper.b'])
     records = []
+    # Many branches share the same range tables. Per-branch copies exhaust
+    # the native assembler's data space before this file can be assembled.
+    dense = WORK / 'dense.az8'
+    dense.write_text('\t.text\n\t.globl _main\n_main:\n\tclr r0\n\tjr .L9999\n' +
+                     ''.join('.L%d:\n\tjr .L9999\n' % i for i in range(700)) +
+                     '.L9999:\n\tret\n')
     cases = [('archive', WORK / 'input.c'),
              ('long', PCC / 'test/larith.c'),
              ('float', PCC / 'test/regress/float_storage.c'),
-             ('byte', PCC / 'test/regress/asm_byte_regs.az8')]
+             ('byte', PCC / 'test/regress/asm_byte_regs.az8'),
+             ('branches', dense)]
     for name, source in cases:
         if source.suffix == '.c':
             compile_c(source, WORK / 'input.b')
@@ -58,8 +68,8 @@ main() {
 d--755 0 0
 bin d--755 0 0
  sh ---755 0 0 {ROOT}/tools/sh
- az8 ---755 0 0 {WORK}/az8/az8
- ldz8 ---755 0 0 {WORK}/ldz8/ldz8
+ az8 ---755 0 0 {native_az8.resolve()}
+ ldz8 ---755 0 0 {native_ldz8.resolve()}
  runner ---755 0 0 {WORK}/runner
  $
 lib d--755 0 0
@@ -80,7 +90,7 @@ tmp d--777 0 0
 $
 ''')
             run([ROOT / 'tools/v7mkfs', WORK / 'hd.img', WORK / 'proto'])
-            result = run([SYSBUILD / 'test_driver', '-c', '900000000', '-d', WORK / 'hd.img',
+            result = run([SYSBUILD / 'test_driver', '-c', '3000000000' if name == 'branches' else '900000000', '-d', WORK / 'hd.img',
                           '-i', 'runner ' + flag + '\\n', '-w', 'NATIVE TOOLS PASS',
                           '-I', 'exit\\n', '-x', 'NATIVE TOOLS PASS'], cwd=SYSBUILD, timeout=60)
             (WORK / (name + '-' + mode + '.log')).write_bytes(result.stdout + result.stderr)
@@ -99,4 +109,9 @@ $
 
 
 if __name__ == '__main__':
-    test()
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--native-az8', type=Path)
+    parser.add_argument('--native-ldz8', type=Path)
+    args = parser.parse_args()
+    test(args.native_az8, args.native_ldz8)

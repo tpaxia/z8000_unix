@@ -5,14 +5,15 @@ char *args[40];
 char *envlist[] = {"CC_TEST=inherited", 0};
 
 /* Plan lines: expected-failure(0/1), stdout-file(or -), executable, args. */
-runplan()
+runplan(name, directory)
+char *name, *directory;
 {
     FILE *plan;
     char *p, *capture;
     int n, pid, status, failed, count;
 
-    if (chdir("/tmp") < 0) return 1;
-    plan = fopen("plan", "r");
+    if (chdir(directory) < 0) return 1;
+    plan = fopen(name, "r");
     if (plan == NULL) return 2;
     count = 0;
     while (fgets(line, sizeof line, plan)) {
@@ -55,10 +56,13 @@ runplan()
     return 0;
 }
 
-main()
+main(argc, argv)
+int argc;
+char **argv;
 {
     int status;
-    status = runplan();
+    status = runplan(argc > 1 ? argv[1] : "plan", argc > 2 ? argv[2] : "/tmp");
+    sync();
     printf("NATIVE CC DONE\n");
     return status;
 }

@@ -8,12 +8,12 @@
 /*
  * IDE hard drive driver for Z8000.
  *
- * Interrupt-driven ATA PIO driver — NVI interrupt on command completion.
+ * Interrupt-driven ATA PIO driver — VI interrupt on command completion.
  * Single drive, whole disk, LBA addressing.
  *
  * hdstrategy() issues the ATA command and returns.
- * The emulator asserts NVI when the operation completes.
- * hdintr() (called from the NVI handler) performs the data transfer
+ * The emulator asserts VI when the operation completes.
+ * hdintr() (called from the VI handler) performs the data transfer
  * for reads, checks status, and calls iodone().
  *
  * ATA register interface (emulated at standard x86 addresses):
@@ -80,10 +80,10 @@ register struct buf *bp;
 	outb(HD_DH, 0xE0);		/* LBA mode, drive 0 */
 
 	if (bp->b_flags & B_READ) {
-		/* READ: emulator loads sector + asserts NVI */
+		/* READ: emulator loads sector + asserts VI */
 		outb(HD_CMD, CMD_READ);
 	} else {
-		/* WRITE: emulator sets DRQ, we fill buffer, NVI on last word */
+		/* WRITE: emulator sets DRQ, we fill buffer, VI on last word */
 		outb(HD_CMD, CMD_WRITE);
 		outsw(HD_DATA, bp->b_un.b_addr, 256);
 	}
@@ -91,7 +91,7 @@ register struct buf *bp;
 }
 
 /*
- * hdintr() — called from NVI interrupt handler.
+ * hdintr() — called from VI interrupt handler.
  * Completes the I/O: reads data for read commands,
  * checks status, and calls iodone().
  */

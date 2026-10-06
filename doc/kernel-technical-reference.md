@@ -2,6 +2,9 @@
 
 Detailed technical notes for the Z8001 kernel trap infrastructure.
 
+Machine selection and the CPU/MMU interface are described in
+[kernel configuration](../v7z8000/usr/sys/conf/README.md).
+
 ## PSA Table Layout (Z8001)
 
 Each entry is 8 bytes: reserved(2) + FCW(2) + segmented_PC(4).
@@ -93,7 +96,7 @@ int num;
 unsigned *regs;
 ```
 
-`trap()` in `sys/trap.c` is reached from the SYSCALL stub in `trap.s` through the jump table at the start of `krt.s` (see Entry Points below). It copies the arguments from the saved registers into `u.u_arg[0..4]`, sets `u.u_dirp` to the first one, and dispatches through the V7-style `sysent[]` table (64 entries). A number out of range or with no handler gives `ENOSYS`.
+`trap()` in `machine/trap.c` is reached from the SYSCALL stub in `machine/trap.s` through the jump table at the start of `machine/krt.s` (see Entry Points below). It copies the arguments from the saved registers into `u.u_arg[0..4]`, sets `u.u_dirp` to the first one, and dispatches through the V7-style `sysent[]` table (64 entries). A number out of range or with no handler gives `ENOSYS`.
 
 ### Syscall Calling Convention
 
@@ -108,17 +111,19 @@ R1 = return     — second result (u.u_r.r_val2), or errno on error
 
 ## Entry Points
 
-`trap.s` (assembled with `z8k-coff-as`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `krt.s`, which is linked at 0x0200:
+`machine/trap.s` (assembled with `z8k-coff-as`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `machine/krt.s`, which is linked at 0x0200:
 
 | Address | Label | Reached from | Calls |
 |---------|-------|--------------|-------|
 | 0x0200 | `syscall_dispatch` | `syscall_entry` | `_trap` |
 | 0x0202 | `boot_entry` | boot code at 0x01F0 | `_main` |
 | 0x0204 | `nvi_dispatch` | `nvi_entry` | `_clock` |
-| 0x0206 | `vi_dispatch` | `vi_entry` | `_hdintr`, then `_consrint` |
+| 0x0206 | `vi_dispatch` | `vi_entry` | configuration `_devintr(vector)` |
 | 0x0208 | `epu_dispatch` | segment 127 EPU entry (SEG call) | `_fptrap` |
 
-All devices share VI vector 0, so `vi_dispatch` calls every device handler and each one checks whether it has work.
+The emulated configuration shares VI vector 0. Its `devintr()` in
+`conf/emulated.c` calls `hdintr()` and `consrint()`; CPU entry code no longer
+names individual device handlers.
 
 ## Software EPU Service
 
@@ -321,6 +326,16 @@ BSS, initialized data, switch tables, file I/O, signals, fork isolation, failed
 exec, and transitions between combined and split programs. It also runs the
 libc and signal suites as 0411 binaries and checks linker overflow rejection.
 
+### Library Archives
+
+`ldz8`, native `ar` and native `make` use portable ASCII archives with the
+eight-byte `!<arch>\n` signature and 60-byte member headers. Native libraries
+use unindexed members with names of at most 14 characters. The archive
+container does not determine CPU addressing mode: object headers and
+relocations, followed by the linker and loader, determine that. Current
+executable support is NONSEG 0407 combined space and 0411 separate I/D;
+full segmented executables require further toolchain and loader work.
+
 ## RAM Disk DMA
 
 The kernel runs in NONSEG mode with 16-bit pointers (64KB address space). The disk image cannot live in this space alongside the kernel. Instead, the RAM disk driver (`dev/md.c`) uses I/O port-based DMA: it writes a block number and kernel buffer address to I/O ports, and the emulator performs the memory transfer.
@@ -357,7 +372,7 @@ the previous kernel disposition back to the previous C handler on return,
 and rolls back its table update if registration fails. Fork copies the table
 and kernel dispositions; exec resets caught dispositions and preserves ignores.
 
-At return to user mode, `psig(usp)` constructs this eight-byte user frame and
+At return to user mode, `psig(usp)` constructs this 104-byte user frame and
 redirects the saved PC to the registered trampoline:
 
 | Offset from new user SP | Value |
@@ -366,6 +381,7 @@ redirects the saved PC to the registered trampoline:
 | 2 | Interrupted FCW |
 | 4 | Interrupted R0 |
 | 6 | Interrupted PC offset |
+| 8–103 | Saved EPU registers and control state (96 bytes) |
 
 The returned SP remains on the process's kernel stack through scheduling;
 `userret()` installs it in NSPOFF only at final return. Delivery rejects an
@@ -373,10 +389,11 @@ odd SP or insufficient space above the data area for the frame and trampoline
 entry, terminating with SIGSEGV rather than wrapping the user stack.
 
 The trampoline saves R1-R14, calls the C handler with the signal number,
-restores the registers, and uses unprivileged `LDCTLB FLAGS,rl0` to restore
+restores EPU state through syscall 52, restores the registers, and uses unprivileged `LDCTLB FLAGS,rl0` to restore
 condition flags. It then pops R0 and returns to the interrupted PC, restoring
 the original SP. No privileged FCW bits are loaded from user memory, and no
-signal-return syscall is needed. A handler may instead use `longjmp`.
+CPU-context signal-return syscall is needed; syscall 52 restores only EPU
+state. A handler may instead use `longjmp`.
 
 As in V7, caught dispositions reset before delivery except SIGILL and
 SIGTRAP; SIGKILL cannot be caught or ignored. A caught signal interrupting a
@@ -414,7 +431,7 @@ in the active libraries.
 | Function prologue | `push @sp, r13; ld r13, sp; sub sp, #N` |
 | Function epilogue | `ld sp, r13; pop r13, @sp; ret` |
 
-Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. The `save()`/`resume()` functions in `krt.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
+Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. `save()` in `machine/krt.s` and `resume()` in `machine/pagert.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
 Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).
 

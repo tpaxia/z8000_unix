@@ -26,7 +26,7 @@ helpers = module('binutils_build', ROOT / 'tools/native-binutils/build.py')
 run, compile_c = helpers.run, helpers.compile_c
 
 
-def image(extra_files=None):
+def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None):
     """Install target tools, V7 headers, and optional test fixtures."""
     files = {
         'bin/cc': WORK / 'cc', 'bin/az8': BINUTILS / 'az8/az8',
@@ -52,6 +52,8 @@ def image(extra_files=None):
             node = node.setdefault(part, {})
         mode = '755' if parts[0] in ('bin', 'etc') or target in (
             'lib/cpp', 'lib/front', 'lib/back', 'lib/oz8') else '644'
+        if modes and target in modes:
+            mode = '%03o' % (modes[target] & 0o777)
         node[parts[-1]] = '---' + mode + ' 0 0 ' + str(source)
 
     def directory(node):
@@ -65,8 +67,10 @@ def image(extra_files=None):
                 lines.append(name + ' ' + value)
         return lines + ['$']
 
-    (WORK / 'proto').write_text('boot\n6000 512\nd--755 0 0\n' + '\n'.join(directory(tree)) + '\n')
-    run([ROOT / 'tools/v7mkfs', WORK / 'hd.img', WORK / 'proto'])
+    destination = Path(destination) if destination else WORK / 'hd.img'
+    proto = destination.with_suffix('.proto')
+    proto.write_text('boot\n%d %d\nd--755 0 0\n' % (blocks, inodes) + '\n'.join(directory(tree)) + '\n')
+    run([ROOT / 'tools/v7mkfs', destination, proto])
 
 
 def build(no_compact=False):

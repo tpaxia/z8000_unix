@@ -798,6 +798,7 @@ This document was written before the port began and is kept as it was. Its recom
 - **Option B was done differently from how it is described above.** The work was not done on a PDP-11 emulator under V7's memory limits. The MIT 68000 back end was retargeted to the Z8002 as a cross-compiler on a modern host, with a new assembler (`az8`) and linker (`ldz8`); that is the `PCC-z8000` repository.
 - **Sections 10 and 11 describe ACK as it stood then.** Nothing in this project uses ACK now.
 - **The small-model recommendation of section 8 held.** Kernel and user programs are non-segmented, with 16-bit pointers.
+- **Steps 29–30 establish native development.** Two successive compiler generations match; native make, ar, yacc, supporting compiler tools and libc also rebuild under Unix. Separate I/D keeps 16-bit pointers while providing distinct 64 KB instruction and data spaces. Libraries use portable ASCII archives. See [the implementation journal](implementation-steps.md#step-30-native-development-environment) for verified scope and reproduction.
 
 One consequence worth knowing: `az8` does not assemble segmented instructions. The statement in section 10 that "the assembler supports segmented addressing modes" is about ACK's assembler. The two segmented source files in the kernel, `rom.s` and `trap.s`, are assembled with GNU `z8k-coff-as`.
 

@@ -8,16 +8,11 @@
 
 /*
  * Process management for Z8000 kernel.
- * V7-style with MMU (KDSA6 equivalent via paged MMU).
- * No bcopy of u-areas, no per-process kernel stacks.
- * resume() writes KDSA6 to remap the u-area + kernel stack.
+ * V7-style per-process u-area and kernel stack.
+ * Machine support maps the selected u-area during resume().
  */
 
-extern int useg;
-extern int outw();
-
-/* Identity frame for copy window (seg1 pages 28-29) */
-#define WPAGE_IDENTITY	60
+extern int copyuarea(), copyproc();
 
 #define SQSIZE 0100		/* Must be power of 2 */
 #define HASH(x)	(( (int) x >> 5) & (SQSIZE-1))
@@ -164,7 +159,7 @@ register struct proc *pp;
 
 /*
  * Switch to the highest-priority runnable process.
- * V7 style: resume() writes KDSA6 to remap u-area + kernel stack.
+ * V7 style: resume() selects the u-area and kernel stack.
  * No bcopy of u-areas needed.
  */
 swtch()
@@ -233,8 +228,8 @@ loop:
  * Create a new process -- the internal version of sys fork.
  * Returns 1 in the new process, 0 in the old.
  *
- * V7 style: allocates u-area frames, copies u-area via MMU copy window.
- * No per-process kernel stacks. No trampoline.
+ * Machine support allocates and copies the child u-area and address space.
+ * The saved continuation supplies the child return path without a trampoline.
  */
 newproc()
 {
@@ -315,29 +310,9 @@ retry:
 		return(1);
 	}
 
-	/*
-	 * Copy parent's u-area to child's physical frames via window.
-	 * The live stack above the saved SP is stable: interrupts use space
-	 * below the current SP. Copy in small chunks, restoring the window
-	 * before admitting interrupts, just as copyseg() does. No process
-	 * switch is possible here because this is kernel code.
-	 */
-	{
-		int s, off;
-		for (off = 0; off < 4096; off += 16) {
-			s = spl7();
-			outw(0x00B4, rpp->p_addr);
-			bcopy(0xF000 + off, 0xE000 + off, 16);
-			outw(0x00B4, WPAGE_IDENTITY);
-			splx(s);
-		}
-	}
-
-	/*
-	 * Copy parent's user segment to child's segment.
-	 * Segment number = proc index + 1 (proc[0]->seg 1, etc.)
-	 */
-	copyseg((rip - proc) + 1, (rpp - proc) + 1);
+	/* Machine support copies the saved u-area and user address spaces. */
+	copyuarea(rpp);
+	copyproc(rip, rpp);
 
 	setrq(rpp);
 	rpp->p_flag |= SSWAP;

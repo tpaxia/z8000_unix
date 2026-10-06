@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <ar.h>
+#include <arport.h>
 #include <signal.h>
 struct	stat	stbuf;
-struct	ar_hdr	arbuf;
+struct	ar_member	arbuf;
 
 #define	SKIP	1
 #define	IODD	2
@@ -313,7 +313,6 @@ qcmd()
 
 init()
 {
-	static mbuf = ARMAG;
 
 	tfnam = mktemp(tmpnam);
 	close(creat(tfnam, 0600));
@@ -322,18 +321,18 @@ init()
 		fprintf(stderr, "ar: cannot create temp file\n");
 		done(1);
 	}
-	if (write(tf, (char *)&mbuf, sizeof(int)) != sizeof(int))
+	if (write(tf, ARMAG, SARMAG) != SARMAG)
 		wrerr();
 }
 
 getaf()
 {
-	int mbuf;
+	char mbuf[SARMAG];
 
 	af = open(arnam, 0);
 	if(af < 0)
 		return(1);
-	if (read(af, (char *)&mbuf, sizeof(int)) != sizeof(int) || mbuf!=ARMAG) {
+	if (read(af, mbuf, SARMAG) != SARMAG || strncmp(mbuf,ARMAG,SARMAG)) {
 		fprintf(stderr, "ar: %s not in archive format\n", arnam);
 		done(1);
 	}
@@ -342,7 +341,7 @@ getaf()
 
 getqf()
 {
-	int mbuf;
+	char mbuf[SARMAG];
 
 	if ((qf = open(arnam, 2)) < 0) {
 		if(!flg['c'-'a'])
@@ -352,12 +351,11 @@ getqf()
 			fprintf(stderr, "ar: cannot create %s\n", arnam);
 			done(1);
 		}
-		mbuf = ARMAG;
-		if (write(qf, (char *)&mbuf, sizeof(int)) != sizeof(int))
+		if (write(qf, ARMAG, SARMAG) != SARMAG)
 			wrerr();
 	}
-	else if (read(qf, (char *)&mbuf, sizeof(int)) != sizeof(int)
-		|| mbuf!=ARMAG) {
+	else if (read(qf, mbuf, SARMAG) != SARMAG
+		|| strncmp(mbuf,ARMAG,SARMAG)) {
 		fprintf(stderr, "ar: %s not in archive format\n", arnam);
 		done(1);
 	}
@@ -482,9 +480,14 @@ movefil(f)
 	register i;
 
 	cp = trim(file);
+	if (strlen(cp) > 14) {
+		fprintf(stderr, "ar: member name too long: %s\n", cp);
+		done(1);
+	}
 	for(i=0; i<14; i++)
 		if(arbuf.ar_name[i] = *cp)
 			cp++;
+	arbuf.ar_name[14] = 0;
 	arbuf.ar_size = stbuf.st_size;
 	arbuf.ar_date = stbuf.st_mtime;
 	arbuf.ar_uid = stbuf.st_uid;
@@ -515,12 +518,29 @@ stats()
 copyfil(fi, fo, flag)
 {
 	register i, o;
-	int pe;
+	struct ar_disk disk;
+	char text[64], *p, *q;
+	int n;
 
-	if(flag & HEAD)
-		if (write(fo, (char *)&arbuf, sizeof arbuf) != sizeof arbuf)
+	if(flag & HEAD) {
+		p = (char *)&disk;
+		for (n=0; n<sizeof disk; n++) *p++ = ' ';
+		sprintf(text,"%s",arbuf.ar_name);
+		for (p=disk.name,q=text; *q; ) *p++ = *q++;
+		sprintf(text,"%ld",arbuf.ar_date);
+		for (p=disk.date,q=text; *q; ) *p++ = *q++;
+		sprintf(text,"%u",arbuf.ar_uid);
+		for (p=disk.uid,q=text; *q; ) *p++ = *q++;
+		sprintf(text,"%u",arbuf.ar_gid);
+		for (p=disk.gid,q=text; *q; ) *p++ = *q++;
+		sprintf(text,"%o",arbuf.ar_mode);
+		for (p=disk.mode,q=text; *q; ) *p++ = *q++;
+		sprintf(text,"%ld",arbuf.ar_size);
+		for (p=disk.size,q=text; *q; ) *p++ = *q++;
+		disk.end[0] = '`'; disk.end[1] = '\n';
+		if (write(fo, (char *)&disk, sizeof disk) != sizeof disk)
 			wrerr();
-	pe = 0;
+	}
 	while(arbuf.ar_size > 0) {
 		i = o = 512;
 		if(arbuf.ar_size < i) {
@@ -533,28 +553,32 @@ copyfil(fi, fo, flag)
 			}
 		}
 		if(read(fi, buf, i) != i)
-			pe++;
+			phserr();
+		if (o > i) buf[i] = '\n';
 		if((flag & SKIP) == 0)
 			if (write(fo, buf, o) != o)
 				wrerr();
 		arbuf.ar_size -= 512;
 	}
-	if(pe)
-		phserr();
 }
 
 getdir()
 {
 	register i;
+	struct ar_disk disk;
 
-	i = read(af, (char *)&arbuf, sizeof arbuf);
-	if(i != sizeof arbuf) {
+	i = read(af, (char *)&disk, sizeof disk);
+	if(i == 0) {
 		if(tf1nam) {
 			i = tf;
 			tf = tf1;
 			tf1 = i;
 		}
 		return(1);
+	}
+	if (i != sizeof disk || !ardecode(&disk,&arbuf)) {
+		fprintf(stderr,"ar: malformed portable archive header\n");
+		done(1);
 	}
 	for(i=0; i<14; i++)
 		name[i] = arbuf.ar_name[i];
@@ -609,6 +633,7 @@ phserr()
 {
 
 	fprintf(stderr, "ar: phase error on %s\n", file);
+	done(1);
 }
 
 mesg(c)

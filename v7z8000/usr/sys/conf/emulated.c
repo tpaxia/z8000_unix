@@ -13,7 +13,7 @@
  *
  * Character devices:
  *   Major 0: Console (cons)
- *   Major 1: (unused, null-terminated)
+ *   Major 1: console alias (spare)
  *   Major 2: TTY (alias to console)
  */
 
@@ -48,3 +48,28 @@ struct cdevsw cdevsw[] = {
 struct linesw linesw[] = {
 	{ 0 }
 };
+
+/* Boot devices and interrupt wiring for the emulated machine. */
+devinit()
+{
+	rootdev = makedev(1, 0);
+	pipedev = rootdev;
+	swapdev = rootdev;
+}
+
+devintr(vector)
+{
+	hdintr();
+	consrint();
+}
+
+clkstart()
+{
+	spl0();
+}
+
+/* Used for early kernel output as well as the console TTY driver. */
+putchar(c)
+{
+	outb(0x00F0, c);
+}

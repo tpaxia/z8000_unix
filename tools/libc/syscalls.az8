@@ -43,6 +43,7 @@
 	.globl	_gtty
 	.globl	_access
 	.globl	_nice
+	.globl	_ftime
 	.globl	_sync
 	.globl	_kill
 	.globl	_dup
@@ -364,6 +365,16 @@ _access:
 _nice:
 	ld	r1, 2(sp)	! incr
 	sc	#34
+	ret
+
+! ======================================================================
+! int ftime(tp) -- syscall #35
+! ======================================================================
+_ftime:
+	ld	r1, 2(sp)
+	sc	#35
+	cp	r0, #0xFFFF
+	jr eq,	cerror
 	ret
 
 ! ======================================================================

@@ -56,7 +56,7 @@ path (`call`) keeps the priority it was entered at.
 
 ### 2. User mode is entered with interrupts off
 
-`_retu` in `krt.s` builds the IRET frame that starts the first user process
+`_retu` in `machine/krt.s` builds the IRET frame that starts the first user process
 with
 
 ```
@@ -73,7 +73,7 @@ it: it appears in `sys/clock.c` and `sys/slp.c` only.
 
 V7 checks it in two places, and this port has neither:
 
-- at the end of `trap()` in `sys/trap.c`: `if (runrun) qswtch();`
+- at the end of `trap()` in `machine/trap.c`: `if (runrun) qswtch();`
 - in `mch.s`, after an interrupt handler returns to user mode: `tstb _runrun`,
   and if it is set, a call to `trap` with the "give up cpu" code.
 

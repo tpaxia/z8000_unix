@@ -5,7 +5,6 @@ unix-archive/
 *.i
 *.m
 b.out
-debug-step11.md
 tests/build/
 v7z8000/usr/sys/build/
 v7z8000/usr/sys/hd.img

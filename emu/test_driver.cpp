@@ -120,12 +120,18 @@ private:
     bool m_trace;
 };
 
+#include "user_profile.h"
+
 // All instruction-space accesses, including operands and PC-relative loads.
 class InstructionBus : public z8000_memory_bus {
 public:
     explicit InstructionBus(MMU &mmu) : m_mmu(mmu) {}
+    UserProfile *profile = nullptr;
     u8 read_byte(u32 a) override { return m_mmu.read_byte(m_mmu.instruction_address(a)); }
-    u16 read_word(u32 a) override { return m_mmu.read_word(m_mmu.instruction_address(a)); }
+    u16 read_word(u32 a) override {
+        if (profile) profile->sample(a);
+        return m_mmu.read_word(m_mmu.instruction_address(a));
+    }
     void write_byte(u32 a, u8 v) override { m_mmu.write_byte(m_mmu.instruction_address(a), v); }
     void write_word(u32 a, u16 v) override { m_mmu.write_word(m_mmu.instruction_address(a), v); }
     void write_word(u32 a, u16 v, u16 mask) override {
@@ -198,6 +204,13 @@ public:
         printf("  Loaded HD image   %-11s (%ld bytes, %ld blocks)\n",
                filename, size, size / 512);
         return true;
+    }
+
+    bool save_hd(const char *filename) {
+        FILE *f = fopen(filename, "wb");
+        if (!f) return false;
+        bool ok = fwrite(m_hd.data(), 1, m_hd.size(), f) == m_hd.size();
+        return fclose(f) == 0 && ok;
     }
 
     // z8000_io_bus interface
@@ -502,6 +515,7 @@ int main(int argc, char* argv[]) {
     // at the shell, and an exact transcript. -d, -i and -x run something
     // else under the same kernel, e.g. the C library test.
     const char *disk_image = "hd.img";
+    const char *save_image = nullptr, *profile_file = nullptr;
     const char *console_input = "echo hello | cat\nexit\n";
     const char *expect = nullptr;
     const char *wait_output = nullptr;
@@ -511,13 +525,15 @@ int main(int argc, char* argv[]) {
     const char *measure_marker = "# ";
 
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:")) != -1) {
         switch (opt) {
             case 't': trace = true; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
             case 'c': max_cycles = strtoull(optarg, nullptr, 10); break;
             case 'd': disk_image = optarg; break;
+            case 'o': save_image = optarg; break;
+            case 'P': profile_file = optarg; break;
             case 'i': {
                 // "\n" written as two characters stands for a newline, so the
                 // text survives make and the shell unchanged.
@@ -534,7 +550,8 @@ int main(int argc, char* argv[]) {
                 fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
                         "[-d hd-image] [-i console-input] [-x expected-text] "
                         "[-w output-marker -I later-input] "
-                        "[-n measured-ticks -M start-marker]\n", argv[0]);
+                        "[-n measured-ticks -M start-marker] "
+                        "[-o saved-hd-image] [-P user-memory.tsv]\n", argv[0]);
                 return 1;
         }
     }
@@ -592,6 +609,13 @@ int main(int argc, char* argv[]) {
 
     // Reset CPU - reads reset vector from address 0x000000
     cpu.reset();
+    FILE *profile_output = profile_file ? fopen(profile_file, "w") : nullptr;
+    if (profile_file && !profile_output) { perror(profile_file); return 1; }
+    UserProfile profile(cpu, mmu, profile_output);
+    if (profile_output) {
+        instructions.profile = &profile;
+        cpu.set_trap_callback(UserProfile::trap, &profile);
+    }
 
     printf("\nReset state:\n");
     printf("  FCW: 0x%04X\n", cpu.get_fcw());
@@ -677,6 +701,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (profile_output) { profile.flush(); fclose(profile_output); }
+    if (save_image && !io.save_hd(save_image)) { perror(save_image); return 1; }
     if (trace) printf("---\n");
 
     // Dump final state

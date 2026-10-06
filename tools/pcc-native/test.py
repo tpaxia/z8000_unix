@@ -1,6 +1,11 @@
 from pathlib import Path
-import subprocess,struct,json,sys
+import subprocess,struct,json,sys,argparse
 root=Path(__file__).resolve().parents[2];w=root/"tests/build/native-pcc"; proto=w;pcc=root/'PCC-z8000/z8000';build=root/'v7z8000/usr/sys/build'
+parser=argparse.ArgumentParser(description='Exercise native compiler passes under Unix')
+parser.add_argument('suite',nargs='?',choices=['extra'])
+parser.add_argument('--native-front',type=Path,default=w/'target-front/front')
+parser.add_argument('--native-back',type=Path,default=w/'target-back/back')
+args=parser.parse_args()
 def run(cmd,**kw): return subprocess.run(list(map(str,cmd)),capture_output=True,check=True,timeout=60,**kw)
 # Generated programs execute in the standalone CPU harness, which has no
 # Unix EPU service. Keep its reference runtime separate from Unix libc.
@@ -10,7 +15,7 @@ r=run([pcc/'cz8/cz8'],input=r.stdout);(w/'runner.az8').write_bytes(r.stdout)
 run([pcc/'az8/az8','-o','runner.b','runner.az8'],cwd=w)
 run([pcc/'ldz8','-x',root/'tools/libc/crt0.b',w/'runner.b',root/'tools/libv7.a','-o',w/'runner'])
 cases=['hello','arith','control','switch','bitfield','shift','larith','pcc_math','pcc_cmp','pcc_struct','pcc_structret','pcc_union','pcc_ptr','pcc_scope','pcc_optim']
-extra=len(sys.argv)>1
+extra=args.suite=='extra'
 if extra: cases="float_general float_storage float_add float_convert_vectors double_with_regvars register_long register_calls long_postinc register_pair_overlap widen_pressure".split()
 records=[]
 for name in cases:
@@ -22,8 +27,8 @@ for name in cases:
 d--755 0 0
 bin d--755 0 0
  sh ---755 0 0 {root}/tools/sh
- back ---755 0 0 {w}/target-back/back
- front ---755 0 0 {w}/target-front/front
+ back ---755 0 0 {args.native_back.resolve()}
+ front ---755 0 0 {args.native_front.resolve()}
  runner ---755 0 0 {w}/runner
  $
 dev d--755 0 0

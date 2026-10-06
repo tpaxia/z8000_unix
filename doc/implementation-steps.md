@@ -2,6 +2,10 @@
 
 Step-by-step journal of the Z8000 Unix kernel bring-up. Each step builds on the previous one and is verified by an automated test before moving on.
 
+Entries preserve results and sizes from their implementation stage. For the
+present status, see [Current State](#current-state), [compiler self-hosting](#step-29-native-compiler-self-hosting)
+and the [native development environment](#step-30-native-development-environment).
+
 ## Step 1: Project Setup and Toolchain
 
 Set up the project structure, imported dependencies, and verified the cross-compilation toolchain works end-to-end.
@@ -455,8 +459,10 @@ still calls `exit()` to flush stdio before the termination syscall.
 The shared `cerror` in `syscalls.az8` declares `.comm _errno,2`, as V7's
 error handler does. Both libc archives omit `errno.b` and `crtinit.b`,
 removing the common-only errno member's ordering dependency. The unused
-`errno.c` is removed; `crtinit.c` remains only for the historical, unbuilt
-ACK `crt0.s`. Library targets depend on the Makefile so membership changes
+`errno.c` was removed at this step. The unbuilt ACK `crt0.s` and its
+`crtinit.c` helper were subsequently removed during repository cleanup,
+along with the old ACK syscall/setjmp/end assembly, init stub and unused
+filesystem prototype. Library targets depend on the Makefile so membership changes
 recreate the archives even when the remaining objects are already current.
 
 Expanded `libctest` from 33 to 37 checks: startup argument/environment
@@ -828,7 +834,7 @@ largest even text size.
 
 The linker reads an explicitly defined portable ASCII archive format,
 independent of the installed V7 binary-archive header. Bootstrap libraries
-must use that format; this does not add a native portable-format archiver.
+must use that format. Step 30 adds the matching native archiver and make reader.
 Symbol records are allocated in stable blocks of 32, preserving insertion
 order and the 4,003-symbol limit. Fixed symbol/hash/local tables occupy
 16,262 bytes instead of 72,052. Actual capacity still depends on available
@@ -847,10 +853,9 @@ output, then execute the native-linked programs under Unix in both 0407 and
 blocks, common/data/BSS and pointer relocation, dot padding, long arithmetic,
 byte registers, and floating-point storage/arithmetic through the EPU service.
 
-The next step integrates native cpp, compiler passes, assembler/linker and
-the driver. Replacing the host Python compaction dependency and rebuilding
-the compiler inside Unix remain bootstrap work. This step
-does not yet establish compiler self-hosting or worst-case heap/stack usage.
+Step 26 integrates native cpp, compiler passes, assembler/linker and the driver.
+Steps 27–28 remove the host Python compaction dependency; Step 29 records
+self-hosting and workload-specific heap/stack measurements.
 
 ## Step 26: Native C Compiler Driver
 
@@ -881,8 +886,8 @@ tree output and then the back end before assembly. Its historical one-pass
 configuration remains available. The driver supports preprocessing (`-E`,
 `-P`), assembly output (`-S`), object output (`-c`), ordinary linking and
 split-I/D linking (`-i`), multiple inputs, and `-D`/`-U`/`-I` options.
-`-O`, `-p` and `-f` are explicitly rejected in this installation: it has no
-native optimizer or alternate profiling/no-FP startup objects.
+At this stage `-O`, `-p` and `-f` were rejected. Step 28 adds native `-O`;
+alternate profiling/no-FP startup objects remain unavailable.
 
 | Newly installed tool | Text | Data | BSS |
 |----------------------|-----:|-----:|----:|
@@ -908,7 +913,7 @@ linking. Checks also verify temporary-file cleanup. Logs and results are in
 This establishes a complete native C compilation pipeline for programs that
 fit its segments. At this step the initial compiler binaries still required
 host-side compaction; Step 27 removes that size requirement. Compiler rebuilds
-inside Unix and peak heap/stack measurements remain before claiming self-hosting.
+inside Unix and peak heap/stack measurements are recorded in Step 29.
 
 ## Step 27: Shared Function Entry and Return Emitted by PCC
 
@@ -945,7 +950,7 @@ python3 tools/pcc-native/test.py extra
 
 `tools/pcc-native/build.py --no-compact` also builds just the passes and their
 runtime without applying the optimizer. These are still cross-build scripts;
-the compiler has not yet rebuilt itself inside Unix.
+native rebuilding is established separately in Step 29.
 
 Direct entry/return generation also reduces the ordinary native tools, whose
 builds do not use the Python optimizer: assembler text is 51,884 bytes, linker
@@ -1005,19 +1010,192 @@ python3 tools/native-cc/build.py
 python3 tools/native-cc/test.py
 ```
 
+## Step 29: Native Compiler Self-Hosting
+
+The two-pass compiler and optimizer now rebuild themselves under Unix.
+`tools/native-cc/selfhost.py` installs the prepared compiler sources, then
+uses native `cc -O -c` and `cc -i` to build `front`, `back` and `oz8`.
+It repeats the build using the first generation's passes through
+`-B/tmp/s1/ -t012`. All 19 object files and all three linked executables are
+byte-for-byte identical between generations. The native front and back also
+match their cross-built seed executables. Native optimized `oz8` has 20,344
+bytes of text, versus 21,524 for the unoptimized seed.
+
+The first attempt exposed assembler memory exhaustion on `pftn.c`.
+Each span-dependent branch allocated a private copy of identical range
+tables. `az8/sdi.c` now interns those immutable tables and frees the shared
+pool once after resolution. No instruction forms or range limits changed.
+The formerly failing file assembles successfully; all 18 existing compiler
+translation units produce exactly the same object bytes as before the fix.
+A new 700-branch native regression checks both combined and split linking.
+
+The emulator can now save the guest HD with `-o` and record user memory
+observations with `-P`. The runner calls `sync()` before completion, allowing
+each successful build step to be checkpointed. Failed steps retain their
+log and memory report without replacing the last successful disk; when the
+emulator exits normally, its diagnostic disk is retained too. Run the script
+again without `--setup` to resume.
+
+Observed memory use during the native rebuild is:
+
+| Executable | Text | Data | BSS | Peak break | Lowest SP | Minimum heap/stack gap |
+|------------|-----:|-----:|----:|-----------:|----------:|-----------------------:|
+| Front | 60,640 | 13,764 | 22,338 | 37,184 | 64,328 | 27,144 |
+| Back | 43,564 | 10,464 | 9,630 | 20,096 | 64,328 | 44,232 |
+| Optimizer | 20,344 | 932 | 1,922 | 5,952 | 63,138 | 57,186 |
+| Assembler | 52,036 | 8,768 | 2,754 | 56,640 | 65,016 | 8,378 |
+| Linker | 28,840 | 2,268 | 17,646 | 33,280 | 65,036 | 31,756 |
+
+These are observations for this workload, not worst-case bounds for arbitrary
+source. The break includes data/BSS, heap and the kernel's 64-byte rounding.
+The gap is the smallest per-invocation difference between its lowest observed
+SP and highest break; those extrema need not occur together. Consequently,
+subtracting the independently aggregated table columns can give a slightly
+different result. The front end retains 4,894 bytes of code headroom below
+the maximum even text size. The assembler has the tightest observed data-space
+margin. A separate probe checks the observer against a known heap allocation,
+a rejected break request, recursive stack frames and a persisted guest file.
+
+Validation: all 52 native build/link/execution steps pass, as do the 25
+compiler execution cases using the second-generation passes, the compiler
+gate, and ten native assembler/linker cases. The previously documented
+`float_general` decimal-parser bit difference remains; its generated program
+passes execution.
+
+This establishes compiler self-hosting against the existing native
+preprocessor, assembler, linker and runtime archive. Step 30 extends the native
+build to those supporting tools, libc and yacc. Source preparation still
+uses `tools/pcc-native/prepare.py` on the host to stage the two-pass headers
+and glue; neither native generation invokes a host compiler or optimizer.
+
+With the kernel already built, reproduce with:
+
+```
+python3 tools/native-cc/build.py
+cmake -S v7z8000/usr/sys -B tests/build/selfhost/host -DCMAKE_BUILD_TYPE=Release
+cmake --build tests/build/selfhost/host --target test_driver -j4
+python3 tools/native-cc/selfhost.py --setup
+python3 tools/native-cc/selfhost.py --summary
+```
+
+`--limit N` runs at most N additional steps. Results, saved executables,
+per-step logs and memory observations are under `tests/build/selfhost/`;
+`convergence.json` records executable hashes and `memory.json` records peak
+usage. `tools/pcc-native/test.py` accepts `--native-front` and `--native-back`
+to test the saved `s2-link-front.out` and `s2-link-back.out` executables
+(add positional `extra` for the additional ten cases).
+
+## Step 30: Native Development Environment
+
+`tools/native-cc/environment.py` builds the development tools inside Unix,
+starting with the second-generation compiler from Step 29. Its 82 steps build
+`make`, `ar`, `yacc`, `cp`, `rm`, `mv`, `cmp`, `cc`, `cpp`, `az8`, `ldz8`,
+libc and startup code, then rebuild the compiler passes and optimizer with
+those native tools. The support executables are finally relinked against
+the native libc. The guest `/usr/src/makefile` provides `make all`.
+
+Native `ar` and make's archive dependency reader now use portable ASCII
+archives: `!<arch>\n`, 60-byte member headers, and even-byte member alignment.
+The writer emits space-padded short names; readers accept an optional trailing
+slash. Names are limited to 14 characters, matching the V7 filesystem.
+These libraries are unindexed; GNU/BSD long-name and archive-index extensions
+are not implemented by native `ar`/`make`. The linker retains its existing
+portable archive reader; no original binary V7 archive support was added.
+Legacy utilities such as `nm`, `ranlib` and `arcv` remain unported.
+
+The archive is a container of object bytes. NONSEG, SEG and separate I/D
+requirements belong in the object format, relocations, linker and loader.
+Current programs use NONSEG 0407 or 0411 executables; this work does not add
+full segmented compilation or linking.
+
+Native yacc generates the make, cpp and PCC parsers. Its Z8000 MEDIUM
+configuration reserves 7,000 state words because PCC's grammar needs 6,492.
+The resulting PCC parser is byte-identical to the checked-in parser. Yacc
+uses 35,596 text bytes, 5,736 initialized data bytes and 52,114 BSS bytes;
+PCC parser generation leaves an observed 4,156-byte heap/stack gap. This is
+a workload measurement, not a bound for arbitrary grammars.
+
+The libc build produces 92 members, all byte-identical and in the same order
+as the compact cross-built library. A missing `ftime` syscall wrapper was
+added for `ctime`, used by `ar tv`. Its 16 bytes in the shared syscall object
+bring the front end to 60,656 text bytes and the back end to 43,580.
+Source staging still uses the host to prepare two-pass glue and EPU wrapper
+assembly; this is not a rebuild of every V7 command or of the kernel.
+
+After building the kernel and completing Step 29, reproduce with:
+
+```
+python3 tools/pcc-native/build.py
+python3 tools/native-cc/environment.py --setup
+python3 tools/native-cc/environment.py --summary
+python3 tools/native-cc/test-archives.py
+```
+
+Running without options resumes the saved disk. `--limit N` limits additional
+steps, `--refresh` updates staged sources while retaining guest outputs, and
+`--from-step N` restarts at a zero-based step index. Artifacts are under
+`tests/build/native-environment/`: `hd.img`, per-step logs and memory traces,
+`results.json`, `summary.json`, and exported executables in `native/`.
+
+Validation includes all 82 build steps, 37 native libc checks, 25 compiler
+execution cases, ten native assembler/linker cases, the compiler gate and
+kernel libc/split-I/D suites. Portable archive tests cover host/native
+interoperability, odd-sized and 90,001-byte members, replacement, extraction,
+deletion, malformed headers, library linking, and make's member/symbol
+dependencies and C/yacc/assembly suffix rules. The previously documented
+`float_general` decimal-parser bit difference remains; execution passes.
+
+## Step 31: Selectable Kernel Machine Configuration
+
+The kernel now keeps shared services in `sys/`, drivers in `dev/`, CPU/MMU
+support in `machine/`, and machine selection in `conf/`. The earlier journal
+paths `sys/machdep.c`, `sys/trap.c`, `sys/fpe.c`, `dev/conf.c`, and top-level
+runtime assembly refer to the layout before this step.
+
+`conf/emulated.cmake` selects reset/trap assembly, runtime objects, machine C
+sources and drivers. `conf/emulated.c` owns device switch tables, root/pipe/swap
+devices, console output, clock enabling and device interrupt dispatch. The
+CPU entry code calls `devintr(vector)` instead of naming disk/console drivers.
+`main()` delegates initial mapping and boot-device selection; the scheduler
+calls `copyuarea()` and `copyproc()` instead of programming a copy-window port
+or deriving banks from process slots. The paged-MMU implementation owns those
+operations and the atomic mapping/context restore in `machine/pagert.s`.
+
+Select the configuration with `-DKERNEL_CONFIG=emulated`. This is the default
+and currently the only implemented machine. `kernel` builds guest artifacts
+without depending on the host emulator; `-DKERNEL_HOST_TESTS=OFF` omits the
+emulator/test targets entirely. See [configuration and machine interfaces](../v7z8000/usr/sys/conf/README.md)
+for adding drivers or an MMU implementation and for the remaining fixed ABI
+requirements. This reorganization does not restore omitted V7 memory policy
+or add support for another physical machine.
+
+Validation: a fresh Release build passes boot, libc, preemption, signals,
+terminal, split-I/D and EPU suites. A separate kernel-only build produces
+identical guest artifacts. ROM, trap and EPU binaries are byte-identical to
+the pre-reorganization versions. Invalid configuration names are rejected.
+The compiler ratchet includes `machine/*.c` and `conf/*.c`, covering all 29
+kernel C sources after the split.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
-- All V7 C source compiled with PCC (cz8) in Z8002 mode, K&R style unchanged
+
+- Ported kernel and user-space C compiled with PCC in Z8002 mode, retaining K&R syntax
 - C symbols carry a leading underscore, as on the PDP-11
 - The Seventh Edition C library (stdio, strings, malloc, floating conversion) built from unmodified sources and tested under the kernel
 - PCC toolchain produces native a.out binaries directly (no conversion scripts)
+- Native two-pass PCC and optimizer rebuild themselves; two successive generations are identical
+- Native make, ar, yacc, cc, cpp, az8, ldz8, libc and startup code build inside Unix (Step 30)
+- Build-time machine selection through `conf/`, with CPU/MMU implementations in `machine/` (Step 31)
+- Portable ASCII archives shared by ar, make and ldz8; full SEG compilation/linking remains unimplemented
+- Floating arithmetic uses the Zilog software EPU service in segment 127
 - Bourne shell running with fork/exec/wait/pipe
 - Shell pipelines work (`echo hello | cat`)
 - Paged MMU with KDSA6-equivalent for per-process u-area remapping
 - V7-style context switching (save/resume/swtch) — remaps each process's u-area and embedded kernel stack without copying them during a switch
 - Process creation via fork (newproc) with u-area copy through MMU window
 - sleep/wakeup, run queue management, priority scheduling
+- User-mode timer preemption and caught signals with register, flags and EPU-state restoration
 - Buffer cache (bio.c) with 8 buffers
 - Interrupt-driven IDE hard drive with VI
 - Root filesystem mounted from HD image via ATA PIO
@@ -1042,7 +1220,7 @@ The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes 
 The divergence falls into three kinds, only two of which should shrink:
 
 1. **Machine dependent** — `machdep.c`, `trap.c` and `slp.c` are rewrites because V7's are PDP-11; `iget.c` carries big-endian 3-byte inode addresses; `param.h`, `seg.h`, `reg.h`, `user.h` and `proc.h` carry the `label_t` layout and MMU model; much of `sys1.c` is `exec()`. This is the port. It stays.
-2. **Amputated features** — these files are short because functionality is missing, not rewritten: `sig.c` lacks `psignal`, `core`, `fsig`, `grow`, `ptrace`, `procxmt`, `stop`; `tty.c` lacks alternate line disciplines and multiplexor support; `bio.c` lacks `physio` and `swap`; `sysent.c` is mostly `nosys`; `main.c` is a cut-down startup. Restoring these moves the files back toward pristine.
+2. **Missing features** — caught/default signals and `psignal` are implemented, but ptrace, core dumps and automatic stack growth remain absent. `tty.c` lacks alternate line disciplines and multiplexor support; `bio.c` lacks `physio` and swapping; unsupported syscall slots still use `nosys`; `main.c` is a reduced startup. Restoring these moves the files back toward pristine.
 3. **Toolchain workarounds** — introduced for ACK, which is gone. The two header workarounds have been removed, see below.
 
 ### The ACK-era header workarounds are gone
@@ -1067,7 +1245,7 @@ They are left on. "illegal member use" is exactly what flagged the header and so
 
 ## Planned Steps
 
-- **More commands**: ls, cp, wc, etc., linked against `libv7.a`
+- **More commands**: extend beyond the boot disk and native development tools, including ls, wc and grep
 - **Multi-stage pipelines**: `ls | grep foo | wc`
-- **Amputated kernel features**: signals, `physio`/swap, the rest of `sysent` (see Divergence from Pristine V7)
-- **Self-hosting**: PCC compiling itself on Z8000 Unix
+- **Missing kernel features**: ptrace/core dumps, automatic stack growth, `physio`/swap and unsupported syscalls
+- **Native build coverage**: extend the development environment to remaining V7 commands and kernel builds

@@ -15,7 +15,6 @@
 !   Args at:  4(r13), 6(r13), ...
 
 	.text
-	.globl	_putchar
 	.globl	_inb
 	.globl	_inw
 	.globl	_insw
@@ -24,7 +23,6 @@
 	.globl	_outsw
 	.globl	_idle
 	.globl	_save
-	.globl	_resume
 	.globl	_retu
 	.globl	_set_usp
 	.globl	_get_usp
@@ -98,13 +96,13 @@ nvi_dispatch:
 ! --- VI dispatch entry (device interrupts) ---
 ! Called from trap.s vi_entry in NONSEG+SYS mode.
 ! R0 = vector identifier (from tag word on IRET frame).
-! All devices share VI vector 0.  Each handler guards itself:
-!   hdintr checks hd_bp==0, consrint checks RX-ready status.
+! The selected configuration dispatches the vector to its device handlers.
 vi_dispatch:
 	push	@sp, r13
 	ld	r13, sp
-	calr	_hdintr
-	calr	_consrint
+	push	@sp, r0
+	calr	_devintr
+	add	sp, #2
 irq_return:
 	! Saved R0 starts four bytes above our frame pointer (saved R13,
 	! return address). intrret only schedules when returning to user mode.
@@ -141,16 +139,6 @@ boot_entry:
 	calr	_main
 	! After main returns in child process, enter user mode
 	jp	_retu
-
-! --- void putchar(int ch) ---
-_putchar:
-	push	@sp, r13
-	ld	r13, sp
-	ld	r1, 4(r13)
-	outb	rl1, #0x00F0
-	ld	sp, r13
-	pop	r13, @sp
-	ret
 
 ! --- int inb(int port) ---
 _inb:
@@ -222,50 +210,6 @@ _save:
 	ld	sp, r13
 	pop	r13, @sp
 	ret
-
-! =============================================================================
-! resume(p_addr, label) -- Restore context, return 1
-! void resume(int p_addr, label_t label);
-!
-! Writes KDSA6 (out 0x00B0) to remap the u-area + kernel stack,
-! then restores ALL state from label_t (registers, R13 FP, SP, return addr).
-! Does NOT depend on stack contents -- stack may have been clobbered
-! by bcopy between save() and resume().
-!
-! No prologue: arguments are read from SP before the stack is remapped.
-!
-! Interrupts are held off from the remap until SP is restored. In that
-! window SP still holds the old process's value but the stack pages already
-! belong to the new process, so an interrupt would push its frame over the
-! new process's live stack. (V7's PDP-11 resume does the same with
-! "bis $340,PS" around the KDSA6 write.)
-! =============================================================================
-_resume:
-	ld	r0, 2(sp)		! p_addr = u-area base frame (1st arg)
-	ld	r1, 4(sp)		! label_t pointer (2nd arg)
-	ldctl	r3, fcw			! r3 = caller's FCW, restored below
-	ld	r2, r3
-	and	r2, #0xE7FF		! clear VIE+NVIE
-	ldctl	fcw, r2
-	out	r0, #0x00B0		! *** KDSA6: remap u-area pages ***
-	! Now r1 points into the NEW process's label_t (in remapped u-area).
-	ld	r4, 0(r1)		! restore r4-r7
-	ld	r5, 2(r1)
-	ld	r6, 4(r1)
-	ld	r7, 6(r1)
-	ld	r10, 8(r1)		! restore r10-r12
-	ld	r11, 10(r1)
-	ld	r12, 12(r1)
-	ld	r14, 14(r1)		! restore r14 (callee-saved)
-	ld	r13, 16(r1)		! restore caller's r13 (FP)
-	ld	sp, 20(r1)		! restore caller's SP
-	ldctl	fcw, r3			! stack is consistent again: allow interrupts
-	! Push the return address onto the (now correct) stack and return.
-	! This writes 2 bytes below the restored SP -- safe dead zone.
-	ld	r2, 18(r1)		! r2 = return address
-	ldk	r0, #1			! return value = 1
-	push	@sp, r2			! push return address
-	ret				! pop return address and jump there
 
 ! =============================================================================
 ! Cross-segment memory access functions.

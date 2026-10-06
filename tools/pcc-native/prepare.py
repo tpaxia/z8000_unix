@@ -8,7 +8,7 @@ for source in src.iterdir():
  if source.suffix=='.c' or source.name in ['manifest','macdefs','mac2defs','mfile1','mfile2','common']:
   shutil.copyfile(source,w/source.name)
 (w/'macdefs').write_text((w/'macdefs').read_text().replace('# define ONEPASS','/* separate passes */'))
-# This is an isolated feasibility prototype, not the installed compiler.
+# Stage the two-pass sources used by the native build and self-hosting trial.
 s=(src/'local.c').read_text().replace('p2tree( p );\n\tp2compile( p );','printf("@%d\\t%s\\n", lineno, ftitle);\n\tprtree(p);')
 (w/'local.c').write_text(s)
 s=(src/'trees.c').read_text().replace('else sprintf( p->in.name, LABFMT, -p->tn.rval );','else sprintf( p->in.name, LABFMT, -p->tn.rval );')

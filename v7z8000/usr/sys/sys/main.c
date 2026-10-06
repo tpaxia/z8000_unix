@@ -36,7 +36,7 @@ main()
 	proc[0].p_stat = SRUN;
 	proc[0].p_flag = SLOAD|SSYS;
 	proc[0].p_nice = NZERO;
-	proc[0].p_addr = 62;		/* identity-mapped u-area: seg1 page 30 = frame 62 */
+	mmuinit();		/* establish process 0 machine mapping */
 	u.u_procp = &proc[0];
 	u.u_cmask = CMASK;
 	u.u_uid = 0;
@@ -46,14 +46,8 @@ main()
 	u.u_error = 0;
 	u.u_rdir = NULL;
 
-	/*
-	 * Initialize devices and
-	 * set up 'known' i-nodes.
-	 * rootdev = major 1, minor 0 (IDE hard drive)
-	 */
-	rootdev = makedev(1, 0);
-	pipedev = rootdev;
-	swapdev = rootdev;
+	/* Root, pipe and swap devices belong to the machine configuration. */
+	devinit();
 
 	printf("boot\n");
 	clkstart();

@@ -5,6 +5,29 @@
 
 char *builtin[] =
 	{
+#ifdef z8000
+	".SUFFIXES : .out .b .c .y .az8",
+	"YACC=yacc",
+	"YFLAGS=",
+	"CC=cc",
+	"AS=az8",
+	"CFLAGS=",
+	"LOADLIBES=",
+	".c.b :",
+	"\t$(CC) $(CFLAGS) -c $<",
+	".az8.b :",
+	"\t$(AS) -o $@ $<",
+	".y.b :",
+	"\t$(YACC) $(YFLAGS) $<",
+	"\t$(CC) $(CFLAGS) -c y.tab.c",
+	"\trm y.tab.c",
+	"\tmv y.tab.b $@",
+	".y.c :",
+	"\t$(YACC) $(YFLAGS) $<",
+	"\tmv y.tab.c $@",
+	".c.out .b.out :",
+	"\t$(CC) $(CFLAGS) $< $(LOADLIBES) -o $@",
+#else
 	".SUFFIXES : .out .o .c .f .e .r .y .yr .ye .l .s",
 	"YACC=yacc",
 	"YACCR=yacc -r",
@@ -92,6 +115,7 @@ char *builtin[] =
 	"\t$(CC) $(CFLAGS) lex.yy.c $(LOADLIBES) -ll -o $@",
 	"\trm lex.yy.c",
 
+#endif
 	0 };
 
 #include "defs"
@@ -322,10 +346,10 @@ if( (mout=fopen(file,"a")) != NULL )
 	a(b)	is file member   b   in archive a
 	a((b))	is entry point  _b  in object archive a
 */
-#include <ar.h>
+#include <arport.h>
 #include <a.out.h>
 
-static struct ar_hdr arhead;
+static struct ar_member arhead;
 FILE *arfd;
 long int arpos, arlen;
 
@@ -403,7 +427,7 @@ fclose( arfd );
 openarch(f)
 register char *f;
 {
-int word;
+char magic[SARMAG];
 #include <sys/stat.h>
 struct stat buf;
 
@@ -413,23 +437,25 @@ arlen = buf.st_size;
 arfd = fopen(f, "r");
 if(arfd == NULL)
 	fatal1("cannot open %s", f);
-fread( (char *) &word, sizeof(word), 1, arfd);
-if(word != ARMAG)
+if(fread(magic, 1, SARMAG, arfd) != SARMAG || strncmp(magic,ARMAG,SARMAG))
 	fatal1("%s is not an archive", f);
-arpos = 0;
-arhead.ar_size = 2 - sizeof(arhead);
+arpos = SARMAG;
 }
 
 
 
 getarch()
 {
-arpos += sizeof(arhead);
-arpos += (arhead.ar_size + 1 ) & ~1L;
+struct ar_disk disk;
 if(arpos >= arlen)
 	return(0);
 fseek(arfd, arpos, 0);
-fread( (char *) &arhead, sizeof(arhead), 1, arfd);
+if(fread((char *)&disk, sizeof disk, 1, arfd) != 1 || !ardecode(&disk,&arhead))
+	fatal("malformed portable archive header");
+arpos += sizeof disk;
+if(arhead.ar_size > arlen-arpos)
+	fatal("truncated portable archive member");
+arpos += (arhead.ar_size + 1) & ~1L;
 return(1);
 }
 
@@ -444,9 +470,8 @@ if( objhead.a_magic != A_MAGIC1 &&
     objhead.a_magic != A_MAGIC3 &&
     objhead.a_magic != A_MAGIC4 )
 		fatal1("%s is not an object module", arhead.ar_name);
-skip = objhead.a_text + objhead.a_data;
-if(! objhead.a_flag )
-	skip *= 2;
+skip = (long)objhead.a_text + objhead.a_data +
+	objhead.a_trsize + objhead.a_drsize;
 fseek(arfd, skip, 1);
 }
 

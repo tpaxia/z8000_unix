@@ -38,6 +38,8 @@ source that genuinely holds a level until serviced.
 | `-t`, `-r`, `-m` | instruction, register and memory traces |
 | `-w <marker> -I <text>` | after initial input, wait for output containing the marker plus 100 ticks, then type a second input (`\n` is decoded) |
 | `-n <ticks> -M <marker>` | measure exactly this many clock pulses after the marker (default `# `); keep running through idle HALTs |
+| `-o <image>` | save the final guest HD contents, including failed runs; the guest must call `sync()` to flush filesystem buffers |
+| `-P <file.tsv>` | observe user stack pointers at instruction-space word reads and successful `brk` calls, grouped by executed program |
 
 The kernel build wraps these as `cmake --build build --target test`,
 `--target test-libc`, `--target test-preempt`, `--target test-signal`,
@@ -78,6 +80,14 @@ cmake -S . -B build
 cmake --build build
 ```
 
-The kernel build does not require this step separately — `v7z8000/usr/sys/CMakeLists.txt` pulls the emulator in with `add_subdirectory(z8000_emu)` and links the `z8000` library into `test_driver`. The submodule does need to be initialised first (`git submodule update --init --recursive`).
+The emulated kernel configuration does not require this step separately:
+`v7z8000/usr/sys/conf/emulated-tests.cmake` pulls in the emulator and links
+the `z8000` library into `test_driver`. The submodule must be initialised first
+(`git submodule update --init --recursive`). The `kernel` target builds guest
+artifacts; test targets also build the host driver. Configure with
+`-DKERNEL_HOST_TESTS=OFF` to omit the host harness entirely. See
+[kernel configuration](../v7z8000/usr/sys/conf/README.md).
 
-Programs run under the emulator exit via `halt`. The return value from `main()` is in R0 at halt time.
+Standalone compiler test programs exit via `halt`, with the return value from
+`main()` in R0. Unix programs exit through the kernel syscall; the kernel may
+HALT while idle, which the integration driver handles according to its test mode.

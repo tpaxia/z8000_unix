@@ -49,11 +49,33 @@ The Portable C Compiler is the historical V7 Unix compiler and was designed to b
 
 Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
 
-An experimental native two-pass toolchain is available under Unix, including
+The native two-pass compiler can rebuild itself under Unix, including its
+optimizer; two successive native generations produce identical objects and
+executables. The toolchain provides
 `cc`, preprocessing, native `-O` assembly optimization, assembly and linking. Build its disk with
 `python3 tools/native-cc/build.py` and run its guest tests with
-`python3 tools/native-cc/test.py`. See [native compiler setup and remaining
-self-hosting work](doc/implementation-steps.md#step-28-native-assembly-optimizer).
+`python3 tools/native-cc/test.py`. See [compiler self-hosting results and
+reproduction](doc/implementation-steps.md#step-29-native-compiler-self-hosting).
+
+The native development environment also rebuilds `make`, `ar`, `yacc`, the
+supporting compiler tools and libc inside Unix. Native `ar`, `make` and `ldz8`
+share the portable ASCII archive format. Archive framing is independent of
+the Z8001 execution mode; current executable support is NONSEG combined or
+split I/D. See [native development environment](doc/implementation-steps.md#step-30-native-development-environment).
+
+### Kernel Configuration
+
+The V7 layout keeps shared services in `usr/sys/sys`, device support in
+`usr/sys/dev`, and headers in `usr/sys/h`. `usr/sys/machine` contains Z8000
+CPU and MMU implementations; `usr/sys/conf` selects the machine, drivers,
+device tables, boot devices and interrupt routing.
+
+The default configuration is `emulated`. Select it explicitly with
+`-DKERNEL_CONFIG=emulated`; use a separate build directory for each machine.
+`-DKERNEL_HOST_TESTS=OFF` builds kernel artifacts without the emulator harness.
+See [kernel configuration and adding a machine](v7z8000/usr/sys/conf/README.md).
+Only the current emulated machine is implemented; the M20 is not yet a kernel
+configuration.
 
 ### Emulator
 
@@ -67,24 +89,30 @@ Prerequisites: z8k-coff binutils (for rom.s/trap.s), PCC-z8000 toolchain (cz8/az
 
 ```sh
 git submodule update --init --recursive                   # PCC-z8000 + z8000_emu
-cd PCC-z8000/z8000 && make                                # build PCC toolchain
-cd tools && make                                          # build user programs + filesystem images
-cd v7z8000/usr/sys && cmake -S . -B build                 # configure kernel build
-cmake --build build                                       # build kernel
-cmake --build build --target test                         # run kernel boot test
+make -C PCC-z8000/z8000/cz8                               # build compiler
+make -C PCC-z8000/z8000/az8                               # build assembler
+make -C PCC-z8000/z8000/test ../ldz8                       # build linker
+make -C tools                                            # build user programs + filesystem images
+cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build          # configure kernel build
+cmake --build v7z8000/usr/sys/build                       # build kernel
+cmake --build v7z8000/usr/sys/build --target test          # run kernel boot test
 ```
 
 The kernel build pulls the emulator in via `add_subdirectory(z8000_emu)`, so the submodule must be initialised before configuring.
 
 The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeline `echo hello | cat` produces correct output, and no panics occurred.
 
+Run these commands from the repository root. The basic boot disk contains a
+small command set. The larger native development disk, including sources and
+makefiles, is built separately using the [Step 29 and Step 30 instructions](doc/implementation-steps.md#step-29-native-compiler-self-hosting).
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `v7z8000/usr/sys/rom.s` | Reset vector + init code (segment 0) |
-| `v7z8000/usr/sys/trap.s` | PSA table + syscall entry/exit stubs |
-| `v7z8000/usr/sys/krt.s` | Kernel runtime: BSS zeroing, entry trampoline, `putchar()`, `inb()`, `outb()`, `idle()`, SPL, save/resume |
+| `v7z8000/usr/sys/machine/emurom.s` | Reset vector + init code (segment 0) |
+| `v7z8000/usr/sys/machine/trap.s` | PSA table + syscall entry/exit stubs |
+| `v7z8000/usr/sys/machine/krt.s` | CPU runtime: entry table, BSS zeroing, I/O, user access, idle, SPL and save |
 | `v7z8000/usr/sys/h/` | V7 kernel headers adapted for Z8000 |
 | `v7z8000/usr/sys/sys/main.c` | Simplified V7 main: process 0, binit, iinit, open /dev/console |
 | `v7z8000/usr/sys/sys/bio.c` | V7 buffer cache |
@@ -95,7 +123,7 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeli
 | `v7z8000/usr/sys/sys/subr.c` | bmap, bcopy, utilities |
 | `v7z8000/usr/sys/sys/fio.c` | File descriptor operations |
 | `v7z8000/usr/sys/sys/prf.c` | printf, panic |
-| `v7z8000/usr/sys/sys/machdep.c` | Machine-dependent stubs (segment/frame allocators, sureg, etc.) |
+| `v7z8000/usr/sys/machine/paged.c` | Paged-MMU allocation, mapping and process-memory copying |
 | `v7z8000/usr/sys/sys/prim.c` | V7 clist character buffering (getc, putc, b_to_q, cinit) |
 | `v7z8000/usr/sys/sys/slp.c` | Scheduler: sleep/wakeup, run queues, setpri, swtch, newproc |
 | `v7z8000/usr/sys/sys/sys1.c` | Process syscalls: fork, exec, exit, wait, setregs |
@@ -103,7 +131,7 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeli
 | `v7z8000/usr/sys/sys/sys3.c` | stat/fstat, dup, mount/umount |
 | `v7z8000/usr/sys/sys/sys4.c` | Misc syscalls: time, uid/gid, unlink, chdir, chmod, kill, alarm, pause |
 | `v7z8000/usr/sys/sys/sysent.c` | Syscall dispatch table (`sysent[]`) |
-| `v7z8000/usr/sys/sys/trap.c` | C trap handlers: syscall dispatch, segmentation trap |
+| `v7z8000/usr/sys/machine/trap.c` | C trap handlers: syscall dispatch, segmentation trap |
 | `v7z8000/usr/sys/sys/sig.c` | Signals: psignal, signal, issig, psig |
 | `v7z8000/usr/sys/sys/pipe.c` | Pipes: pipe syscall, readp/writep, plock/prele |
 | `v7z8000/usr/sys/sys/clock.c` | Clock interrupt handler and `timeout()` callouts |
@@ -112,7 +140,7 @@ The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeli
 | `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
 | `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |
 | `v7z8000/usr/sys/dev/partab.c` | Character type/parity table for TTY |
-| `v7z8000/usr/sys/dev/conf.c` | Device switch tables (bdevsw, cdevsw) |
+| `v7z8000/usr/sys/conf/emulated.c` | Device switch tables (bdevsw, cdevsw) |
 | `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
 | `emu/test_driver.cpp` | Emulated machine: MMU, IDE/ATA, console, RAM disk DMA, interrupt injection |
 | `tools/v7mkfs.c` | V7 filesystem image builder |

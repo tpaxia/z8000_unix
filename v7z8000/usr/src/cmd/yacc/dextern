@@ -29,7 +29,12 @@
 
 # ifdef MEDIUM
 # define ACTSIZE 4000
+# ifdef z8000
+/* PCC's C grammar needs more than 5200 words of state storage. */
+# define MEMSIZE 7000
+# else
 # define MEMSIZE 5200
+# endif
 # define NSTATES 600
 # define NTERMS 127
 # define NPROD 400
