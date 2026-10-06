@@ -8,10 +8,14 @@
  */
 #include <stdio.h>
 #include <ctype.h>
+#include <errno.h>
 
 char	*malloc(), *calloc(), *index(), *rindex(), *strcpy(), *strcat();
 long	atol();
 double	atof();
+char	*getenv();
+extern char **environ;
+extern int errno;
 
 int	passed, failed;
 
@@ -37,7 +41,32 @@ int *a, *b;
 	return (*a - *b);
 }
 
-main()
+/* Re-enter through exec with a known argument and environment layout. */
+startup(empty)
+int empty;
+{
+	int pid, status;
+	char *args[3], *env[3];
+
+	args[0] = "libctest";
+	args[1] = empty ? "empty" : "environment";
+	args[2] = 0;
+	env[0] = "LIBC_STARTUP=present";
+	env[1] = "EMPTY=";
+	env[2] = 0;
+	pid = fork();
+	if (pid < 0)
+		return(0);
+	if (pid == 0) {
+		execve("/bin/libctest", args, empty ? (char **)0 : env);
+		_exit(1);
+	}
+	return(wait(&status) == pid && status == 0);
+}
+
+main(argc, argv, envp)
+int argc;
+char **argv, **envp;
 {
 	char buf[80], word[20], *p, *q;
 	int v[8], i, n;
@@ -45,6 +74,18 @@ main()
 	long l;
 	double d;
 	FILE *f;
+
+	if (argc == 2) {
+		if (argv[2] != 0 || !same(argv[0], "libctest") ||
+		    envp != environ || environ != argv + argc + 1 || errno != 0)
+			return(1);
+		if (same(argv[1], "empty"))
+			return(environ[0] != 0 || getenv("LIBC_STARTUP") != NULL);
+		p = getenv("LIBC_STARTUP");
+		q = getenv("EMPTY");
+		return(!same(argv[1], "environment") || p == NULL || q == NULL ||
+		    !same(p, "present") || !same(q, "") || environ[2] != 0);
+	}
 
 	/* strings */
 	strcpy(buf, "hello");
@@ -135,6 +176,14 @@ main()
 		fclose(f);
 	}
 	check(33, unlink("/tmp/libctest") == 0 && fopen("/tmp/libctest", "r") == NULL);
+
+	/* Startup ABI, shared syscall errno, populated and empty environments. */
+	check(34, argc == 1 && argv[argc] == 0 && envp == environ &&
+	    environ == argv + argc + 1);
+	errno = 0;
+	check(35, close(-1) == -1 && errno == EBADF);
+	check(36, startup(0));
+	check(37, startup(1));
 
 	printf("libc: %d passed, %d failed\n", passed, failed);
 	return (failed != 0);

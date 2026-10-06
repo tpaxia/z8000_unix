@@ -40,8 +40,11 @@ source that genuinely holds a level until serviced.
 | `-n <ticks> -M <marker>` | measure exactly this many clock pulses after the marker (default `# `); keep running through idle HALTs |
 
 The kernel build wraps these as `cmake --build build --target test`,
-`--target test-libc`, and `--target test-preempt`. The last runs CPU-bound
-scheduling/signal checks and a console-wakeup check with delayed input.
+`--target test-libc`, `--target test-preempt`, and `--target test-signal`.
+The preemption target runs CPU-bound scheduling/default-signal checks and a
+console-wakeup check with delayed input. The signal target checks caught
+handlers and context restoration, waiting for its completion marker so idle
+HALTs during pending alarms do not terminate the test early.
 
 The final report includes generated clock ticks, actual NVI dispatches,
 merged pulses (a pulse arriving while NVI is already pending), and the final

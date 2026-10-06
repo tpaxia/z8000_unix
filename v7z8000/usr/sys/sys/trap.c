@@ -108,7 +108,7 @@ int usp;
 	for (;;) {
 		spl0();
 		if (issig())
-			psig();
+			usp = psig(usp);
 		curpri = setpri(u.u_procp);
 		spl7();
 		if (runrun) {

@@ -8,9 +8,8 @@
  * V7 signal handling for Z8000.
  *
  * Simplified from V7: no ptrace, no core dumps.
- * Signal delivery causes process exit (for now);
- * the shell uses signal() to set handlers but the kernel
- * doesn't actually call user signal handlers yet.
+ * Caught signals enter a libc trampoline on the user stack. The trampoline
+ * preserves registers, calls the handler and restores flags/PC in user mode.
  */
 
 /*
@@ -73,13 +72,15 @@ issig()
 
 /*
  * Perform the action specified by the current signal.
- * For now, all caught signals just terminate the process
- * (no user-mode signal handler delivery yet).
+ * Return the user SP, possibly lowered to hold a signal frame. The caller
+ * keeps it on the kernel stack across process switches, not in NSPOFF.
  */
-psig()
+psig(usp)
+unsigned usp;
 {
-	register n;
+	register n, handler;
 	register struct proc *p;
+	unsigned sp;
 
 	p = u.u_procp;
 	n = p->p_sig;
@@ -95,23 +96,38 @@ psig()
 		}
 	}
 	if (n <= 0 || n >= NSIG)
-		return;
-	if (u.u_signal[n] != 0 && (u.u_signal[n] & 1) == 0) {
+		return(usp);
+	if ((handler = u.u_signal[n]) != 0 && (handler & 1) == 0) {
 		/*
-		 * User has a handler set. For now, just reset to default
-		 * and ignore (shell sets handlers but we can't call them
-		 * in user mode yet without a proper signal trampoline).
+		 * Frame: signo, saved FCW, saved R0, saved PC offset.
+		 * libc saves R1-R14 before calling the C handler. Returning needs
+		 * only user FLAGS and PC; privileged FCW bits are never restored
+		 * from user memory. Reserve room for the trampoline's saves/call.
 		 */
-		u.u_signal[n] = 0;
-		return;
+		if ((usp & 1) || usp < 40 ||
+		    usp - 40 < (unsigned)ctob(u.u_dsize)) {
+			n = SIGSEG;
+			goto die;
+		}
+		sp = usp - 8;
+		suword(sp, n);
+		suword(sp + 2, u.u_ar0[14]);
+		suword(sp + 4, u.u_ar0[0]);
+		suword(sp + 6, u.u_ar0[16]);
+		u.u_ar0[16] = handler;
+		u.u_error = 0;
+		if (n != SIGINS && n != SIGTRC)
+			u.u_signal[n] = 0;
+		return(sp);
 	}
 	/* Default action: terminate */
 	if (n != SIGKIL)
 		if (u.u_signal[n] != 0) {
 			/* Ignored */
-			return;
+			return(usp);
 		}
 	/* Kill the process */
+die:
 	u.u_arg[0] = (n << 8);
 	exit(u.u_arg[0]);
 }

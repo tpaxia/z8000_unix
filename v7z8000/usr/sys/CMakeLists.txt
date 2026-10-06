@@ -227,7 +227,7 @@ add_custom_target(libc_image
 
 add_custom_target(test-libc
     COMMAND ./test_driver -c 400000000 -d hd-libc.img -i "libctest\\nexit\\n"
-            -x "libc: 33 passed, 0 failed"
+            -x "libc: 37 passed, 0 failed"
     DEPENDS kernel disk_image libc_image
     WORKING_DIRECTORY "${B}"
     COMMENT "Running C library test under the kernel"
@@ -246,6 +246,16 @@ add_custom_target(preempt_image
     COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root-preempt.img" "${B}/hd-preempt.img"
     WORKING_DIRECTORY "${TOOLS_DIR}"
     COMMENT "Building preemption test disk image"
+)
+
+add_custom_target(test-signal
+    COMMAND ./test_driver -c 400000000 -d hd-preempt.img
+            -i "signaltest\\n" -w "signal: complete" -I "exit\\n"
+            -x "signal: all checks passed"
+    DEPENDS kernel disk_image preempt_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing caught signals and user context restoration"
+    VERBATIM
 )
 
 add_custom_target(test-preempt

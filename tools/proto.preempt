@@ -6,6 +6,7 @@ bin	d--755 0 0
   echo	---755 0 0 echo
   cat	---755 0 0 cat
   preempttest	---755 0 0 preempttest
+  signaltest	---755 0 0 signaltest
   $
 dev	d--755 0 0
   console	c--644 0 0 0 0

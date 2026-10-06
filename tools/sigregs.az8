@@ -1,0 +1,111 @@
+! Verify every general register and all six flags across asynchronous delivery.
+	.text
+	.globl _regtest
+	.globl _clobber
+	.globl _seen
+	.globl _badstk
+_regtest:
+	push @sp,r4
+	push @sp,r5
+	push @sp,r6
+	push @sp,r7
+	push @sp,r10
+	push @sp,r11
+	push @sp,r12
+	push @sp,r13
+	push @sp,r14
+	ldb rl0,#0xac
+	ldctlb flags,rl0
+	ld r0,#0x1000
+	ld r1,#0x1001
+	ld r2,#0x1002
+	ld r3,#0x1003
+	ld r4,#0x1004
+	ld r5,#0x1005
+	ld r6,#0x1006
+	ld r7,#0xffff
+	ld r8,#0x1008
+	ld r9,#0x1009
+	ld r10,#0x100a
+	ld r11,#0x100b
+	ld r12,#0x100c
+	ld r13,#0x100d
+	ld r14,#0x100e
+.Lspin:
+	djnz r7,.Lspin
+	ldctlb rh7,flags
+	cp r7,#0xac00
+	jr ne,.Lbad
+	cp r0,#0x1000
+	jr ne,.Lbad
+	cp r1,#0x1001
+	jr ne,.Lbad
+	cp r2,#0x1002
+	jr ne,.Lbad
+	cp r3,#0x1003
+	jr ne,.Lbad
+	cp r4,#0x1004
+	jr ne,.Lbad
+	cp r5,#0x1005
+	jr ne,.Lbad
+	cp r6,#0x1006
+	jr ne,.Lbad
+	cp r8,#0x1008
+	jr ne,.Lbad
+	cp r9,#0x1009
+	jr ne,.Lbad
+	cp r10,#0x100a
+	jr ne,.Lbad
+	cp r11,#0x100b
+	jr ne,.Lbad
+	cp r12,#0x100c
+	jr ne,.Lbad
+	cp r13,#0x100d
+	jr ne,.Lbad
+	cp r14,#0x100e
+	jr ne,.Lbad
+	clr r0
+	jr .Ldone
+.Lbad:
+	ld r0,#1
+.Ldone:
+	pop r14,@sp
+	pop r13,@sp
+	pop r12,@sp
+	pop r11,@sp
+	pop r10,@sp
+	pop r7,@sp
+	pop r6,@sp
+	pop r5,@sp
+	pop r4,@sp
+	ret
+! Deliberately clobber even callee-saved registers: trampoline saves them all.
+_clobber:
+	ld r0,#1
+	ld _seen,r0
+	ld r0,#0x5000
+	ld r1,#0x5001
+	ld r2,#0x5002
+	ld r3,#0x5003
+	ld r4,#0x5004
+	ld r5,#0x5005
+	ld r6,#0x5006
+	ld r7,#0x5007
+	ld r8,#0x5008
+	ld r9,#0x5009
+	ld r10,#0x500a
+	ld r11,#0x500b
+	ld r12,#0x500c
+	ld r13,#0x500d
+	ld r14,#0x500e
+	cp r0,#0
+	ret
+
+! Signal delivery must reject an SP that cannot hold the frame/trampoline.
+_badstk:
+	ld r1,2(sp)
+	ld r2,#15
+	ld sp,#8
+	sc #37
+	ld r1,#77
+	sc #1

@@ -4,12 +4,12 @@
 !   @sp = argc
 !   sp+2, sp+4, ... = argv[0], argv[1], ..., NULL, envp[], NULL
 !
-! Calls main(argc, argv), then _exit(retval).
+! Sets environ, calls main(argc, argv, envp), then exit(retval).
 
 	.text
 	.globl	_start
 	.globl	_main
-	.globl	__crtinit
+	.globl	_environ
 	.globl	_edata
 	.globl	_end
 	.globl	__exit
@@ -32,10 +32,15 @@ _start:
 	ld	r1, @sp		! r1 = argc
 	ld	r2, sp
 	add	r2, #2		! r2 = argv = &sp[1]
-	sub	sp, #4		! allocate space for 2 args
+	ld	r3, r1
+	add	r3, r3		! argc * sizeof(char *)
+	add	r3, r2
+	add	r3, #2		! r3 = &argv[argc+1] = envp
+	ld	_environ, r3
+	sub	sp, #6		! allocate space for 3 args
+	ld	4(sp), r3	! arg 3: envp
 	ld	2(sp), r2	! arg 2: argv
 	ld	0(sp), r1	! arg 1: argc
-	call	__crtinit	! set environ = &argv[argc+1]
 	call	_main
 	! main() returned: exit(retval), which flushes stdio first
 	ld	0(sp), r0	! arg 1: return value
@@ -48,9 +53,6 @@ __exit:
 	sc	#1
 	halt			! should not return
 
-! --- BSS: global variables always needed ---
+! --- Startup owns environ; cerror owns errno in syscalls.az8 ---
 	.bss
-	.globl	errno
-	.globl	environ
-errno:	.zerow	1
-environ: .zerow	1
+_environ: .zerow	1

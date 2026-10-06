@@ -39,12 +39,10 @@ CPPFLAGS = -Dz8000 -Dz8002
 # libc - Z8002 user-space C library
 # =============================================================================
 LIBC_ASM_OBJS = $(LIBC_DIR)/syscalls.b $(LIBC_DIR)/setjmp.b
-# errno.b holds only uninitialized data (errno, environ). The linker loads an
-# archive member only if it defines something, and such data does not count,
-# so it must come after every member that refers to those names.
+# crt0 owns environ; syscalls.b owns errno alongside cerror.
 # There is no end.b: C's "end" is now the linker's own _end, as on the PDP-11.
 # fakcu.b (the dummy _cleanup that exit calls) follows exit.b for the same reason.
-LIBC_C_OBJS = $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/crtinit.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/fakcu.b $(LIBC_DIR)/errno.b
+LIBC_C_OBJS = $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/fakcu.b
 
 $(LIBC_DIR)/crt0.b: $(LIBC_DIR)/crt0.az8
 	$(AZ8) -o $@ $<
@@ -55,7 +53,7 @@ $(LIBC_DIR)/%.b: $(LIBC_DIR)/%.az8
 $(LIBC_DIR)/%.az8: $(LIBC_DIR)/%.c
 	$(CPP) $(CPPFLAGS) -I$(USR_INCLUDE) $< | $(CZ8) > $@
 
-libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS)
+libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) Makefile
 	rm -f $@
 	ar cr $@ $(LIBC_ASM_OBJS) $(LIBC_C_OBJS)
 
@@ -84,10 +82,10 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     ttyslot ttyname abort abs atof atoi atol crypt ctime calloc malloc ecvt \
     errlst fakcu fpsup isatty l3 mktemp qsort rand swab tell ctype_ \
     index rindex strcat strncat strcmp strncmp strcpy strncpy strlen \
-    sbrk execl crtinit
+    sbrk execl
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
     $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
-    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b arith.b $(LIBV7_DIR)/errno.b
+    $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b arith.b
 
 $(LIBV7_DIR)/%.az8: $(V7LIBC)/stdio/%.c
 	@mkdir -p $(LIBV7_DIR)
@@ -112,7 +110,7 @@ $(LIBV7_DIR)/float.az8: $(PCC_ROOT)/lib/float.az8
 $(LIBV7_DIR)/%.b: $(LIBV7_DIR)/%.az8
 	$(AZ8) -o $@ $<
 
-libv7.a: $(LIBV7_OBJS)
+libv7.a: $(LIBV7_OBJS) Makefile
 	rm -f $@
 	ar cr $@ $(LIBV7_OBJS)
 
@@ -142,7 +140,20 @@ preempttest.b: preempttest.az8
 preempttest: $(LIBC_DIR)/crt0.b preempttest.b libv7.a
 	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b preempttest.b libv7.a -o $@
 
-root-preempt.img: v7mkfs proto.preempt init sh echo cat preempttest
+signaltest.az8: signaltest.c
+	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< > signaltest.i
+	$(CZ8) < signaltest.i > $@
+
+signaltest.b: signaltest.az8
+	$(AZ8) -o $@ $<
+
+sigregs.b: sigregs.az8
+	$(AZ8) -o $@ $<
+
+signaltest: $(LIBC_DIR)/crt0.b signaltest.b sigregs.b libv7.a
+	$(LDZ8) -x -R 0 $(LIBC_DIR)/crt0.b signaltest.b sigregs.b libv7.a -o $@
+
+root-preempt.img: v7mkfs proto.preempt init sh echo cat preempttest signaltest
 	./v7mkfs root-preempt.img proto.preempt
 
 # =============================================================================
@@ -221,4 +232,5 @@ clean:
 	rm -f libc.a $(LIBC_DIR)/*.b
 	rm -rf $(LIBV7_DIR) libv7.a libctest libctest.b libctest.az8 root-libc.img
 	rm -f preempttest preempttest.b preempttest.az8 preempttest.i root-preempt.img
+	rm -f signaltest signaltest.b signaltest.az8 signaltest.i sigregs.b
 	rm -f $(LIBC_DIR)/errno.az8 $(LIBC_DIR)/sbrk.az8 $(LIBC_DIR)/execl.az8 $(LIBC_DIR)/crtinit.az8 $(LIBC_DIR)/exit.az8 $(LIBC_DIR)/fakcu.az8

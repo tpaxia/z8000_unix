@@ -204,9 +204,9 @@ loss rate** and must not be extrapolated into seconds lost per hour.
 The trace also has 121 device entries and 102 syscalls. The increased cycle
 count includes servicing the clock and restoring mappings between copy chunks.
 
-This change does not implement user signal-handler trampolines; the port's
-existing limited handling of caught signals is unchanged. The signal tests
-use default termination actions.
+The preemption tests above use default signal termination actions. Caught
+signal delivery was subsequently implemented and tested separately in
+`test-signal`; see [the signal ABI](kernel-technical-reference.md#caught-signals).
 
 ## Measuring sustained clock delivery
 

@@ -25,10 +25,10 @@ _setjmp:
 	ld	12(r2), r12	! env[6] = r12
 	ld	14(r2), r14	! env[7] = r14 (callee-saved)
 	ld	16(r2), r13	! env[8] = r13 (frame pointer)
-	! Save caller's SP: after setjmp returns, caller's SP = current SP + 4
-	! (pop return address + caller deallocates 1 arg)
+	! Resume immediately after CALL, before the caller removes its argument.
+	! Only the return address has been popped at that point.
 	ld	r0, sp
-	add	r0, #4
+	add	r0, #2
 	ld	18(r2), r0	! env[9] = caller's SP
 	ld	r0, @sp		! r0 = return address
 	ld	20(r2), r0	! env[10] = return address

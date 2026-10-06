@@ -58,6 +58,7 @@
 ! Common error handler
 ! R0 = -1, R1 = errno code
 ! ======================================================================
+	.comm	_errno, 2
 cerror:
 	ld	_errno, r1	! store errno
 	ret			! return with r0 = -1
@@ -441,12 +442,98 @@ _getgid:
 ! Kernel: R0 = old handler (or -1 on error).
 ! ======================================================================
 _signal:
-	ld	r1, 2(sp)	! sig
-	ld	r2, 4(sp)	! func
+	push	@sp, r4
+	push	@sp, r5
+	ld	r1, 6(sp)	! sig
+	ld	r2, 8(sp)	! func
+	cp	r1, #17		! NSIG; reject before indexing the table
+	jr uge,	.Lsigbad
+	cp	r1, #0
+	jr eq,	.Lsigbad
+	ld	r5, r1
+	add	r5, r5
+	lda	r4, .Lsigvec
+	add	r5, r4
+	ld	r4, @r5		! old C handler, kept across the syscall
+	ld	@r5, r2		! publish before kernel may deliver the signal
+	cp	r2, #0
+	jr eq,	.Lsigset
+	bit	r2, #0
+	jr ne,	.Lsigset	! odd dispositions mean ignore, as in V7
+	lda	r2, .Lsigtramp
+.Lsigset:
 	sc	#48
 	cp	r0, #0xFFFF
-	jr eq,	cerror
+	jr eq,	.Lsigerr
+	cp	r0, #0
+	jr eq,	.Lsigdone
+	bit	r0, #0
+	jr ne,	.Lsigdone
+	ld	r0, r4		! translate previous trampoline to C handler
+.Lsigdone:
+	pop	r5, @sp
+	pop	r4, @sp
 	ret
+.Lsigerr:
+	ld	@r5, r4		! failed registration must leave table intact
+	jr	.Lsigfail
+.Lsigbad:
+	ld	r0, #0xFFFF
+	ld	r1, #22		! EINVAL
+.Lsigfail:
+	pop	r5, @sp
+	pop	r4, @sp
+	jp	cerror
+
+! Kernel entry frame: signo, saved FCW, saved R0, saved PC.
+! No privileged signal-return instruction or syscall is needed.
+.Lsigtramp:
+	push	@sp, r1
+	push	@sp, r2
+	push	@sp, r3
+	push	@sp, r4
+	push	@sp, r5
+	push	@sp, r6
+	push	@sp, r7
+	push	@sp, r8
+	push	@sp, r9
+	push	@sp, r10
+	push	@sp, r11
+	push	@sp, r12
+	push	@sp, r13
+	push	@sp, r14
+	ld	r0, 28(sp)	! signo
+	ld	r1, r0
+	add	r1, r1
+	lda	r2, .Lsigvec
+	add	r2, r1
+	ld	r2, @r2
+	push	@sp, r0
+	call	@r2
+	add	sp, #2
+	pop	r14, @sp
+	pop	r13, @sp
+	pop	r12, @sp
+	pop	r11, @sp
+	pop	r10, @sp
+	pop	r9, @sp
+	pop	r8, @sp
+	pop	r7, @sp
+	pop	r6, @sp
+	pop	r5, @sp
+	pop	r4, @sp
+	pop	r3, @sp
+	pop	r2, @sp
+	pop	r1, @sp
+	pop	r0, @sp		! discard signo
+	pop	r0, @sp		! saved FCW
+	ldctlb	flags, rl0	! restore only unprivileged condition flags
+	pop	r0, @sp		! restore original R0 without changing flags
+	ret			! restore PC and original SP
+	.bss
+.Lsigvec:
+	.zerow	17
+	.text
 
 ! ======================================================================
 ! int ioctl(fd, cmd, arg) -- syscall #54

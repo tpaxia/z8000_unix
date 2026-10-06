@@ -254,6 +254,59 @@ cdevsw[1] = the same entry, spare
 cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 ```
 
+## Caught Signals
+
+The libc `signal()` wrapper keeps a 17-entry table of C handler addresses.
+For a caught disposition it registers a shared libc trampoline with syscall
+48; default and odd/ignored dispositions are passed through. It translates
+the previous kernel disposition back to the previous C handler on return,
+and rolls back its table update if registration fails. Fork copies the table
+and kernel dispositions; exec resets caught dispositions and preserves ignores.
+
+At return to user mode, `psig(usp)` constructs this eight-byte user frame and
+redirects the saved PC to the registered trampoline:
+
+| Offset from new user SP | Value |
+|-------------------------|-------|
+| 0 | Signal number |
+| 2 | Interrupted FCW |
+| 4 | Interrupted R0 |
+| 6 | Interrupted PC offset |
+
+The returned SP remains on the process's kernel stack through scheduling;
+`userret()` installs it in NSPOFF only at final return. Delivery rejects an
+odd SP or insufficient space above the data area for the frame and trampoline
+entry, terminating with SIGSEGV rather than wrapping the user stack.
+
+The trampoline saves R1-R14, calls the C handler with the signal number,
+restores the registers, and uses unprivileged `LDCTLB FLAGS,rl0` to restore
+condition flags. It then pops R0 and returns to the interrupted PC, restoring
+the original SP. No privileged FCW bits are loaded from user memory, and no
+signal-return syscall is needed. A handler may instead use `longjmp`.
+
+As in V7, caught dispositions reset before delivery except SIGILL and
+SIGTRAP; SIGKILL cannot be caught or ignored. A caught signal interrupting a
+blocking syscall unwinds through `u_qsav`, and the syscall returns EINTR after
+the handler returns. This implements neither modern signal masks/alternate
+stacks nor ptrace/core dumps, and does not add hardware-exception routing.
+
+`test-signal` covers asynchronous register/flag restoration, handler syscalls,
+an interrupted pipe read, nested delivery, one-shot and persistent dispositions,
+ignore/error cases, longjmp, fork inheritance, exec reset, and invalid stack
+rejection. Its alarm tests use two seconds because V7's next-second rounding
+can make a one-second alarm fire before the blocking call starts.
+
+## User Program Startup
+
+`execve()` builds a user stack containing `argc`, the `argv` pointers and
+their null terminator, then the environment pointers and their null
+terminator. PCC startup in `tools/libc/crt0.az8` clears BSS, sets its
+`_environ` global to `&argv[argc+1]`, and calls `main(argc, argv, envp)`.
+Returning from main calls C `exit()`, which flushes stdio and calls `_exit()`.
+The syscall error handler in `syscalls.az8` owns the common `_errno` symbol;
+there is no separate errno archive member or startup initialization helper
+in the active libraries.
+
 ## PCC Calling Convention (Z8002)
 
 | Aspect | Convention |

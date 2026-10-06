@@ -444,6 +444,59 @@ The busy suite completed 66 iterations. These results apply to the current
 reproduction commands are in
 [interrupt-masking.md](interrupt-masking.md).
 
+## Step 19: User Startup and libc Global Ownership
+
+PCC `crt0.az8` now defines `_environ`, initializes it directly from the exec
+stack, and calls `main(argc, argv, envp)`. Previously a C helper initialized
+the environment, while startup reserved unrelated unprefixed `errno` and
+`environ` symbols. Those obsolete definitions are gone. Returning from main
+still calls `exit()` to flush stdio before the termination syscall.
+
+The shared `cerror` in `syscalls.az8` declares `.comm _errno,2`, as V7's
+error handler does. Both libc archives omit `errno.b` and `crtinit.b`,
+removing the common-only errno member's ordering dependency. The unused
+`errno.c` is removed; `crtinit.c` remains only for the historical, unbuilt
+ACK `crt0.s`. Library targets depend on the Makefile so membership changes
+recreate the archives even when the remaining objects are already current.
+
+Expanded `libctest` from 33 to 37 checks: startup argument/environment
+pointers, syscall `EBADF` through the shared errno, and two fork/exec cases
+with populated and empty environments. The children check the third main
+argument, environment termination, `getenv()`, and initially zero errno.
+
+**Validation:** `test`, `test-libc` (37 passed, 0 failed), and both
+`test-preempt` runs pass. No kernel behavior or toolchain changes were needed.
+
+## Step 20: Caught Signals and User Context Restoration
+
+`psig()` now delivers caught signals at user return using an eight-byte user
+frame. Libc registers a shared trampoline and keeps the application's handler
+addresses in a per-process table. The trampoline preserves R0-R14, restores
+condition flags with unprivileged LDCTLB, and returns to the interrupted PC
+and SP. No new syscall or privileged user-context restore is needed. Default,
+ignored, one-shot, and persistent SIGILL/SIGTRAP dispositions follow V7 rules.
+
+The assembler lacked LDCTLB, so PCC's az8 now recognizes FLAGS and both byte
+register transfer directions, using the Z8000 manual's encodings. A dedicated
+assembler regression exercises both high and low byte registers. All 78
+assembler/compiler regression cases pass.
+
+The handler longjmp test exposed an existing libc bug: setjmp saved an SP
+that already excluded its argument, although the resumed caller removes that
+argument itself. Saving SP just past the return address fixes the two-byte
+stack imbalance and the later nested-call argument corruption it caused.
+
+Added `test-signal`: handler return and old-disposition results, asynchronous
+restoration of every general register and the six condition flags, syscalls
+inside handlers, an interrupted pipe read returning EINTR, nested signals,
+longjmp, fork inheritance, default second delivery, exec disposition reset,
+and rejection of an unusable signal stack. The driver waits for completion
+before sending exit, allowing idle time while the alarm is pending.
+
+**Validation:** signal, boot, 37 libc checks, and both preemption tests pass.
+See [kernel-technical-reference.md](kernel-technical-reference.md#caught-signals)
+for the ABI and remaining limits.
+
 ## Current State
 
 The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
@@ -506,7 +559,6 @@ They are left on. "illegal member use" is exactly what flagged the header and so
 
 ## Planned Steps
 
-- **V7 startup code**: have `crt0` define and set `environ` as V7's does, and take `errno` from a `cerror` with its own `.comm`, which removes the archive-ordering dependency in `tools/libc`
 - **stty/ioctl**: terminal parameter control
 - **More commands**: ls, cp, wc, etc., linked against `libv7.a`
 - **Multi-stage pipelines**: `ls | grep foo | wc`
