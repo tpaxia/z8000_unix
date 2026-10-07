@@ -21,8 +21,9 @@ convergence and sustained userland tests have separate, longer procedures in
 not something to accept automatically after a failure.
 
 Rebuild every driver used by a test after harness changes. The native environment
-uses `tests/build/selfhost/host/test_driver`; rebuilding only the default kernel
-build directory does not update that executable.
+and full-userland runner use `v7z8000/usr/sys/build/test_driver`. The convergence
+runner can use its private `tests/build/selfhost/host/test_driver`; rebuilding
+only the default kernel build directory does not update that executable.
 
 ### Running tests
 

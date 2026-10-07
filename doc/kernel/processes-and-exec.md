@@ -96,9 +96,10 @@ their null terminator, then the environment pointers and their null
 terminator. PCC startup in `tools/libc/crt0.az8` clears BSS, sets its
 `_environ` global to `&argv[argc+1]`, and calls `main(argc, argv, envp)`.
 Returning from main calls C `exit()`, which flushes stdio and calls `_exit()`.
-The syscall error handler in `syscalls.az8` owns the common `_errno` symbol;
-there is no separate errno archive member or startup initialization helper
-in the active libraries.
+`split-syscalls.py` emits one libc archive member per wrapper from
+`syscalls.az8`. Each selected wrapper shares the common `_errno` symbol;
+unused wrappers no longer export symbols into a command's link. There is no
+separate errno archive member or startup initialization helper.
 
 The Z8000 `brk` wrapper and `sbrk` share one exact break value, initialized to
 `end`, matching V7's libc bookkeeping. A successful nonzero `brk` updates it;

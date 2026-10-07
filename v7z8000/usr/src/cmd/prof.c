@@ -106,8 +106,7 @@ char **argv;
 		done();
 	}
 	symoff = (long)xbuf.a_text + xbuf.a_data;
-	if ((xbuf.a_flag&01) == 0)
-		symoff *= 2;
+	symoff += (long)xbuf.a_trsize + xbuf.a_drsize;
 	fseek(nfile, symoff+sizeof(xbuf), 0);
 	if((pfile = fopen("mon.out","r")) == NULL) {
 		fprintf(stderr, "No mon.out\n");

@@ -4,8 +4,8 @@
  */
 
 #define	NBUF	8		/* size of buffer cache */
-#define	NINODE	16		/* number of in core inodes */
-#define	NFILE	16		/* number of in core file structures */
+#define	NINODE	64		/* in-core inodes, including command pipelines */
+#define	NFILE	64		/* open files and pipes */
 #define	NMOUNT	2		/* number of mountable file systems */
 #define	MAXMEM	(64*32)		/* max core per process - first # is Kw */
 #define	MAXUPRC	25		/* max processes per user */

@@ -18,6 +18,8 @@ ORIGINAL = ROOT / 'v7unix/usr/src/cmd'
 SYS = ROOT / 'v7z8000/usr/sys/build'
 NATIVE = ROOT / 'tests/build/native-environment/native'
 COMMANDS = 'cat echo ls pwd mkdir rmdir ln cp mv rm chmod chown chgrp wc grep tail sort uniq tee cmp date sleep sync kill test ed'.split()
+EXTRA_COMMANDS = 'basename comm tr rev split join dd du pr od sum touch nice time yes cal look tsort fgrep'.split()
+COMMANDS += EXTRA_COMMANDS
 SUPPORT = 'ar make yacc'.split()
 
 
@@ -63,20 +65,24 @@ def setup(reuse=False):
     records = []
     if reuse:
         fs = Filesystem(WORK/'hd.img')
-        records = json.loads((WORK/'results.json').read_text())[:len(COMMANDS)]
-        assert [r['name'] for r in records] == COMMANDS, 'complete the command builds first'
+        previous = json.loads((WORK/'results.json').read_text())
+        for name, record in zip(COMMANDS, previous):
+            if record['name'] != name: break
+            records.append(record)
+        assert records, 'no completed command builds to reuse'
         assert fs.read('/lib/libc.a') == (ROOT/'tools/libv7.a').read_bytes(), 'libc changed: use --setup'
         assert fs.read('/lib/crt0.b') == (ROOT/'tools/libc/crt0.b').read_bytes(), 'startup changed: use --setup'
         saved = WORK/'compiled'
         saved.mkdir(exist_ok=True)
-        for name in COMMANDS:
+        for record in records:
+            name = record['name']
             assert fs.read('/usr/src/cmd/'+name+'.c') == (CMD/(name+'.c')).read_bytes(), name
             output = saved/name
             output.write_bytes(fs.read('/usr/src/cmd/'+name))
             extra['usr/src/cmd/'+name] = output
             modes['usr/src/cmd/'+name] = 0o755
     extra['usr/lib/yaccpar'] = PCC/'yacc/yaccpar'
-    for name in ['runner', 'check']:
+    for name in ['runner', 'check', 'normal']:
         compile_c(ROOT/'tools/native-cc'/(name+'.c'), WORK/(name+'.b'))
         run([PCC/'ldz8', '-x', ROOT/'tools/libc/crt0.b', WORK/(name+'.b'),
              ROOT/'tools/libv7.a', '-o', WORK/name])
@@ -181,6 +187,15 @@ sync || exit 1
 echo USERLAND COMMANDS OK || exit 1
 ''', 'tmp/smoke')
     plan('commands', '/tmp', ['/bin/sh /tmp/smoke'])
+    fixtures = {
+        'left': 'apple\nbanana\n', 'right': 'banana\npear\n',
+        'join1': 'a one\nb two\n', 'join2': 'a red\nb blue\n',
+        'edges': 'a b\nb c\n', 'patterns': 'apple\npear\n',
+        'squeeze': 'aaabbcccc\n',
+    }
+    for name, content in fixtures.items(): stage(name, content, 'tmp/'+name)
+    stage('extra.sh', (ROOT/'tools/native-cc/userland-extra.sh').read_text(), 'tmp/extra')
+    plan('extra-commands', '/tmp', ['/bin/sh /tmp/extra'])
     plan('native-project', '/usr/src/demo', ['/bin/make clean', '/bin/make',
         '/usr/src/demo/demo', '/usr/src/demo/parser', '/bin/make', '/bin/cc -O -i syscalls.c -o syscalls',
         '/usr/src/demo/syscalls', '/bin/cc -O syscalls.c -o syscallsn',
@@ -212,6 +227,34 @@ def summarize():
     assert b'USERLAND YACC OK' in (WORK/'native-project.log').read_bytes()
     assert (WORK/'native-project.log').read_bytes().count(b'USERLAND SYSCALLS OK\r\n') == 2
     assert b'USERLAND COMMANDS OK' in (WORK/'commands.log').read_bytes()
+    expected = {
+        'base.out': b'example\n',
+        'comm.out': b'apple\n\t\tbanana\n\tpear\n',
+        'common.out': b'banana\n', 'join.out': b'a one red\nb two blue\n',
+        'upper.out': b'PEAR\nAPPLE\nAPPLE\nBANANA\n',
+        'delete.out': b'per\npple\npple\nbnn\n', 'squeeze.out': b'abc\n',
+        'reverse.out': b'raep\nelppa\nelppa\nananab\n',
+        'partaa': b'pear\napple\n', 'partab': b'apple\nbanana\n',
+        'dd.out': b'pear\napple\napple\nbanana\n', 'swap.out': b'aban',
+        'pr.out': b'pear\napple\napple\nbanana\n',
+        'nice.out': b'nice-ok\n', 'time.out': b'time-ok\n',
+        'yes.out': b'y\ny\ny\n', 'look.out': b'apple\n',
+        'tsort.out': b'a\nb\nc\n', 'fgrep.out': b'pear\napple\napple\n',
+        'invert.out': b'banana\n', 'touched': b'',
+    }
+    for name, content in expected.items():
+        assert fs.read('/tmp/'+name) == content, name
+    assert fs.read('/tmp/input') == expected['dd.out'], 'touch changed contents'
+    assert b'USERLAND EXTRA OK\r\n' in (WORK/'extra-commands.log').read_bytes()
+    assert fs.read('/tmp/od.out').split() == [b'0000000', b'142', b'141', b'156', b'141', b'0000004']
+    checksum = 0
+    for byte in expected['dd.out']:
+        checksum = (((checksum >> 1) | ((checksum & 1) << 15)) + byte) & 65535
+    assert list(map(int, fs.read('/tmp/sum.out').split())) == [checksum, 1]
+    assert fs.read('/tmp/du.out').split() == [b'2', b'dudir']
+    assert fs.read('/tmp/cal.out').split() == ([b'January', b'1970', b'S', b'M', b'Tu', b'W', b'Th', b'F', b'S']
+                                                + [str(day).encode() for day in range(1, 32)])
+    assert all(label in fs.read('/tmp/time.err') for label in (b'real', b'user', b'sys'))
     (WORK/'summary.json').write_text(json.dumps(sizes,indent=2)+'\n')
     print('PASS',len(COMMANDS),'unchanged V7 commands, native make/archive build and syscall checks',flush=True)
 

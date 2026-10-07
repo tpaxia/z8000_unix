@@ -93,6 +93,10 @@ spcl:
 		printf("empty\n");
 		return;
 	}
+	if(in >= 8 && strncmp(buf, "!<arch>\n", 8) == 0){
+		printf("archive\n");
+		goto out;
+	}
 	switch(*(int *)buf) {
 
 	case 0410:

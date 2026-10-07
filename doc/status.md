@@ -1,6 +1,6 @@
 # Current Status
 
-Status as of 2026-10-07, including the essential-userland work in the working tree.
+Status as of 2026-10-07.
 See the [documentation index](README.md) for procedures and subsystem references.
 
 ## Implemented and tested
@@ -19,8 +19,12 @@ Exec arguments use V7 swap-backed staging; swap is required even at boot.
 
 The native two-pass compiler and optimizer have passed two-generation
 convergence. Native make, ar, yacc, compiler support tools and libc have been
-rebuilt inside Unix. The essential-userland image builds and installs 26
+rebuilt inside Unix. The essential-userland image builds and installs 45
 unchanged original V7 commands, and tests a native C/archive/yacc project.
+The full userland inventory cross-builds 160 commands, seven games, 12 libraries
+and 12 terminal tables. Its combined image exercises the larger language,
+formatting, spelling, archive and filesystem workloads. See
+[userland coverage](toolchain/userland.md) for the complete scope and exclusions.
 See [native development](toolchain/native-development.md) for scope and
 [compatibility](development/v7-compatibility.md) for source reuse.
 
@@ -28,8 +32,11 @@ See [native development](toolchain/native-development.md) for scope and
 
 - Startup still uses the small console init; original multiuser init/getty/login
   and their account/startup configuration are not integrated.
-- Most original command sources are preserved, but the full command set has not
-  been built and tested. Z8000 object tools such as nm/strip remain to be ported.
+- PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
+  remain unported. Some original games are distributed without sources.
+  Adb needs its Z8000 machine layer; ps/pstat/dmesg/iostat need memory-device
+  access and kernel-layout review. Device/site-dependent programs are built
+  but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   A complete native kernel/boot/system rebuild has not been established.
 - Only the emulated machine has a kernel configuration. Physical machine ports
@@ -44,8 +51,9 @@ See [native development](toolchain/native-development.md) for scope and
 
 ## Next work
 
-1. Integrate original V7 multiuser startup: init, getty, login, account files and
+1. Complete the remaining machine-dependent userland ports and device/site
+   integration described in the userland inventory.
+2. Integrate original V7 multiuser startup: init, getty, login, account files and
    startup scripts, retaining original shared policy wherever possible.
-2. Expand original command coverage and supply Z8000 object inspection tools.
 3. Establish a native whole-system rebuild, including kernel and boot artifacts.
 4. Bring up physical machines through the documented configuration interfaces.

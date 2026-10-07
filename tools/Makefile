@@ -38,8 +38,14 @@ CPPFLAGS = -Dz8000 -Dz8002
 # =============================================================================
 # libc - Z8002 user-space C library
 # =============================================================================
-LIBC_ASM_OBJS = $(LIBC_DIR)/syscalls.b $(LIBC_DIR)/setjmp.b
-# crt0 owns environ; syscalls.b owns errno alongside cerror.
+LIBV7_DIR = libv7
+SYSCALL_NAMES = $(shell python3 $(LIBC_DIR)/split-syscalls.py --names)
+SYSCALL_OBJS = $(SYSCALL_NAMES:%=$(LIBV7_DIR)/%.b)
+LIBC_ASM_OBJS = $(SYSCALL_OBJS) $(LIBC_DIR)/setjmp.b
+
+$(LIBV7_DIR)/s_%.az8: $(LIBC_DIR)/syscalls.az8 $(LIBC_DIR)/split-syscalls.py
+	python3 $(LIBC_DIR)/split-syscalls.py $(LIBV7_DIR)
+# crt0 owns environ; syscall members share the common errno symbol.
 # There is no end.b: C's "end" is now the linker's own _end, as on the PDP-11.
 # fakcu.b (the dummy _cleanup that exit calls) follows exit.b for the same reason.
 LIBC_C_OBJS = $(LIBC_DIR)/sbrk.b $(LIBC_DIR)/execl.b $(LIBC_DIR)/exit.b $(LIBC_DIR)/fakcu.b
@@ -55,7 +61,7 @@ $(LIBC_DIR)/%.az8: $(LIBC_DIR)/%.c $(CZ8)
 
 libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b Makefile
 	rm -f $@
-	ar cr $@ $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b
+	ar cr $@ $(LIBC_C_OBJS) $(LIBC_ASM_OBJS) libv7/csv.b
 
 # =============================================================================
 # libv7.a - the Seventh Edition C library
@@ -68,12 +74,11 @@ libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b Makefile
 #
 # The linker reads an archive once, front to back, so the order below is
 # V7's own (libc/mklib): callers before the routines they call.
-# Not built: mpx.c and pkon.c (multiplexor), nlist.c.
+# Not built: mpx.c and pkon.c (multiplexor).
 # Also not built: gen/stty.c, which implements stty and gtty through ioctl;
 # the system call stubs provide them directly, as the kernel has both calls.
 # =============================================================================
 V7LIBC    = ../v7z8000/usr/src/libc
-LIBV7_DIR = libv7
 LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     timezone fgetc fputc getchar putchar popen freopen fgets fputs getpw \
     fseek ftell rew rdwr system fopen fdopen scanf doscan fprintf gets getw \
@@ -82,9 +87,9 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     ttyslot ttyname abort abs atof atoi atol crypt ctime calloc malloc ecvt \
     errlst fakcu fpsup isatty l3 mktemp qsort rand swab tell ctype_ \
     index rindex strcat strncat strcmp strncmp strcpy strncpy strlen \
-    sbrk execl execv mon
+    sbrk execl execv mon dup2 nlist
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
-    $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
+    $(LIBC_DIR)/setjmp.b $(SYSCALL_OBJS) \
     $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b $(LIBV7_DIR)/csv.b
 
 $(LIBV7_DIR)/%.az8: $(V7LIBC)/stdio/%.c $(CZ8)

@@ -726,7 +726,7 @@ main( argc, argv ) char *argv[]; {
 		ALSTRUCT = ALINT;
 		/* now, fix some things up for various machines (I wish we had "alignof") */
 
-# ifdef pdp11
+# if defined(pdp11) || defined(z8000)
 		ALLONG = ALDOUBLE = ALFLOAT = ALINT;
 #endif
 # ifdef ibm

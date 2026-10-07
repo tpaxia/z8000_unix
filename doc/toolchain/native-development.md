@@ -20,11 +20,13 @@ full segmented compilation/linking remains unsupported.
 
 ## Installed essential commands
 
-The userland image adds these 26 commands from unchanged original V7 sources:
+The userland image adds these 45 commands from unchanged original V7 sources:
 
 ```text
 cat echo ls pwd mkdir rmdir ln cp mv rm chmod chown chgrp
 wc grep tail sort uniq tee cmp date sleep sync kill test ed
+basename comm tr rev split join dd du pr od sum touch nice time
+yes cal look tsort fgrep
 ```
 
 The installation also rebuilds the ported portable-archive ar. Original mkdir,
@@ -32,9 +34,17 @@ rmdir and mv run set-user-ID root and retain their real-ID permission checks
 for directory link/unlink operations. `/dev/null` supplies the EOF/rathole
 semantics needed by shell background commands.
 
-Command integration includes pipelines and scripted ed. Ed's external encryption
-helper is not installed/tested. Original multiuser startup and the full V7
-command set are not supplied. Object tools such as nm/strip remain future work.
+Command integration checks pipelines, scripted ed, joins and comparisons,
+translation, split/reassembly, byte swapping, octal dumps, checksums, pagination,
+hard-link accounting, command execution and fixed-string matching.
+Original od, touch, look and tsort do not explicitly return success from main;
+their tests check normal termination and output/filesystem effects separately.
+Their exit status remains unspecified, as in their source.
+
+The separate [full userland image](userland.md) builds the remaining portable C
+commands and support libraries, including nm/strip and the encryption programs.
+It also supplies the original formatting and language packages. Multiuser
+startup and several machine-dependent ports remain unfinished.
 
 ## Source preparation and limits
 

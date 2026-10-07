@@ -18,7 +18,7 @@ SYS = ROOT / 'v7z8000/usr/sys/build'
 CMD = ROOT / 'v7z8000/usr/src/cmd'
 
 
-def setup(preserve=False):
+def setup(preserve=False, reset_compiler=False):
     WORK.mkdir(parents=True, exist_ok=True)
     extra = {'lib/libc.a': PASSES / 'libv7.a', 'usr/lib/yaccpar': PCC / 'yacc/yaccpar'}
     modes={}
@@ -38,11 +38,16 @@ def setup(preserve=False):
                     if child and name not in ('.','..'):
                         walk(child, path + '/' + name if path else name)
             elif mode == 0o100000:
+                if reset_compiler and path.startswith(('usr/src/front/','usr/src/back/')) and path.endswith('.b'):
+                    return
                 dest = WORK / 'saved-tree' / path
                 dest.parent.mkdir(parents=True,exist_ok=True)
                 dest.write_bytes(fs.data(number)); extra[path] = dest
                 modes[path] = permissions
         walk(2,'')
+    if reset_compiler:
+        for tool in ['front', 'back', 'oz8']:
+            extra['lib/' + tool] = ROOT / ('tests/build/selfhost/s2-link-' + tool + '.out')
     for name in ['runner', 'check']:
         compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'))
         run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / (name + '.b'),
@@ -91,7 +96,9 @@ def setup(preserve=False):
                       '\tcd ../pcc && /bin/yacc cgram.y', '\t/bin/cp ../pcc/y.tab.c cgram.c']
         path = WORK / (group + '.mk'); path.write_text('\n'.join(rules)+'\n')
         extra['usr/src/' + group + '/makefile'] = path
-        step(group+'-link', directory, ['/bin/make -f makefile ' + output, '/bin/cp ' + output + ' ' + install])
+        commands=['/bin/make -f makefile ' + output]
+        if group not in ('front','back'):commands.append('/bin/cp ' + output + ' ' + install)
+        step(group+'-link', directory, commands)
 
     makegroup('cc', {'ccz8.c': PCC/'ccz8.c'}, '/bin/cc', '-DTWOPASS')
     for name in ['mical.h','inst.h']:
@@ -111,7 +118,9 @@ def setup(preserve=False):
 
     text = (ROOT/'tools/Makefile').read_text()
     names = re.search(r'LIBV7_NAMES = (.*?)\nLIBV7_OBJS',text,re.S)[1].replace('\\\n',' ').split()
-    objects = [n+'.b' for n in names] + ['setjmp.b','syscalls.b','float.b','softfp.b','epu.b','arith.b','csv.b']
+    syscalls = run([sys.executable, ROOT/'tools/libc/split-syscalls.py', '--names']).stdout.decode().split()
+    objects = [n+'.b' for n in names] + ['setjmp.b'] + [n+'.b' for n in syscalls] + ['float.b','softfp.b','epu.b','arith.b','csv.b']
+    libobjects = objects[:]
     rules = ['all: libc.a']
     for name in names:
         options = [ROOT/'v7z8000/usr/src/libc'/part/(name+'.c') for part in ['stdio','gen']]
@@ -119,8 +128,8 @@ def setup(preserve=False):
         source = next(p for p in options if p.exists())
         extra['usr/src/libc/'+name+'.c'] = source
         rules += [name+'.b: '+name+'.c', '\t/bin/cc -O -Dunix=1 -c '+name+'.c']
-    for name in ['setjmp','syscalls','float','softfp','epu','arith','csv']:
-        if name in ('setjmp','syscalls'): source=ROOT/'tools/libc'/(name+'.az8')
+    for name in ['setjmp'] + syscalls + ['float','softfp','epu','arith','csv']:
+        if name == 'setjmp': source=ROOT/'tools/libc'/(name+'.az8')
         elif name=='arith': source=ROOT/'tools/arith.az8'
         elif name=='softfp':
             extra['usr/src/libc/softfp.c']=ROOT/'tools/fpe/glue.c'
@@ -152,13 +161,18 @@ def setup(preserve=False):
             step('front-parser','/usr/src/front',['/bin/cp /usr/src/pcc/y.tab.c cgram.c'])
         makegroup(group,{n+'.c':None if n=='cgram' else PASSES/(n+'.c') for n in names.split()},
                   '/lib/'+group,'-DBUG4')
+    step('install-compiler','/usr/src',
+         ['/bin/cp front/front /lib/front','/bin/cp back/back /lib/back'])
     makegroup('oz8',{'oz8.c':PCC/'oz8.c'},'/lib/oz8')
     step('native-smoke','/tmp',['/bin/cc -O -i /usr/src/hello.c -o hello','/tmp/hello'])
     step('native-libctest','/usr/src/libc',['/bin/rm libctest.b',
         '/bin/cc -O -i libctest.c -o /bin/libctest','/bin/libctest'])
     for tool in ['ar','cp','rm','mv','cmp']:
-        step('final-'+tool,'/usr/src/utils',['/bin/cc -O -i -Dunix=1 '+tool+'.c -o '+tool,
-                                           '/bin/cp '+tool+' /bin/'+tool])
+        install=['/bin/cp '+tool+' /bin/'+tool]
+        if tool=='cp':
+            install=['/bin/cp cp /bin/cp.new','/bin/mv /bin/cp.new /bin/cp']
+        step('final-'+tool,'/usr/src/utils',
+             ['/bin/cc -O -i -Dunix=1 '+tool+'.c -o '+tool]+install)
     for group, objects, tool in [
         ('yacc','y1.b y2.b y3.b y4.b','yacc'),
         ('make','ident.b main.b doname.b misc.b files.b dosys.b y.tab.b','make')]:
@@ -189,6 +203,17 @@ def setup(preserve=False):
         rules.append('\tcd '+group+' && /bin/make all')
     path=WORK/'all.mk';path.write_text('\n'.join(rules)+'\n');extra['usr/src/makefile']=path
     step('make-all','/usr/src',['/bin/make all'])
+    # The bootstrap compiler may predate code-generation changes. Rebuild
+    # libc with the newly built compiler before comparing its objects with
+    # the current cross-built reference, including private symbol names.
+    for i in range(0,len(libobjects),20):
+        batch=' '.join(libobjects[i:i+20])
+        step('final-libc-'+str(i),'/usr/src/libc',
+             ['/bin/rm -f '+batch,'/bin/make '+batch])
+    step('final-libc-archive','/usr/src/libc',
+         ['/bin/rm -f libc.a','/bin/make libc.a','/bin/cp libc.a /lib/libc.a'])
+    step('final-libc-test','/usr/src/libc',
+         ['/bin/cc -O -i libctest.c -o /bin/libctest','/bin/libctest'])
     (WORK / 'steps.json').write_text(json.dumps(steps, indent=2) + '\n')
     image(extra, WORK / 'hd.img', blocks=30000, inodes=2048, modes=modes)
     if not preserve: (WORK / 'results.json').write_text('[]\n')
@@ -230,21 +255,27 @@ def main():
     parser.add_argument('--setup', action='store_true')
     parser.add_argument('--limit', type=int)
     parser.add_argument('--refresh', action='store_true', help='refresh staged sources while retaining native outputs')
+    parser.add_argument('--reset-compiler', action='store_true',
+                        help='with --refresh, restore bootstrap passes and discard their native objects')
     parser.add_argument('--from-step', type=int, help='resume at a zero-based step index')
     parser.add_argument('--summary', action='store_true')
     args = parser.parse_args()
+    if args.reset_compiler and not args.refresh:parser.error('--reset-compiler requires --refresh')
     if args.summary:
         summarize(); return
     if args.setup:
         setup()
     elif args.refresh:
-        setup(True)
+        setup(True, args.reset_compiler)
+        if args.reset_compiler:
+            steps=json.loads((WORK/'steps.json').read_text())
+            args.from_step=next(i for i,s in enumerate(steps) if s['name']=='front-parser')
     records = json.loads((WORK / 'results.json').read_text())
     if args.from_step is not None: records = records[:args.from_step]
     steps = json.loads((WORK / 'steps.json').read_text())[len(records):]
     if args.limit is not None:
         steps = steps[:args.limit]
-    driver = ROOT / 'tests/build/selfhost/host/test_driver'
+    driver = SYS / 'test_driver'
     for step in steps:
         name = step['name']
         print('START', name, flush=True)
@@ -253,9 +284,9 @@ def main():
             result = subprocess.run(list(map(str, [driver, '-c', '100000000000',
                 '-d', WORK / 'hd.img', '-o', WORK / 'next.img', '-P', WORK / (name + '.tsv'),
                 '-i', 'runner %s %s\\n' % (step['plan'], step['directory']),
-                '-w', 'NATIVE CC DONE', '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])),
+                '-w', 'NATIVE CC DONE', '-I', 'exit\\n', '-x', 'NATIVE CC DONE'])),
                 cwd=SYS, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
-        if result.returncode:
+        if result.returncode or b'NATIVE CC PASS\r\n' not in (WORK / (name + '.log')).read_bytes():
             raise SystemExit('FAILED ' + name + ': see ' + str(WORK / (name + '.log')))
         (WORK / 'next.img').replace(WORK / 'hd.img')
         record = {'name': name, 'seconds': round(time.monotonic() - start, 2)}

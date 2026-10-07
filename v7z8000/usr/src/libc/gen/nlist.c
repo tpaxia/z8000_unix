@@ -27,7 +27,7 @@ struct nlist *list;
 		return(-1);
 	}
 	sa = buf.a_text + (long)buf.a_data;
-	if(buf.a_flag != 1) sa *= 2;
+	sa += (long)buf.a_trsize + buf.a_drsize;
 	sa += sizeof buf;
 	lseek(f, sa, 0);
 	n = buf.a_syms;

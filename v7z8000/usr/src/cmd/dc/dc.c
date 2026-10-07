@@ -913,7 +913,7 @@ char *argv[];
 		sptr->next = ++sp;
 		sptr++;
 	}
-	sptr->next=0;
+	(--sptr)->next=0;	/* terminate the last entry, not one past symlst */
 	sfree = &symlst[0];
 	return;
 }

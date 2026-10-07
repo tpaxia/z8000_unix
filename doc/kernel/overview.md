@@ -19,37 +19,17 @@ defines exact selection variables and machine interfaces.
 
 ## Boot Flow (V7 Kernel)
 
-```
-ROM reset → seg0:0x0010 (init)
-  → set PSAP to seg1:0x0000, system stack RR14 = seg1:0xFFF0
-  → set NSP = 0xFFF0
-  → IRET to seg1:0x01F0 (NONSEG+SYS)
+The emulated ROM installs the PSA at segment 0, offset 0x1000, establishes
+system/user stack state and enters the NONSEG system-mode boot entry. Machine
+startup clears kernel BSS and calls `main()`.
 
-seg1:0x01F0 (trap.s boot entry):
-  → call 0x0202
+`main()` initializes process 0 and its MMU mapping, then calls `devinit()` and
+`swapinit()`. The emulated configuration selects disk minor 0 for root/pipes
+and minor 1 for swap. It starts the clock, initializes clists and buffers,
+mounts root, obtains the root directory and opens `/dev/console` as descriptors
+0, 1 and 2.
 
-seg1:0x0202 (krt.s boot_entry):
-  → zero BSS (_edata.._end)
-  → ld sp, #0xFFFE    (kernel stack at top of u-area page)
-  → FCW = 0x5000      (NONSEG+SYS, devices enabled, clock not yet)
-  → calr _main
-
-main() (sys/main.c):
-  → proc[0] setup: p_stat=SRUN, p_flag=SLOAD|SSYS, p_addr=62
-  → u.u_procp = &proc[0], u.u_error = 0
-  → rootdev = makedev(1, 0)   — the IDE hard disk; also pipedev, swapdev
-  → printf("boot\n")
-  → clkstart()      — enable the clock
-  → cinit()         — clist free list
-  → binit()         — init 8-buffer cache, count block devices
-  → iinit()         — open block device, bread superblock, mount root
-  → iget(ROOTINO)   — load root inode
-  → namei("/dev/console") — walk root→dev→console via bread/bmap/iget
-  → open1()         — falloc(), openi(), cdevsw[0].d_open()
-  → dup fd 0 → fd 1, fd 2
-  → printf("Z8000 Unix\n")
-  → newproc()       — fork process 1
-    → child: copyout(icode) → return → krt.s → retu() → user mode
-    → parent: swtch() → resumes child → child runs icode
-  → icode: exec("/etc/init") → init execs /bin/sh
-```
+`newproc()` creates process 1. The child establishes its user mapping, copies
+`icode`, and returns through machine startup into user mode. `icode` executes
+`/etc/init`, which currently starts the console shell. Process 0 enters V7's
+`sched()` swapper; its sleeps dispatch resident processes through `swtch()`.

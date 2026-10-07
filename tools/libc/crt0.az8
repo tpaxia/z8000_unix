@@ -7,7 +7,7 @@
 ! Sets environ, calls main(argc, argv, envp), then exit(retval).
 
 	.text
-	.globl	_start
+	.globl	start
 	.globl	_main
 	.globl	_environ
 	.globl	_edata
@@ -16,7 +16,7 @@
 	.globl	_exit
 
 ! --- Entry point (first instruction in text segment) ---
-_start:
+start:
 	! Zero BSS from _edata to _end
 	lda	r8, _edata
 	lda	r9, _end

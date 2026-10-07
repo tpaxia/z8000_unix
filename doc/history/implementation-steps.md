@@ -1743,3 +1743,103 @@ basic boot test also passes with the null-device node installed.
 The 695-file compiler regression baseline check passes, with all 35 kernel C
 files compiling and assembling. Public-header consistency and the kernel-only
 build pass. Final kernel text/data/BSS: 52,228/2,640/10,074 bytes.
+
+## Step 33: More Original V7 Utilities
+
+The native userland build adds 19 unchanged command sources: basename, comm,
+tr, rev, split, join, dd, du, pr, od, sum, touch, nice, time, yes, cal, look,
+tsort and fgrep. Together with Step 32, the image supplies 45 original commands.
+No compiler, libc, kernel or command-source changes were needed for this batch.
+
+`userland.py --reuse-commands` can now retain a completed prefix of command
+builds after checking source, libc and startup identity. It builds added commands
+natively and reruns installation and integration. A fresh `--setup` builds all
+45 commands; the complete plan has 49 steps.
+
+The added tests check exact output for comparisons, joins, translation and
+squeezing, line reversal, splitting/reassembly, short-block copies and byte
+swapping, byte dumps, checksums, pagination, calendar output, dictionary lookup,
+topological sorting and fixed-string matching. File checks cover touch without
+content changes and du's hard-link accounting. Nice/time execute child commands;
+a bounded yes/dd pipeline checks output and V7's SIGPIPE status behavior.
+
+The original od, touch, look and tsort mains do not explicitly return success.
+The test-only normal helper checks raw wait status to reject signals and failed
+exec while allowing unspecified normal exit values; host assertions separately
+verify output/filesystem effects. Negative probes verify that the helper rejects
+failed exec and a killed child. The command sources and their exit behavior are
+preserved. V7 pr page length and tr's second character set are specified in the
+test invocations. The shell fixture avoids modern shell comment assumptions.
+
+Artifacts and executable/source hashes remain under `tests/build/userland/`.
+See [native rebuild](../development/native-rebuild.md#essential-userland) for commands.
+
+Validation passes all 49 plan steps, including both command suites and the
+native C/archive/yacc project with syscall checks in 0407 and 0411 layouts.
+Installed executables match native build outputs, and all 45 staged command
+sources match the pristine V7 tree. The largest command text remains sort at
+20,088 bytes. Fgrep uses 16,160 text bytes, 640 data bytes and 49,106 BSS bytes;
+its successful test workload does not establish a worst-case stack/heap bound.
+Documentation links, Python syntax and diff whitespace checks pass.
+
+
+## Step 34: Complete Available C Userland
+
+The full inventory accounts for all 158 top-level command source units and
+builds 160 command executables, seven games, 12 support libraries and 12 nroff
+terminal tables. The combined image includes manuals, learn lessons, formatter
+and game data, original shell wrappers and target-generated spelling tables.
+Compilation runs on the host; V7 lex/table generation and runtime checks run
+inside Unix. This extends the separate 45-command native rebuild workload.
+
+PCC fixes preserve original command sources: returned-structure members and
+arguments, static union initialization, unsigned integer typedefs, legacy
+pointer/integer compound bitwise operations, long compound-assignment register
+allocation, and private frame names that collided with tbl's F1/F2 globals.
+The structure-return ABI remains unchanged. New regressions cover these cases.
+
+Object-inspection tools and nlist now understand the Z8000 executable and
+portable archive formats. Lint uses target alignment. An original dc free-list
+initialization wrote one entry beyond its array; terminating the actual last
+entry fixes large-number arithmetic. Libc gains dup2 and mount/umount wrappers,
+with syscall wrappers split into separately selectable archive members to
+avoid command-global collisions. Startup's assembler entry no longer collides
+with learn's C start function.
+
+The original spell pipeline needs more simultaneous open files and in-core
+inodes than the previous 16-entry tables allowed. Both capacities are now 64;
+process capacity stays 16. Kernel text/data/BSS are 52,228/2,640/14,010 bytes.
+The algorithms remain original V7.
+
+The combined-image suite covers text tools, awk, bc/dc, lint, structure,
+formatters, spell, plotting, native compilation and object tools, multiple
+precision, DBM, Fortran runtime operations, fortune, non-root permissions and
+filesystem creation/checking. The F77 compiler backend, PDP-11 assembly
+programs and chess still require ports. Adb and kernel-memory inspection tools
+link but are withheld from installation pending machine adaptation. Binary-only
+games without sources cannot be rebuilt. Original init is /etc/init.v7; console
+init remains active. Device/site-dependent tools are built but not validated
+against physical hardware.
+
+Compiler validation passes 85 strict tests in both normal and compact modes,
+58 external cases and the 695-file regression ratchet. Kernel libc, ABI, signal,
+services, memory, buffered-I/O and preemption suites pass. Portable archive
+interoperability, mutation, linker and make dependency checks pass.
+
+The complete `tools/userland/run.py` entrypoint passes compiler/tool builds,
+native data generation, the full inventory build and combined-image checks.
+Its final inventory reports 160 commands, seven games, 12 libraries and 12
+terminal tables, with the architecture and missing-source exclusions listed
+separately.
+
+The native rebuild activates frontend and backend together, avoiding mixed
+private-frame conventions during bootstrap. Installing cp uses a temporary
+file and rename because V7 rejects overwriting an executing shared-text file.
+The runner now stops on completion and checks the raw success marker, so
+failed guest commands are reported without waiting for the cycle limit.
+
+The native environment completes all 96 steps, including the final libc
+rebuild and runtime test. All 145 libc archive members are byte-identical to
+the current cross-built reference; the native-generated PCC parser also
+matches. Public-header consistency, documentation links and diff whitespace
+checks pass.

@@ -678,3 +678,21 @@ _stime:
 	cp	r0, #0xFFFF
 	jp eq,	cerror
 	ret
+
+! Filesystem mount interfaces.
+	.globl _mount
+_mount:
+	ld r1,2(sp)
+	ld r2,4(sp)
+	ld r3,6(sp)
+	sc #21
+	cp r0,#0xffff
+	jp eq,cerror
+	ret
+	.globl _umount
+_umount:
+	ld r1,2(sp)
+	sc #22
+	cp r0,#0xffff
+	jp eq,cerror
+	ret

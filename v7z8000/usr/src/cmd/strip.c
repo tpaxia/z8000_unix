@@ -54,13 +54,13 @@ char *name;
 		status = 1;
 		goto out;
 	}
-	if(head.a_syms == 0 && (head.a_flag&1) != 0) {
+	if(head.a_syms == 0 && head.a_trsize == 0 && head.a_drsize == 0) {
 		printf("%s already stripped\n", name);
 		goto out;
 	}
 	size = (long)head.a_text + head.a_data;
 	head.a_syms = 0;
-	head.a_flag |= 1;
+	head.a_trsize = head.a_drsize = 0;
 
 	lseek(tf, (long)0, 0);
 	write(tf, (char *)&head, sizeof(head));

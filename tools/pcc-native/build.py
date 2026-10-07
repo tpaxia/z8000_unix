@@ -22,7 +22,7 @@ else:
 names=run(['ar','t',tools/'libv7.a']).stdout.decode().split()
 paths=[]
 for n in names:
- if n in ['setjmp.b','syscalls.b']:p=tools/'libc'/n
+ if n in ['setjmp.b']:p=tools/'libc'/n
  elif n=='arith.b':p=tools/n
  else:p=tools/'libv7'/n
  paths.append(p.with_suffix('.az8'))

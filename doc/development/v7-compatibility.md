@@ -48,8 +48,9 @@ The structure-return investigation documents an inherited ABI limitation and
 ## Userland source preservation and execution coverage
 
 The essential-userland audit covers 158 top-level original command units,
-762 files: none missing and 728 byte-identical. Changes are confined to ar,
-make archive handling, pstat, shell files and yacc configuration. These are
+762 files: none missing and 722 byte-identical. Changes are confined to ar,
+make archive handling, pstat, shell files, yacc configuration, dc's free-list
+termination, lint alignment and nm/prof/strip/file format handling. These are
 source-preservation counts, not counts of working installed commands.
 
 ```sh
@@ -58,7 +59,10 @@ python3 tools/native-cc/userland.py --audit
 
 The inventory is written to `tests/build/userland/audit.json`. The
 [native development reference](../toolchain/native-development.md) lists the
-26 unchanged command sources built and tested by that workload. Libc mknod/stime
+45 unchanged command sources built and tested by that workload. Libc mknod/stime
 wrappers and shared brk/sbrk bookkeeping supply missing port support without
 changing those commands. Native ar/make use portable archives intentionally;
 original V7 binary archives are not the target format.
+The [full userland inventory](../toolchain/userland.md) additionally builds
+160 command executables, seven games, 12 libraries and 12 terminal tables, while recording
+the PDP-11 implementations and machine integrations that remain unfinished.

@@ -7,7 +7,7 @@
 
 
 
-#include	<ar.h>
+#include	<arport.h>
 #include	<a.out.h>
 #include	<stdio.h>
 #include	<ctype.h>
@@ -22,7 +22,7 @@ int	globl_flg;
 int	nosort_flg;
 int	arch_flg;
 int	prep_flg;
-struct	ar_hdr	arp;
+struct	ar_member	arp;
 struct	exec	exp;
 FILE	*fi;
 long	off;
@@ -34,6 +34,7 @@ main(argc, argv)
 char **argv;
 {
 	int narg;
+	char magic[SARMAG];
 	int  compare();
 
 	if (--argc>0 && argv[1][0]=='-' && argv[1][1]!=0) {
@@ -80,9 +81,12 @@ char **argv;
 			fprintf(stderr, "nm: cannot open %s\n", *argv);
 			continue;
 		}
-		off = sizeof(exp.a_magic);
+		off = SARMAG;
+		arch_flg = 0;
 		fread((char *)&exp, 1, sizeof(MAGIC), fi);	/* get magic no. */
-		if (MAGIC == ARMAG)
+		rewind(fi);
+		if (fread(magic, 1, SARMAG, fi) == SARMAG &&
+		    strncmp(magic, ARMAG, SARMAG) == 0)
 			arch_flg++;
 		else if (BADMAG) {
 			fprintf(stderr, "nm: %s-- bad format\n", *argv);
@@ -104,8 +108,7 @@ char **argv;
 			if (BADMAG)		/* archive element not in  */
 				continue;	/* proper format - skip it */
 			o = (long)exp.a_text + exp.a_data;
-			if ((exp.a_flag & 01) == 0)
-				o *= 2;
+			o += (long)exp.a_trsize + exp.a_drsize;
 			fseek(fi, o, 1);
 			n = exp.a_syms / sizeof(struct nlist);
 			if (n == 0) {
@@ -219,11 +222,16 @@ nextel(af)
 FILE *af;
 {
 	register r;
+	struct ar_disk disk;
 
 	fseek(af, off, 0);
-	r = fread((char *)&arp, 1, sizeof(struct ar_hdr), af);  /* read archive header */
-	if (r <= 0)
+	r = fread((char *)&disk, 1, sizeof disk, af);
+	if (r == 0)
 		return(0);
+	if (r != sizeof disk || !ardecode(&disk, &arp)) {
+		fprintf(stderr, "nm: malformed archive header\n");
+		exit(1);
+	}
 	if (arp.ar_size & 1)
 		++arp.ar_size;
 	off = ftell(af) + arp.ar_size;	/* offset to next element */
