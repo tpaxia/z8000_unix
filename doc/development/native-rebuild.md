@@ -34,12 +34,15 @@ python3 tools/native-cc/environment.py --summary
 python3 tools/native-cc/test-archives.py
 ```
 
-This uses the second-generation compiler and performs 96 steps to rebuild make,
+This uses the second-generation compiler and performs 98 steps to rebuild make,
 ar, yacc, compiler support tools, libc and startup, then compiler passes and
 optimizer. Both compiler passes are built before either is activated. The guest `/usr/src/makefile` provides `make all`. Results, exported
 executables and `hd.img` are under `tests/build/native-environment/`.
 The final ten steps rebuild libc with the new native compiler and compare
 all 145 archive members with the current cross-built reference.
+The native compiler checks include large local arrays, structure offsets and
+repeated member names, stack growth, and compilation of the unchanged V7
+`pstat` and `dc` sources. The `dc` build also checks assembler storage capacity.
 
 Running without options resumes. `--limit N` limits further steps; `--refresh`
 updates staged sources while retaining guest outputs; `--from-step N` restarts
@@ -71,7 +74,59 @@ The installed source and command makefile are under `/usr/src/cmd`; the C,
 archive and yacc integration project is under `/usr/src/demo`. See
 [native development](../toolchain/native-development.md) for installed coverage.
 
-## Complete userland
+## Full native userland
+
+The full native rebuild passes all 193 build/install steps and the combined
+runtime suite. Its checked-in makefiles cover
+161 commands (including the Bourne shell), seven games, 12 libraries and
+12 terminal tables. The preceding native environment and essential-userland
+builds supply the seed tools.
+
+```sh
+python3 tools/userland/native.py --setup
+```
+
+The host runner stages sources and data, boots Unix, monitors native make and
+saves the disk between packages. It does not invoke a host compiler, assembler,
+linker, yacc or lex. It excludes the full cross-built userland outputs from the
+seed. Original plot source archives are unpacked during source staging.
+
+The actual build needs no Python inside Unix:
+
+```sh
+cd /usr/src/build
+make all
+make install
+```
+
+Each package has its own makefile. Native yacc and lex generate parsers and
+scanners; awk's procedure-table generator is built and run natively. Libraries
+are assembled with native ar. Installation follows the complete build and uses
+temporary files plus rename to replace executing tools safely.
+Live `mv`, `make` and shell executables retain PID-suffixed backup links:
+V7 forbids removing the last link of an executing text inode. Those links can
+be removed after reboot. Installation sets the required set-user-ID modes on
+mkdir, rmdir and mv.
+V7 `mv` reads from `/dev/null` during installation so its write-access check
+cannot prompt when replacing an executing tool. The unchanged
+awk generator has an unspecified normal exit value; a small native-built
+wrapper rejects signals and failed exec while allowing that exit value.
+
+Results are under `tests/build/userland-native/`: `hd.img`, per-package logs,
+`results.json`, the seed manifest and, on completion, an output summary and
+runtime-test log. Running without options resumes. `--limit N` limits additional
+packages. `--refresh` restages recipes while preserving guest outputs; it does
+not invalidate already compiled objects, so changed compiler flags or ABI
+require an appropriate clean rebuild. `--setup` discards the previous disk.
+After rebuilding and validating the native development environment,
+`--refresh --update-toolchain` installs its exported tools on the retained disk
+before resuming.
+
+Replacing the installed yacc makes parser dependencies newer, so native make
+may regenerate and rebuild those packages during installation. The install
+step has a larger emulator cycle budget than individual package steps.
+
+## Complete cross-built userland
 
 After bootstrap has built the emulated kernel and driver:
 

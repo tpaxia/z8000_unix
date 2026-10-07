@@ -1,16 +1,22 @@
 # V7 Userland
 
 The full inventory accounts for all **158 top-level command source units**.
-It builds **160 command executables, seven games, 12 libraries and 12 nroff terminal
-tables**. The command count includes support programs and tools that still
+The full native rebuild produces **161 command executables, seven games,
+12 libraries and 12 nroff terminal tables** inside Unix, including the Bourne
+shell. The command count includes support programs and tools that still
 need machine integration; it is not a claim that every command has been tested
 in use. The separate essential-userland workload builds 45 unchanged commands
 inside Unix.
 
-Run the [complete build and checks](../development/native-rebuild.md#complete-userland)
-to produce `tests/build/userland-all/hd.img`. `report.json` records each build,
-source list and segment sizes; `inventory.json` accounts for every source unit
-and lists replacements and unported programs.
+Run the [full native rebuild](../development/native-rebuild.md#full-native-userland)
+to produce `tests/build/userland-native/hd.img`. All 193 build/install steps and
+the combined runtime checks pass. `summary.json` records output hashes and
+segment sizes; the guest makefiles list sources and native generation steps.
+
+The [cross-build comparison](../development/native-rebuild.md#complete-cross-built-userland)
+produces `tests/build/userland-all/hd.img`, with 160 commands (excluding the
+separately built shell). Its `report.json` records source lists and sizes;
+`inventory.json` accounts for every source unit, replacement and unported program.
 
 ## Built command families
 

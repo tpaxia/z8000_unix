@@ -44,7 +44,8 @@ compiler runs inside Unix; self-hosting is checked in the next stage.
 ## Native compiler and development environment
 
 Follow [native rebuild](native-rebuild.md) in order: compiler convergence,
-supporting tools/libc, then essential userland. The runners execute compilation
+supporting tools/libc, essential userland, then the full native userland rebuild.
+The runners execute compilation
 inside the emulated Unix system and save the guest disk between steps.
 
 Host tools still prepare sources, two-pass glue, EPU wrapper assembly and disk

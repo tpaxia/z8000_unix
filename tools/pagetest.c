@@ -96,6 +96,11 @@ char **argv;
 	pid = fork();
 	if (!pid) _exit(pushgrow() != 0x1234);
 	check("PUSH backout", pid > 0 && wait(&status) == pid && status == 0);
+	for (i=0; i<6; i++) {
+		pid = fork();
+		if (!pid) _exit(clrgrow(i));
+		check("CLR stack growth", pid > 0 && wait(&status) == pid && status == 0);
+	}
 	pid = fork();
 	if (!pid) { rmwgrow(); _exit(99); }
 	check("unsafe RMW rejected", pid > 0 && wait(&status) == pid && (status & 0177) == SIGSEGV);

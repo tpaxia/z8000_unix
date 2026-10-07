@@ -237,7 +237,8 @@ Different instructions/segments in one unacknowledged report set MIXED.
 
 Z8001 SEGT occurs after instruction completion. It is **not** Z8003/4 ABORT.
 `stackfault()` accepts warnings without replay, or grows and retries a small
-whitelist of nonsegmented instructions: LD/LDB/LDL stores, LDM stores, CALL/CALR,
+whitelist of nonsegmented instructions: LD/LDB/LDL stores, CLR/CLRB memory clears,
+LDM stores, CALL/CALR,
 and register/immediate PUSH through R15. PUSH sources containing R15 are rejected.
 CALL/PUSH restore the implicit SP decrement before replay. Failed reads, fetches,
 read-modify-write operations, mixed reports, protection faults and unsupported

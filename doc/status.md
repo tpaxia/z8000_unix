@@ -21,8 +21,8 @@ The native two-pass compiler and optimizer have passed two-generation
 convergence. Native make, ar, yacc, compiler support tools and libc have been
 rebuilt inside Unix. The essential-userland image builds and installs 45
 unchanged original V7 commands, and tests a native C/archive/yacc project.
-The full userland inventory cross-builds 160 commands, seven games, 12 libraries
-and 12 terminal tables. Its combined image exercises the larger language,
+The full userland inventory now rebuilds inside Unix, including the shell,
+games, libraries and terminal tables. Its combined image passes the language,
 formatting, spelling, archive and filesystem workloads. See
 [userland coverage](toolchain/userland.md) for the complete scope and exclusions.
 See [native development](toolchain/native-development.md) for scope and

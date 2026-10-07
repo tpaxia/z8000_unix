@@ -105,7 +105,7 @@ Start with [bootstrap](doc/development/bootstrap.md) for a clean checkout or
 [build and run](doc/development/build-and-run.md) for incremental work.
 [Testing](doc/development/testing.md) lists regression entry points;
 [native rebuild](doc/development/native-rebuild.md) covers compiler convergence,
-supporting tools and essential userland. See [current status](doc/status.md)
+supporting tools and the complete available C userland. See [current status](doc/status.md)
 for verified scope and remaining work.
 
 ## Files

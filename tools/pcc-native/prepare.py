@@ -20,7 +20,7 @@ szty=local2[local2.index('szty(t) TWORD'):local2.index('\n}',local2.index('szty(
 (w/'frontglue.c').write_text('''#include "mfile1"
 int usedregs;
 '''+names+szty+'''
-p2bbeg(aoff, reg) { printf("[%d\\t%d\\t%d\\t%d\\t\\n", ftnno,aoff,reg,usedregs); }
+p2bbeg(aoff, reg) OFFSZ aoff; { printf("[%d\\t%ld\\t%d\\t%d\\t\\n", ftnno,aoff,reg,usedregs); }
 p2bend() { printf("]%d\\t\\n",retlab); }
 ''')
 (w/'comm2.c').write_text('''#include "mfile2"

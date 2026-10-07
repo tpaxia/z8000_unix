@@ -1843,3 +1843,63 @@ rebuild and runtime test. All 145 libc archive members are byte-identical to
 the current cross-built reference; the native-generated PCC parser also
 matches. Public-header consistency, documentation links and diff whitespace
 checks pass.
+
+## Step 35: Full Native Userland Rebuild
+
+The full native rebuild exposed a PCC host-width dependency at the unchanged
+V7 `pstat` source: the native frontend rejected a 4,736-byte local inode array.
+PCC counted offsets in bits but retained several offsets and size-table entries
+in 16-bit `int`, and calculated its limit from the compiler host's integer
+width. Cross compilation did not expose this limit. Offsets and size entries
+now use `OFFSZ` consistently, including saved scope state and the two-pass
+interface; the limit comes from the target's 64 KiB address space. K&R calls
+explicitly widen or narrow arguments where required by the changed types.
+
+The repaired frontend and backend rebuild inside Unix. A native regression
+checks large local arrays, nested frames and structure members beyond 8 KiB,
+then compiles the original `pstat`. That runtime test also exposed a missing
+CLR/CLRB case in machine-layer stack growth. These instructions only write
+memory and leave registers and flags unchanged, so their memory forms can be
+retried after growth. Six assembly probes cover indirect, indexed and direct
+word/byte forms; memory and fault suites pass, including unsafe-RMW rejection.
+
+Compiler validation passes 86 strict regressions in normal and compact modes
+and the 695-file regression ratchet. No V7 userland source changes were needed
+for these fixes.
+
+The first repaired native development environment passed all 97 steps. All 145
+libc archive members match the cross-built reference byte for byte, and the
+native-generated compiler parser matches its checked-in source.
+
+Continuing the full rebuild exposed native assembler heap exhaustion on `dc`.
+Branch-relaxation records now share their section and format description,
+allocate in blocks, and derive adjusted addresses instead of retaining
+redundant copies. Records shrink from 30 to 14 bytes, with one allocation
+header per block instead of per branch. All 606 before/after object comparisons
+are byte-identical, including the failing `dc` input, which now assembles inside
+Unix. Address and span calculations retain their full width.
+
+The assembler rebuild also caught a remaining 16-bit pointer into PCC's widened
+parameter table. Fixing it restores repeated member names across distinct
+structures. The native offset regression now exercises that case, and a new
+native assembler regression builds the unchanged `dc` source. The final
+frontend has 62,300 bytes of text, 13,820 bytes of data and 25,332 bytes of BSS;
+both native compiler passes match their reference executables byte for byte.
+The expanded native environment passes all 98 steps; the parser and all 145
+libc members still match the reference after rebuilding with the revised
+assembler.
+
+The full native userland run completes all 193 build/install steps: 161 commands
+(including the Bourne shell), seven games, 12 libraries and 12 terminal tables.
+Every installed output matches its native build artifact, and the combined
+runtime suite passes on the resulting image. Native make, cc, az8, ldz8, ar,
+yacc, lex and the awk table generator perform the build; the host stages
+sources and filesystem images and monitors the emulator.
+
+Installation preserves backup hard links for executing mv, make and shell
+binaries because V7 refuses to unlink their last names. Redirecting mv's input
+prevents overwrite prompts, and mkdir/rmdir/mv receive their required
+set-user-ID modes. Installing yacc causes native make to regenerate dependent
+parsers; the full install therefore needs a larger emulator cycle budget than
+an individual package. The documented machine-dependent and missing-source
+exclusions remain unchanged.

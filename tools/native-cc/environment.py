@@ -89,7 +89,8 @@ def setup(preserve=False, reset_compiler=False):
             if path is not None: extra['usr/src/' + group + '/' + name] = path
             obj = name.rsplit('.',1)[0]+'.b'
             rules += [obj + ': ' + name + ' ' + headers, '\t$(CC) $(CFLAGS) -c ' + name]
-            step(group+'-'+name, directory, ['/bin/make -f makefile ' + obj])
+            step(group+'-'+name, directory,
+                 ['/bin/rm -f '+obj, '/bin/make -f makefile ' + obj])
         rules += [output + ': ' + ' '.join(objects), '\t$(CC) -i ' + ' '.join(objects) + ' -o ' + output]
         if group=='front':
             rules += ['cgram.c: ../pcc/cgram.y /bin/yacc /usr/lib/yaccpar',
@@ -158,14 +159,20 @@ def setup(preserve=False, reset_compiler=False):
         for header in ['manifest','macdefs','mac2defs','mfile1','mfile2','common']:
             extra['usr/src/'+group+'/'+header]=PASSES/header
         if group=='front':
-            step('front-parser','/usr/src/front',['/bin/cp /usr/src/pcc/y.tab.c cgram.c'])
+            step('front-parser','/usr/src/pcc',
+                 ['/bin/yacc cgram.y','/bin/cp y.tab.c /usr/src/front/cgram.c'])
         makegroup(group,{n+'.c':None if n=='cgram' else PASSES/(n+'.c') for n in names.split()},
                   '/lib/'+group,'-DBUG4')
     step('install-compiler','/usr/src',
          ['/bin/cp front/front /lib/front','/bin/cp back/back /lib/back'])
     makegroup('oz8',{'oz8.c':PCC/'oz8.c'},'/lib/oz8')
     step('native-smoke','/tmp',['/bin/cc -O -i /usr/src/hello.c -o hello','/tmp/hello'])
-    step('native-libctest','/usr/src/libc',['/bin/rm libctest.b',
+    extra['usr/src/largeoff.c']=PCC/'test/regress/large_offsets.c'
+    extra['usr/src/pstat.c']=CMD/'pstat.c'
+    step('native-offsets','/tmp',
+         ['/bin/cc -O -i /usr/src/largeoff.c -o largeoff','/tmp/largeoff',
+          '/bin/cc -O -Dunix=1 -Dz8000 -Dz8002 -c /usr/src/pstat.c'])
+    step('native-libctest','/usr/src/libc',['/bin/rm -f libctest.b',
         '/bin/cc -O -i libctest.c -o /bin/libctest','/bin/libctest'])
     for tool in ['ar','cp','rm','mv','cmp']:
         install=['/bin/cp '+tool+' /bin/'+tool]
@@ -179,8 +186,16 @@ def setup(preserve=False, reset_compiler=False):
         step('final-'+tool,'/usr/src/'+group,['/bin/cc -i '+objects+' -o '+tool,
                                              '/bin/cp '+tool+' /bin/'+tool])
     for group, destination in [('cc','/bin/cc'),('az8','/bin/az8'),('ldz8','/bin/ldz8'),('cpp','/lib/cpp')]:
-        step('final-'+group,'/usr/src/'+group,['/bin/rm -f '+group,'/bin/make',
+        remove=group
+        if group=='az8':remove+=' error.b init.b ins.b ioz8.b ps.b rel.b sdi.b sym.b scan.b'
+        step('final-'+group,'/usr/src/'+group,['/bin/rm -f '+remove,'/bin/make',
                                               '/bin/cp '+group+' '+destination])
+        if group=='az8':
+            extra['usr/src/dc.c']=CMD/'dc/dc.c'
+            extra['usr/src/dc.h']=CMD/'dc/dc.h'
+            step('native-assembler','/usr/src',
+                 ['/bin/cc -O -Dunix=1 -Dz8000 -Dz8002 -S dc.c',
+                  '/bin/az8 -o dc.b dc.az8'])
     step('final-smoke','/tmp',['/bin/cc -O -i /usr/src/hello.c -o hello','/tmp/hello','/bin/libctest'])
     for group,names in [('yacc','y1 y2 y3 y4'),('make','ident main doname misc files dosys y.tab')]:
         objects=[n+'.b' for n in names.split()]

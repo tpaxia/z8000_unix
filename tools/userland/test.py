@@ -15,8 +15,10 @@ WORK=ROOT/'tests/build/userland-all'
 SYS=ROOT/'v7z8000/usr/sys/build'
 
 
-def setup(extra=None, plan=None):
-    report=json.loads((WORK/'report.json').read_text())
+def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_override=None):
+    WORK.mkdir(parents=True,exist_ok=True)
+    report=(json.loads((WORK/'report.json').read_text())
+            if report_override is None else report_override)
     files={};modes={}
     # Native replacements are already supplied by build.image().
     replaced={'cc','ld','init','arcv','ranlib','adb','ps','pstat','dmesg','iostat'}
@@ -42,8 +44,9 @@ def setup(extra=None, plan=None):
         p=WORK/('lib'+name)/('lib'+name+'.a')
         if p.exists():files['lib/lib'+name+'.a']=p
     for name in ('runner','normal','check'):
-        compile_c(ROOT/'tools/native-cc'/(name+'.c'),WORK/(name+'.b'))
-        run([PCC/'ldz8','-x',ROOT/'tools/libc/crt0.b',WORK/(name+'.b'),ROOT/'tools/libv7.a','-o',WORK/name])
+        if prepare_helpers:
+            compile_c(ROOT/'tools/native-cc'/(name+'.c'),WORK/(name+'.b'))
+            run([PCC/'ldz8','-x',ROOT/'tools/libc/crt0.b',WORK/(name+'.b'),ROOT/'tools/libv7.a','-o',WORK/name])
         files['bin/'+name]=WORK/name
     files['usr/lib/yaccpar']=PCC/'yacc/yaccpar'
     files['usr/lib/lex/ncform']=ROOT/'v7z8000/usr/lib/lex/ncform'
@@ -93,6 +96,8 @@ def setup(extra=None, plan=None):
     stage('smoke.sh',(ROOT/'tools/userland/smoke.sh').read_text(),'tmp/smoke')
     stage('plan',plan or '0 - /bin/sh /tmp/smoke\n','tmp/plan')
     files.update(extra or {})
+    if not emit_image:
+        return files, modes
     image(files,WORK/'hd.img',blocks=60000,inodes=8192,modes=modes)
 
 

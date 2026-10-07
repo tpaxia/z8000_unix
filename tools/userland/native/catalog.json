@@ -1,0 +1,1142 @@
+[
+  {
+    "name": "libm",
+    "output": "libm.a",
+    "kind": "library"
+  },
+  {
+    "name": "libmp",
+    "output": "libmp.a",
+    "kind": "library"
+  },
+  {
+    "name": "libln",
+    "output": "libln.a",
+    "kind": "library"
+  },
+  {
+    "name": "libplot",
+    "output": "libplot.a",
+    "kind": "library"
+  },
+  {
+    "name": "libt300",
+    "output": "libt300.a",
+    "kind": "library"
+  },
+  {
+    "name": "libt300s",
+    "output": "libt300s.a",
+    "kind": "library"
+  },
+  {
+    "name": "libt4014",
+    "output": "libt4014.a",
+    "kind": "library"
+  },
+  {
+    "name": "libt450",
+    "output": "libt450.a",
+    "kind": "library"
+  },
+  {
+    "name": "libvt0",
+    "output": "libvt0.a",
+    "kind": "library"
+  },
+  {
+    "name": "libdbm",
+    "output": "libdbm.a",
+    "kind": "library"
+  },
+  {
+    "name": "libF77",
+    "output": "libF77.a",
+    "kind": "library"
+  },
+  {
+    "name": "libI77",
+    "output": "libI77.a",
+    "kind": "library"
+  },
+  {
+    "name": "lex",
+    "output": "lex",
+    "kind": "command",
+    "destination": "bin/lex"
+  },
+  {
+    "name": "ac",
+    "output": "ac",
+    "kind": "command",
+    "destination": "bin/ac"
+  },
+  {
+    "name": "accton",
+    "output": "accton",
+    "kind": "command",
+    "destination": "bin/accton"
+  },
+  {
+    "name": "ar",
+    "output": "ar",
+    "kind": "command",
+    "destination": "bin/ar"
+  },
+  {
+    "name": "at",
+    "output": "at",
+    "kind": "command",
+    "destination": "bin/at"
+  },
+  {
+    "name": "atrun",
+    "output": "atrun",
+    "kind": "command",
+    "destination": "bin/atrun"
+  },
+  {
+    "name": "basename",
+    "output": "basename",
+    "kind": "command",
+    "destination": "bin/basename"
+  },
+  {
+    "name": "cal",
+    "output": "cal",
+    "kind": "command",
+    "destination": "bin/cal"
+  },
+  {
+    "name": "calendar",
+    "output": "calendar",
+    "kind": "command",
+    "destination": "usr/lib/calendar"
+  },
+  {
+    "name": "cat",
+    "output": "cat",
+    "kind": "command",
+    "destination": "bin/cat"
+  },
+  {
+    "name": "cb",
+    "output": "cb",
+    "kind": "command",
+    "destination": "bin/cb"
+  },
+  {
+    "name": "checkeq",
+    "output": "checkeq",
+    "kind": "command",
+    "destination": "bin/checkeq"
+  },
+  {
+    "name": "chgrp",
+    "output": "chgrp",
+    "kind": "command",
+    "destination": "bin/chgrp"
+  },
+  {
+    "name": "chmod",
+    "output": "chmod",
+    "kind": "command",
+    "destination": "bin/chmod"
+  },
+  {
+    "name": "chown",
+    "output": "chown",
+    "kind": "command",
+    "destination": "bin/chown"
+  },
+  {
+    "name": "clri",
+    "output": "clri",
+    "kind": "command",
+    "destination": "bin/clri"
+  },
+  {
+    "name": "cmp",
+    "output": "cmp",
+    "kind": "command",
+    "destination": "bin/cmp"
+  },
+  {
+    "name": "col",
+    "output": "col",
+    "kind": "command",
+    "destination": "bin/col"
+  },
+  {
+    "name": "comm",
+    "output": "comm",
+    "kind": "command",
+    "destination": "bin/comm"
+  },
+  {
+    "name": "cp",
+    "output": "cp",
+    "kind": "command",
+    "destination": "bin/cp"
+  },
+  {
+    "name": "cron",
+    "output": "cron",
+    "kind": "command",
+    "destination": "bin/cron"
+  },
+  {
+    "name": "crypt",
+    "output": "crypt",
+    "kind": "command",
+    "destination": "bin/crypt"
+  },
+  {
+    "name": "cu",
+    "output": "cu",
+    "kind": "command",
+    "destination": "bin/cu"
+  },
+  {
+    "name": "date",
+    "output": "date",
+    "kind": "command",
+    "destination": "bin/date"
+  },
+  {
+    "name": "dcheck",
+    "output": "dcheck",
+    "kind": "command",
+    "destination": "bin/dcheck"
+  },
+  {
+    "name": "dd",
+    "output": "dd",
+    "kind": "command",
+    "destination": "bin/dd"
+  },
+  {
+    "name": "deroff",
+    "output": "deroff",
+    "kind": "command",
+    "destination": "bin/deroff"
+  },
+  {
+    "name": "df",
+    "output": "df",
+    "kind": "command",
+    "destination": "bin/df"
+  },
+  {
+    "name": "diff",
+    "output": "diff",
+    "kind": "command",
+    "destination": "bin/diff"
+  },
+  {
+    "name": "diff3",
+    "output": "diff3",
+    "kind": "command",
+    "destination": "usr/lib/diff3"
+  },
+  {
+    "name": "diffh",
+    "output": "diffh",
+    "kind": "command",
+    "destination": "usr/lib/diffh"
+  },
+  {
+    "name": "dmesg",
+    "output": "dmesg",
+    "kind": "command",
+    "destination": null
+  },
+  {
+    "name": "du",
+    "output": "du",
+    "kind": "command",
+    "destination": "bin/du"
+  },
+  {
+    "name": "dump",
+    "output": "dump",
+    "kind": "command",
+    "destination": "bin/dump"
+  },
+  {
+    "name": "dumpdir",
+    "output": "dumpdir",
+    "kind": "command",
+    "destination": "bin/dumpdir"
+  },
+  {
+    "name": "echo",
+    "output": "echo",
+    "kind": "command",
+    "destination": "bin/echo"
+  },
+  {
+    "name": "ed",
+    "output": "ed",
+    "kind": "command",
+    "destination": "bin/ed"
+  },
+  {
+    "name": "fgrep",
+    "output": "fgrep",
+    "kind": "command",
+    "destination": "bin/fgrep"
+  },
+  {
+    "name": "file",
+    "output": "file",
+    "kind": "command",
+    "destination": "bin/file"
+  },
+  {
+    "name": "find",
+    "output": "find",
+    "kind": "command",
+    "destination": "bin/find"
+  },
+  {
+    "name": "getty",
+    "output": "getty",
+    "kind": "command",
+    "destination": "bin/getty"
+  },
+  {
+    "name": "graph",
+    "output": "graph",
+    "kind": "command",
+    "destination": "bin/graph"
+  },
+  {
+    "name": "grep",
+    "output": "grep",
+    "kind": "command",
+    "destination": "bin/grep"
+  },
+  {
+    "name": "icheck",
+    "output": "icheck",
+    "kind": "command",
+    "destination": "bin/icheck"
+  },
+  {
+    "name": "init",
+    "output": "init",
+    "kind": "command",
+    "destination": "etc/init.v7"
+  },
+  {
+    "name": "iostat",
+    "output": "iostat",
+    "kind": "command",
+    "destination": null
+  },
+  {
+    "name": "join",
+    "output": "join",
+    "kind": "command",
+    "destination": "bin/join"
+  },
+  {
+    "name": "kill",
+    "output": "kill",
+    "kind": "command",
+    "destination": "bin/kill"
+  },
+  {
+    "name": "ln",
+    "output": "ln",
+    "kind": "command",
+    "destination": "bin/ln"
+  },
+  {
+    "name": "login",
+    "output": "login",
+    "kind": "command",
+    "destination": "bin/login"
+  },
+  {
+    "name": "look",
+    "output": "look",
+    "kind": "command",
+    "destination": "bin/look"
+  },
+  {
+    "name": "ls",
+    "output": "ls",
+    "kind": "command",
+    "destination": "bin/ls"
+  },
+  {
+    "name": "mail",
+    "output": "mail",
+    "kind": "command",
+    "destination": "bin/mail"
+  },
+  {
+    "name": "makekey",
+    "output": "makekey",
+    "kind": "command",
+    "destination": "usr/lib/makekey"
+  },
+  {
+    "name": "mesg",
+    "output": "mesg",
+    "kind": "command",
+    "destination": "bin/mesg"
+  },
+  {
+    "name": "mkdir",
+    "output": "mkdir",
+    "kind": "command",
+    "destination": "bin/mkdir"
+  },
+  {
+    "name": "mkfs",
+    "output": "mkfs",
+    "kind": "command",
+    "destination": "bin/mkfs"
+  },
+  {
+    "name": "mknod",
+    "output": "mknod",
+    "kind": "command",
+    "destination": "bin/mknod"
+  },
+  {
+    "name": "mount",
+    "output": "mount",
+    "kind": "command",
+    "destination": "bin/mount"
+  },
+  {
+    "name": "mv",
+    "output": "mv",
+    "kind": "command",
+    "destination": "bin/mv"
+  },
+  {
+    "name": "ncheck",
+    "output": "ncheck",
+    "kind": "command",
+    "destination": "bin/ncheck"
+  },
+  {
+    "name": "newgrp",
+    "output": "newgrp",
+    "kind": "command",
+    "destination": "bin/newgrp"
+  },
+  {
+    "name": "nice",
+    "output": "nice",
+    "kind": "command",
+    "destination": "bin/nice"
+  },
+  {
+    "name": "nm",
+    "output": "nm",
+    "kind": "command",
+    "destination": "bin/nm"
+  },
+  {
+    "name": "od",
+    "output": "od",
+    "kind": "command",
+    "destination": "bin/od"
+  },
+  {
+    "name": "osh",
+    "output": "osh",
+    "kind": "command",
+    "destination": "bin/osh"
+  },
+  {
+    "name": "passwd",
+    "output": "passwd",
+    "kind": "command",
+    "destination": "bin/passwd"
+  },
+  {
+    "name": "pr",
+    "output": "pr",
+    "kind": "command",
+    "destination": "bin/pr"
+  },
+  {
+    "name": "prof",
+    "output": "prof",
+    "kind": "command",
+    "destination": "bin/prof"
+  },
+  {
+    "name": "ps",
+    "output": "ps",
+    "kind": "command",
+    "destination": null
+  },
+  {
+    "name": "pstat",
+    "output": "pstat",
+    "kind": "command",
+    "destination": null
+  },
+  {
+    "name": "ptx",
+    "output": "ptx",
+    "kind": "command",
+    "destination": "bin/ptx"
+  },
+  {
+    "name": "pwd",
+    "output": "pwd",
+    "kind": "command",
+    "destination": "bin/pwd"
+  },
+  {
+    "name": "quot",
+    "output": "quot",
+    "kind": "command",
+    "destination": "bin/quot"
+  },
+  {
+    "name": "random",
+    "output": "random",
+    "kind": "command",
+    "destination": "bin/random"
+  },
+  {
+    "name": "restor",
+    "output": "restor",
+    "kind": "command",
+    "destination": "bin/restor"
+  },
+  {
+    "name": "rev",
+    "output": "rev",
+    "kind": "command",
+    "destination": "bin/rev"
+  },
+  {
+    "name": "rm",
+    "output": "rm",
+    "kind": "command",
+    "destination": "bin/rm"
+  },
+  {
+    "name": "rmdir",
+    "output": "rmdir",
+    "kind": "command",
+    "destination": "bin/rmdir"
+  },
+  {
+    "name": "sa",
+    "output": "sa",
+    "kind": "command",
+    "destination": "bin/sa"
+  },
+  {
+    "name": "size",
+    "output": "size",
+    "kind": "command",
+    "destination": "bin/size"
+  },
+  {
+    "name": "sleep",
+    "output": "sleep",
+    "kind": "command",
+    "destination": "bin/sleep"
+  },
+  {
+    "name": "sort",
+    "output": "sort",
+    "kind": "command",
+    "destination": "bin/sort"
+  },
+  {
+    "name": "sp",
+    "output": "sp",
+    "kind": "command",
+    "destination": "bin/sp"
+  },
+  {
+    "name": "spline",
+    "output": "spline",
+    "kind": "command",
+    "destination": "bin/spline"
+  },
+  {
+    "name": "split",
+    "output": "split",
+    "kind": "command",
+    "destination": "bin/split"
+  },
+  {
+    "name": "strip",
+    "output": "strip",
+    "kind": "command",
+    "destination": "bin/strip"
+  },
+  {
+    "name": "stty",
+    "output": "stty",
+    "kind": "command",
+    "destination": "bin/stty"
+  },
+  {
+    "name": "su",
+    "output": "su",
+    "kind": "command",
+    "destination": "bin/su"
+  },
+  {
+    "name": "sum",
+    "output": "sum",
+    "kind": "command",
+    "destination": "bin/sum"
+  },
+  {
+    "name": "sync",
+    "output": "sync",
+    "kind": "command",
+    "destination": "bin/sync"
+  },
+  {
+    "name": "tabs",
+    "output": "tabs",
+    "kind": "command",
+    "destination": "bin/tabs"
+  },
+  {
+    "name": "tail",
+    "output": "tail",
+    "kind": "command",
+    "destination": "bin/tail"
+  },
+  {
+    "name": "tc",
+    "output": "tc",
+    "kind": "command",
+    "destination": "bin/tc"
+  },
+  {
+    "name": "tee",
+    "output": "tee",
+    "kind": "command",
+    "destination": "bin/tee"
+  },
+  {
+    "name": "test",
+    "output": "test",
+    "kind": "command",
+    "destination": "bin/test"
+  },
+  {
+    "name": "time",
+    "output": "time",
+    "kind": "command",
+    "destination": "bin/time"
+  },
+  {
+    "name": "tk",
+    "output": "tk",
+    "kind": "command",
+    "destination": "bin/tk"
+  },
+  {
+    "name": "touch",
+    "output": "touch",
+    "kind": "command",
+    "destination": "bin/touch"
+  },
+  {
+    "name": "tr",
+    "output": "tr",
+    "kind": "command",
+    "destination": "bin/tr"
+  },
+  {
+    "name": "tsort",
+    "output": "tsort",
+    "kind": "command",
+    "destination": "bin/tsort"
+  },
+  {
+    "name": "tty",
+    "output": "tty",
+    "kind": "command",
+    "destination": "bin/tty"
+  },
+  {
+    "name": "umount",
+    "output": "umount",
+    "kind": "command",
+    "destination": "bin/umount"
+  },
+  {
+    "name": "uniq",
+    "output": "uniq",
+    "kind": "command",
+    "destination": "bin/uniq"
+  },
+  {
+    "name": "units",
+    "output": "units",
+    "kind": "command",
+    "destination": "bin/units"
+  },
+  {
+    "name": "update",
+    "output": "update",
+    "kind": "command",
+    "destination": "bin/update"
+  },
+  {
+    "name": "vpr",
+    "output": "vpr",
+    "kind": "command",
+    "destination": "bin/vpr"
+  },
+  {
+    "name": "wall",
+    "output": "wall",
+    "kind": "command",
+    "destination": "bin/wall"
+  },
+  {
+    "name": "wc",
+    "output": "wc",
+    "kind": "command",
+    "destination": "bin/wc"
+  },
+  {
+    "name": "who",
+    "output": "who",
+    "kind": "command",
+    "destination": "bin/who"
+  },
+  {
+    "name": "write",
+    "output": "write",
+    "kind": "command",
+    "destination": "bin/write"
+  },
+  {
+    "name": "yes",
+    "output": "yes",
+    "kind": "command",
+    "destination": "bin/yes"
+  },
+  {
+    "name": "arithmetic",
+    "output": "arithmetic",
+    "kind": "game",
+    "destination": "usr/games/arithmetic"
+  },
+  {
+    "name": "backgammon",
+    "output": "backgammon",
+    "kind": "game",
+    "destination": "usr/games/backgammon"
+  },
+  {
+    "name": "fish",
+    "output": "fish",
+    "kind": "game",
+    "destination": "usr/games/fish"
+  },
+  {
+    "name": "fortune",
+    "output": "fortune",
+    "kind": "game",
+    "destination": "usr/games/fortune"
+  },
+  {
+    "name": "hangman",
+    "output": "hangman",
+    "kind": "game",
+    "destination": "usr/games/hangman"
+  },
+  {
+    "name": "quiz",
+    "output": "quiz",
+    "kind": "game",
+    "destination": "usr/games/quiz"
+  },
+  {
+    "name": "wump",
+    "output": "wump",
+    "kind": "game",
+    "destination": "usr/games/wump"
+  },
+  {
+    "name": "make",
+    "output": "make",
+    "kind": "command",
+    "destination": "bin/make"
+  },
+  {
+    "name": "yacc",
+    "output": "yacc",
+    "kind": "command",
+    "destination": "bin/yacc"
+  },
+  {
+    "name": "bc",
+    "output": "bc",
+    "kind": "command",
+    "destination": "bin/bc"
+  },
+  {
+    "name": "egrep",
+    "output": "egrep",
+    "kind": "command",
+    "destination": "bin/egrep"
+  },
+  {
+    "name": "expr",
+    "output": "expr",
+    "kind": "command",
+    "destination": "bin/expr"
+  },
+  {
+    "name": "sed",
+    "output": "sed",
+    "kind": "command",
+    "destination": "bin/sed"
+  },
+  {
+    "name": "tar",
+    "output": "tar",
+    "kind": "command",
+    "destination": "bin/tar"
+  },
+  {
+    "name": "dc",
+    "output": "dc",
+    "kind": "command",
+    "destination": "bin/dc"
+  },
+  {
+    "name": "prep",
+    "output": "prep",
+    "kind": "command",
+    "destination": "bin/prep"
+  },
+  {
+    "name": "m4",
+    "output": "m4",
+    "kind": "command",
+    "destination": "bin/m4"
+  },
+  {
+    "name": "ratfor",
+    "output": "ratfor",
+    "kind": "command",
+    "destination": "bin/ratfor"
+  },
+  {
+    "name": "learn",
+    "output": "learn",
+    "kind": "command",
+    "destination": "bin/learn"
+  },
+  {
+    "name": "eqn",
+    "output": "eqn",
+    "kind": "command",
+    "destination": "bin/eqn"
+  },
+  {
+    "name": "neqn",
+    "output": "neqn",
+    "kind": "command",
+    "destination": "bin/neqn"
+  },
+  {
+    "name": "tbl",
+    "output": "tbl",
+    "kind": "command",
+    "destination": "bin/tbl"
+  },
+  {
+    "name": "structure",
+    "output": "structure",
+    "kind": "command",
+    "destination": "usr/lib/struct/structure"
+  },
+  {
+    "name": "beautify",
+    "output": "beautify",
+    "kind": "command",
+    "destination": "usr/lib/struct/beautify"
+  },
+  {
+    "name": "spell",
+    "output": "spell",
+    "kind": "command",
+    "destination": "usr/lib/spell"
+  },
+  {
+    "name": "spellin",
+    "output": "spellin",
+    "kind": "command",
+    "destination": "usr/lib/spellin"
+  },
+  {
+    "name": "spellout",
+    "output": "spellout",
+    "kind": "command",
+    "destination": "usr/lib/spellout"
+  },
+  {
+    "name": "enroll",
+    "output": "enroll",
+    "kind": "command",
+    "destination": "bin/enroll"
+  },
+  {
+    "name": "xget",
+    "output": "xget",
+    "kind": "command",
+    "destination": "bin/xget"
+  },
+  {
+    "name": "xsend",
+    "output": "xsend",
+    "kind": "command",
+    "destination": "bin/xsend"
+  },
+  {
+    "name": "lcount",
+    "output": "lcount",
+    "kind": "command",
+    "destination": "bin/lcount"
+  },
+  {
+    "name": "learntee",
+    "output": "learntee",
+    "kind": "command",
+    "destination": "bin/learntee"
+  },
+  {
+    "name": "vplot",
+    "output": "vplot",
+    "kind": "command",
+    "destination": "bin/vplot"
+  },
+  {
+    "name": "mkey",
+    "output": "mkey",
+    "kind": "command",
+    "destination": "usr/lib/refer/mkey"
+  },
+  {
+    "name": "inv",
+    "output": "inv",
+    "kind": "command",
+    "destination": "usr/lib/refer/inv"
+  },
+  {
+    "name": "hunt",
+    "output": "hunt",
+    "kind": "command",
+    "destination": "usr/lib/refer/hunt"
+  },
+  {
+    "name": "refer",
+    "output": "refer",
+    "kind": "command",
+    "destination": "bin/refer"
+  },
+  {
+    "name": "deliv",
+    "output": "deliv",
+    "kind": "command",
+    "destination": "usr/lib/refer/deliv"
+  },
+  {
+    "name": "awk",
+    "output": "awk",
+    "kind": "command",
+    "destination": "bin/awk"
+  },
+  {
+    "name": "tp",
+    "output": "tp",
+    "kind": "command",
+    "destination": "bin/tp"
+  },
+  {
+    "name": "adb",
+    "output": "adb",
+    "kind": "command",
+    "destination": null
+  },
+  {
+    "name": "lint2",
+    "output": "lint2",
+    "kind": "command",
+    "destination": "usr/lib/lint2"
+  },
+  {
+    "name": "lint1",
+    "output": "lint1",
+    "kind": "command",
+    "destination": "usr/lib/lint1"
+  },
+  {
+    "name": "nroff",
+    "output": "nroff",
+    "kind": "command",
+    "destination": "bin/nroff"
+  },
+  {
+    "name": "troff",
+    "output": "troff",
+    "kind": "command",
+    "destination": "bin/troff"
+  },
+  {
+    "name": "tab300-12",
+    "output": "tab300-12",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab300-12"
+  },
+  {
+    "name": "tab300",
+    "output": "tab300",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab300"
+  },
+  {
+    "name": "tab300s-12",
+    "output": "tab300s-12",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab300s-12"
+  },
+  {
+    "name": "tab300s",
+    "output": "tab300s",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab300s"
+  },
+  {
+    "name": "tab37",
+    "output": "tab37",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab37"
+  },
+  {
+    "name": "tab450-12-8",
+    "output": "tab450-12-8",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab450-12-8"
+  },
+  {
+    "name": "tab450-12",
+    "output": "tab450-12",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab450-12"
+  },
+  {
+    "name": "tab450",
+    "output": "tab450",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab450"
+  },
+  {
+    "name": "tab832",
+    "output": "tab832",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tab832"
+  },
+  {
+    "name": "taba1",
+    "output": "taba1",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/taba1"
+  },
+  {
+    "name": "tablp",
+    "output": "tablp",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tablp"
+  },
+  {
+    "name": "tabtn300",
+    "output": "tabtn300",
+    "kind": "terminal-table",
+    "destination": "usr/lib/term/tabtn300"
+  },
+  {
+    "name": "uucp",
+    "output": "uucp",
+    "kind": "command",
+    "destination": "bin/uucp"
+  },
+  {
+    "name": "uux",
+    "output": "uux",
+    "kind": "command",
+    "destination": "bin/uux"
+  },
+  {
+    "name": "uuxqt",
+    "output": "uuxqt",
+    "kind": "command",
+    "destination": "bin/uuxqt"
+  },
+  {
+    "name": "uucico",
+    "output": "uucico",
+    "kind": "command",
+    "destination": "bin/uucico"
+  },
+  {
+    "name": "uulog",
+    "output": "uulog",
+    "kind": "command",
+    "destination": "bin/uulog"
+  },
+  {
+    "name": "uuclean",
+    "output": "uuclean",
+    "kind": "command",
+    "destination": "bin/uuclean"
+  },
+  {
+    "name": "t300",
+    "output": "t300",
+    "kind": "command",
+    "destination": "bin/t300"
+  },
+  {
+    "name": "t300s",
+    "output": "t300s",
+    "kind": "command",
+    "destination": "bin/t300s"
+  },
+  {
+    "name": "tek",
+    "output": "tek",
+    "kind": "command",
+    "destination": "bin/tek"
+  },
+  {
+    "name": "t450",
+    "output": "t450",
+    "kind": "command",
+    "destination": "bin/t450"
+  },
+  {
+    "name": "sh",
+    "output": "sh",
+    "kind": "command",
+    "destination": "bin/sh"
+  }
+]

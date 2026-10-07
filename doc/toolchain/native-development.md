@@ -41,9 +41,10 @@ Original od, touch, look and tsort do not explicitly return success from main;
 their tests check normal termination and output/filesystem effects separately.
 Their exit status remains unspecified, as in their source.
 
-The separate [full userland image](userland.md) builds the remaining portable C
+The separate [full userland image](userland.md) rebuilds the remaining portable C
 commands and support libraries, including nm/strip and the encryption programs.
-It also supplies the original formatting and language packages. Multiuser
+These builds run inside Unix, including parser and scanner generation.
+The image also supplies the original formatting and language packages. Multiuser
 startup and several machine-dependent ports remain unfinished.
 
 ## Source preparation and limits

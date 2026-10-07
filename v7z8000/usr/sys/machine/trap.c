@@ -174,6 +174,7 @@ unsigned *extra;
 /* Z8001 completes the faulting instruction. Only replay stores with no
  * register/flag changes, or back out an implicit R15 decrement. Encodings:
  * Z8000 CPU Technical Manual, CALL/CALR, LD, LDM and PUSH tables.
+ * CLR/CLRB also only write memory and leave all flags/registers unchanged.
  * MMU first-word/status latches are bus-visible state, not CPU rollback.
  */
 stackfault(regs, f)
@@ -222,7 +223,8 @@ unsigned *regs, *f;
 	} else if (!(hi == 0x2e || hi == 0x2f || hi == 0x6e ||
 	    hi == 0x6f || hi == 0x32 || hi == 0x33 || hi == 0x72 ||
 	    hi == 0x73 || hi == 0x1d || hi == 0x5d || hi == 0x37 ||
-	    hi == 0x77 || (op & 0xbf0f) == 0x0c05 ||
+	    hi == 0x77 || (op & 0xbe0f) == 0x0c08 ||
+	    (op & 0xbf0f) == 0x0c05 ||
 	    (op & 0xbf0f) == 0x0d05 || (op & 0xbf0f) == 0x1c09))
 		return(0);
 	if (back && sp > 65535-back)
