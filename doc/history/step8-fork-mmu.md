@@ -1,6 +1,6 @@
 # Step 8: Fork, Paged MMU, and V7-Style Context Switching
 
-> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; [current status](../status.md) and [kernel overview](../kernel/overview.md) describe the current implementation.
 
 Added process management (fork/exit/wait), a paged MMU emulation, and V7-style context switching using a KDSA6-equivalent I/O port. Process 0 forks process 1, which writes a message via syscall and exits.
 

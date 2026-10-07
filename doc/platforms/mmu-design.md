@@ -1,5 +1,10 @@
 # Z8001-Based Paged MMU Design Notes
 
+Design background and proposals. The original map-set discussion below is not
+the complete implemented hardware contract. Use [the emulated machine](emulated.md)
+and [memory reference](../kernel/memory-and-swapping.md) for implemented mappings,
+protection and swap behavior; use the [porting guide](porting-guide.md) for a new MMU.
+
 ## Background: The Onyx C8002 and Its Custom MMU
 
 The Onyx C8002 (1980) was one of the earliest microprocessor-based Unix systems. Rather than using the segmented Z8001 with Zilog's Z8010 MMU, Onyx chose the non-segmented Z8002 and built their own custom Memory Management Controller (MMC). This was a pragmatic decision — the Z8001 and Z8010 were delayed, and Onyx needed to ship.
@@ -28,7 +33,7 @@ The ONIX operating system was a port of V7 Unix. Only about 60 lines of V7 C cod
 
 ## Proposed Design: Using Z8001 Segmentation to Select MMU Map Sets
 
-> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It supports split instruction/data spaces through an IMAP port selecting an instruction backing bank for each logical segment. PAGEFRAME now includes read-only and system-only bits; stack warning and fault-evidence latches support conservative software backout. The normal-mode cross-segment comparator described below remains a proposed extension; current user execution is NONSEG. Indexed PAGESEL/PAGEFRAME ports program user maps, with page-rounded contiguous text/data/stack extents allocated on demand from V7 coremap; intervening pages remain unmapped. User banks start unmapped. Two page pairs of the kernel's segment are remapped for the u-area and copy window. See `kernel-technical-reference.md`, Paged MMU.
+> **What exists today.** The emulated machine (`emu/test_driver.cpp`) implements the core of this design: the segment number selects one of 128 maps of 32 pages of 2 KB. It supports split instruction/data spaces through an IMAP port selecting an instruction backing bank for each logical segment. PAGEFRAME now includes read-only and system-only bits; stack warning and fault-evidence latches support conservative software backout. The normal-mode cross-segment comparator described below remains a proposed extension; current user execution is NONSEG. Indexed PAGESEL/PAGEFRAME ports program user maps, with page-rounded contiguous text/data/stack extents allocated on demand from V7 coremap; intervening pages remain unmapped. User banks start unmapped. Two page pairs of the kernel's segment are remapped for the u-area and copy window. See the [implemented paged MMU](../kernel/memory-and-swapping.md#paged-mmu).
 
 ### Core Concept
 

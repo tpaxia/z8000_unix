@@ -500,7 +500,7 @@ and rejection of an unusable signal stack. The driver waits for completion
 before sending exit, allowing idle time while the alarm is pending.
 
 **Validation:** signal, boot, 37 libc checks, and both preemption tests pass.
-See [kernel-technical-reference.md](kernel-technical-reference.md#caught-signals)
+See [kernel reference](../kernel/processes-and-exec.md#caught-signals)
 for the ABI and remaining limits.
 
 ## Step 21: Terminal parameter control
@@ -1165,7 +1165,7 @@ operations and the atomic mapping/context restore in `machine/pagert.s`.
 Select the configuration with `-DKERNEL_CONFIG=emulated`. This is the default
 and currently the only implemented machine. `kernel` builds guest artifacts
 without depending on the host emulator; `-DKERNEL_HOST_TESTS=OFF` omits the
-emulator/test targets entirely. See [configuration and machine interfaces](../v7z8000/usr/sys/conf/README.md)
+emulator/test targets entirely. See [configuration and machine interfaces](../../v7z8000/usr/sys/conf/README.md)
 for adding drivers or an MMU implementation and for the remaining fixed ABI
 requirements. This reorganization does not restore omitted V7 memory policy
 or add support for another physical machine.
@@ -1179,42 +1179,12 @@ kernel C sources after the split.
 
 ## Current State
 
-The kernel boots, mounts a root filesystem, runs the Bourne shell, and executes commands including pipelines:
-
-- Ported kernel and user-space C compiled with PCC in Z8002 mode, retaining K&R syntax
-- C symbols carry a leading underscore, as on the PDP-11
-- The Seventh Edition C library (stdio, strings, malloc, floating conversion) built from unmodified sources and tested under the kernel
-- PCC toolchain produces native a.out binaries directly (no conversion scripts)
-- Native two-pass PCC and optimizer rebuild themselves; two successive generations are identical
-- Native make, ar, yacc, cc, cpp, az8, ldz8, libc and startup code build inside Unix (Step 30)
-- Build-time machine selection through `conf/`, with CPU/MMU implementations in `machine/` (Step 31)
-- Portable ASCII archives shared by ar, make and ldz8; full SEG compilation/linking remains unimplemented
-- Floating arithmetic uses the Zilog software EPU service in segment 127
-- Bourne shell running with fork/exec/wait/pipe
-- Shell pipelines work (`echo hello | cat`)
-- Paged MMU with KDSA6-equivalent for per-process u-area remapping
-- V7-style context switching (save/resume/swtch) — remaps each process's u-area and embedded kernel stack without copying them during a switch
-- Process creation via fork (newproc) with u-area copy through MMU window
-- sleep/wakeup, run queue management, priority scheduling
-- User-mode timer preemption and caught signals with register, flags and EPU-state restoration
-- Buffer cache (bio.c) with 8 buffers
-- Interrupt-driven IDE hard drive with VI
-- Root filesystem mounted from HD image via ATA PIO
-- exec() loads combined 0407 and separate instruction/data 0411 binaries from the filesystem
-- Directory traversal (namei) and inode management (iget/iput)
-- File descriptor table (falloc) and device open (openi → cdevsw)
-- V7 TTY subsystem: line discipline (echo, erase, kill), clist buffering, canon
-- Console input via VI interrupt (consrint → ttyinput → sleep/wakeup)
-- Console output through ttwrite → ttyoutput → consstart → putchar → outb
-- read() and write() syscalls for character and block devices
-- Pipes (pipe.c) for inter-process communication
-- Clock interrupts via NVI with timeout() callouts
-- Cross-segment user memory access (copyin/copyout) via SEG mode toggle
-- SPL functions controlling VIE/NVIE: spl5 blocks devices, spl6 blocks devices and clock
-- Build fails on any compiler error; boot test compares the exact console transcript
-- Trap diagnostic handlers (privilege violation, segmentation trap)
+The maintained status is [current status](../status.md).
 
 ## Divergence from Pristine V7
+
+Historical snapshot from the early port. For current differences, see
+[V7 compatibility](../development/v7-compatibility.md).
 
 `v7unix/` holds the pristine TUHS V7 tree, so divergence is measurable at any time by diffing it against `v7z8000/`. As of Step 16, the 47 kernel files with a V7 ancestor total 6,835 lines with 3,438 diff lines (that metric double counts, since a modified line is one delete plus one add). Fifteen files are byte-identical to V7: `alloc.c`, `prim.c`, `partab.c`, `buf.h`, `callo.h`, `conf.h`, `dir.h`, `fblk.h`, `filsys.h`, `ino.h`, `inode.h`, `mount.h`, `stat.h`, `timeb.h`, `tty.h` (twelve as of Step 16; the other three since the header workarounds were removed). Four have no V7 ancestor at all — `cons.c`, `hd.c`, `md.c`, and `conf.c` (V7 generates that one with `mkconf`).
 
@@ -1477,7 +1447,7 @@ Tests include delayed completion with an alternate current process and real
 swap traffic, page crossings and disk-end partial progress. The runtime and
 25-scenario memory suites, kernel-only build, new test-physio target and
 693-file compiler ratchet (33 kernel files) pass. See the
-[raw-I/O contract](kernel-technical-reference.md#raw-physical-io) for alignment,
+[raw-I/O contract](../kernel/devices-and-io.md#raw-physical-io) for alignment,
 cache-coherency and replacement-MMU requirements.
 
 ## Batch 8: V7 core-file creation
@@ -1492,7 +1462,7 @@ from the process-local return state. The existing trap frame is unchanged.
 Two intentional policy corrections reject unequal effective/real group IDs as
 well as user IDs before creating a file, and avoid reporting success for a
 nonregular target. Incomplete writes retain a partial file and clear the core
-wait-status bit. See the [format and tests](kernel-technical-reference.md#core-dumps).
+wait-status bit. See the [format and tests](../kernel/processes-and-exec.md#core-dumps).
 
 Validation: both layouts pass the core-image, permission and disk-full cases;
 low-RAM runs verify swap traffic. Runtime suites, all 25 memory scenarios,
@@ -1562,11 +1532,7 @@ against pristine V7; only internal routine names and serialization wrappers diff
 
 ## Planned Steps
 
-- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), with raw physical I/O, core dumping and ptrace requests 0–8 complete (batches 7–9), plus V7 exec credentials and CPU context separation (batch 10), and public ABI/accounting/profiling/residency locking (batch 11). Hardware single-stepping is optional and deferred. Resource maps, RAM sizing, page-granular estabur/expand, conservative stack backout/growth, shared text and whole-process swapping are implemented. Ordinary cache restoration is complete; panic-specific flushing and bus-map ownership remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
-- **More commands**: extend beyond the boot disk and native development tools, including ls, wc and grep
-- **Multi-stage pipelines**: `ls | grep foo | wc`
-- **Missing kernel features**: remaining unsupported syscalls; single-stepping only if a machine supplies hardware support
-- **Native build coverage**: extend the development environment to remaining V7 commands and kernel builds
+The maintained plan is [next work](../status.md#next-work).
 
 ## Batch 12: V7 process and shared-text policy
 
@@ -1695,3 +1661,85 @@ preemption, TTY, split I/D, EPU, copy/fault, V7 interfaces, buffer cache and ABI
 regressions pass. All ten native compiler cases, the 694-file compiler ratchet,
 public-header check and kernel-only build pass. Final kernel: text 52,116 bytes
 including the 512-byte entry reserve, data 2,624, BSS 10,074.
+
+
+## Step 32: Essential V7 Userland
+
+`tools/native-cc/userland.py` extends the native development environment with 26
+unchanged original V7 commands: cat, echo, ls, pwd, mkdir, rmdir, ln, cp, mv, rm,
+chmod, chown, chgrp, wc, grep, tail, sort, uniq, tee, cmp, date, sleep, sync, kill,
+test and ed. Native make invokes native cc for every command. The image includes
+source and a makefile under `/usr/src/cmd`, installs commands in `/bin`, and keeps
+the compiler, portable-archive ar, make and yacc available for interactive work.
+It uses the existing Step 30 native make/ar/yacc as bootstrap tools and rebuilds
+portable ar from current sources. Its r-command now treats a nonexistent archive
+as having no old members, restoring V7 creation behavior without weakening
+malformed-header checks on existing archives.
+
+The source audit covers every top-level unit in the original command tree:
+158 units, 762 files, none missing and 728 byte-identical. The differences are
+confined to portable ar/make archive handling, pstat, the shell and yacc's memory
+configuration. Source preservation is not a claim that all original commands
+build or run. The machine-readable inventory is `tests/build/userland/audit.json`.
+
+Original mkdir and date required missing libc entry points for mknod and stime;
+the shared kernel already supported these calls. Runtime sort then exposed a
+libc bug: direct brk changed the kernel break but not sbrk's private cached value.
+Subsequent stdio allocation could shrink sort's workspace. Both interfaces now
+share the exact break initialized from the linker end symbol, following original
+V7 sbrk.s. No command source was modified to fix this. Failed brk leaves that
+value intact; sbrk(0) reads it without a syscall. The port's raw brk(0) query is
+retained. mkdir, rmdir and mv install set-user-ID root, with original real-ID
+access checks, for the V7 directory link/unlink operations.
+
+After Steps 29–30, with the native compiler build artifacts available:
+
+```
+python3 tools/native-cc/userland.py --audit
+python3 tools/native-cc/userland.py --setup
+```
+
+The script rebuilds the current kernel and host driver before preparing the disk.
+The native compiler regression harness now does so too, avoiding stale kernel
+images in its separate build directory. Running userland.py without options
+resumes completed steps; `--limit N` limits additional steps. `--setup` starts a
+fresh image. `--reuse-commands` recreates the test image while retaining the 26
+compiled commands only when their sources, libc and startup object match; it
+reruns installation and integration tests and discards other guest changes.
+Artifacts are under `tests/build/userland`: the bootable `hd.img`,
+staged source/makefiles, per-step logs, `results.json`, `audit.json` and the final
+`summary.json` containing installed executable sizes and source hashes.
+
+The integration suite checks file/directory operations, permissions, links,
+listing, sorting/uniquing through a pipeline, tail/wc/grep/tee, scripted ed,
+signals, date and deliberate command failures. A guest project builds C objects
+with make, creates a portable archive with ar, links and runs the result,
+generates and runs a yacc parser, then runs a no-change make. In both 0407 and
+0411 layouts, its syscall probe alternates brk/sbrk, tests a failed break change, checks stime's high/low word order and denial for an ordinary user, and
+checks device-node creation and denial. Ordinary-user mkdir/mv/rmdir and denial
+in a protected parent test the installation modes and original access policy.
+
+The background-command test exposed a missing `/dev/null`. The selected memory
+driver now provides V7's minor-2 EOF/rathole behavior at character 4,2; other
+memory minors return ENXIO. The basic and native disk builders install the node.
+The syscall probe checks EOF, discarded writes and denial of physical-memory
+minor 0. Shell tests account for V7's errexit and wait behavior instead of
+assuming modern shell semantics.
+
+This remains a development disk with the small console init. Original multiuser
+init/getty/login, the remaining command set, and Z8000 object-inspection tools
+such as nm/strip are not supplied by this batch. Ed encryption's external helper
+is also outside the tested editor workflow.
+
+
+Validation completes all 29 userland steps: 26 native command builds, installation
+(including a fresh native ar), command integration, and the native project plus
+both syscall-probe layouts. Portable archive tests pass fresh `ar r` creation,
+malformed headers, host interoperability, odd/large members, mutation, linking
+and make archive dependencies. Libc and ABI suites, all 32 memory scenarios,
+services/policy and signal tests, and all ten native compiler cases pass. The
+basic boot test also passes with the null-device node installed.
+
+The 695-file compiler regression baseline check passes, with all 35 kernel C
+files compiling and assembling. Public-header consistency and the kernel-only
+build pass. Final kernel text/data/BSS: 52,228/2,640/10,074 bytes.

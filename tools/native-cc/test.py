@@ -8,6 +8,8 @@ from build import ROOT, PCC, WORK, BINUTILS, run, compile_c, image, module
 
 
 def test(selected=()):
+    run(['cmake', '--build', ROOT / 'v7z8000/usr/sys/build',
+         '--target', 'kernel', 'test_driver'])
     extra = {}
     for name in ['runner', 'check']:
         compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'))

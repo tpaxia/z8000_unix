@@ -1,6 +1,6 @@
 # Step 3: Trap Infrastructure
 
-> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; [current status](../status.md) and [kernel overview](../kernel/overview.md) describe the current implementation.
 
 Implemented the SYSCALL trap round-trip — the foundation for all system calls.
 
@@ -26,7 +26,7 @@ Implemented the SYSCALL trap round-trip — the foundation for all system calls.
 - PSAPSEG register encoding: `(seg << 8) | 0x8000`.
 - The trap stub is assembled in z8001 mode (for `@RR14`) but must emit z8002 encodings for the NONSEG section. The z8k-coff-as `.unsegm`/`.segm` directives switch encoding mode within the file.
 
-See [kernel-technical-reference.md](kernel-technical-reference.md) for full architecture details (PSA table layout, CPU mode transitions, SYSCALL flow, stack layout, mixed-mode assembly).
+See [trap reference](../kernel/traps-and-interrupts.md) for full architecture details (PSA table layout, CPU mode transitions, SYSCALL flow, stack layout, mixed-mode assembly).
 
 ## Test
 

@@ -567,7 +567,8 @@ getdir()
 	register i;
 	struct ar_disk disk;
 
-	i = read(af, (char *)&disk, sizeof disk);
+	/* rcmd permits a missing archive; there are no old members to read. */
+	i = af < 0 ? 0 : read(af, (char *)&disk, sizeof disk);
 	if(i == 0) {
 		if(tf1nam) {
 			i = tf;

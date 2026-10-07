@@ -1,5 +1,8 @@
 # Kernel configurations
 
+For the overall workflow, see the [porting guide](../../../../doc/platforms/porting-guide.md).
+This file defines the source-selection variables and machine helper contracts.
+
 The kernel uses V7's compile-and-link model. A configuration selects machine
 support and drivers; there is no runtime driver or MMU plugin framework.
 
@@ -93,7 +96,7 @@ and every covered page, rejecting the unmapped gap. A protected MMU must
 additionally check access permissions. CPU support now recovers
 SEGT faults at specific user-access instructions; a board must suppress invalid
 bus operations and report SEGT for that path to operate. See the
-[user-copy contract](../../../../doc/kernel-technical-reference.md#shared-user-copy-policy-and-machine-helper-contract).
+[user-copy contract](../../../../doc/kernel/memory-and-swapping.md#shared-user-copy-policy-and-machine-helper-contract).
 
 ## Adding a machine or MMU
 
@@ -138,7 +141,7 @@ current core-map unit is a 2 KB frame, while process accounting uses 64-byte
 clicks. USIZE is 64 clicks for the 4 KB u-area and system stack. The emulated board reports a dedicated swap unit through port 0xB2;
 `swapinit` populates its block map. The MMU provides `newmem`, `freemem`, `estabur` and `expand` for section
 allocation, rollback and layout changes; the emulated implementation programs
-PAGESEL/PAGEFRAME (0xBC/0xBE). See the [memory contract](../../../../doc/kernel-technical-reference.md#physical-memory-sizing-and-resource-maps).
+PAGESEL/PAGEFRAME (0xBC/0xBE). See the [memory contract](../../../../doc/kernel/memory-and-swapping.md#physical-memory-sizing-and-resource-maps).
 
 Shared text ownership lives in `sys/text.c`. A replacement MMU must provide the
 physical allocation/copy and swap-transfer services it calls, together with
@@ -159,7 +162,7 @@ byte count in b_resid. No current device uses B_MAP bus-map allocation.
 
 The emulated configuration adds raw ATA at character major 3, with sector-aligned
 requests and the same minors as block major 1. The active swap unit rejects raw
-opens. See the [raw-I/O contract](../../../../doc/kernel-technical-reference.md#raw-physical-io).
+opens. See the [raw-I/O contract](../../../../doc/kernel/devices-and-io.md#raw-physical-io).
 
 
 ## Tracing capability
@@ -211,3 +214,10 @@ Sleeping allocation permits concurrent provisional replacements. The paged MMU
 requires CMAPSIZ >= 7*(NPROC-1)+NTEXT+5: four committed plus three provisional
 extents per process, all text entries and map termination/headroom. The bound is
 conservative; it avoids relying on only one allocator being active at a time.
+
+
+The emulated configuration selects `dev/mem.c` at character major 4. Only minor
+2 is supported: V7's EOF/rathole `/dev/null`. Reads leave the residual count
+unchanged; writes set it to zero. Unsupported memory minors fail open with
+ENXIO. Both the basic and native-image builders install character 4,2 with mode
+0666, as required by the original shell's background-command stdin handling.

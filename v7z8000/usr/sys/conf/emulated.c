@@ -16,6 +16,7 @@
  *   Major 1: console alias (spare)
  *   Major 2: TTY (alias to console)
  *   Major 3: Raw IDE disk (same minors as block major 1)
+ *   Major 4: Memory special file (only minor 2, /dev/null)
  */
 
 /* RAM disk driver */
@@ -31,6 +32,9 @@ extern struct buf hdtab;
 extern int consopen(), consclose(), consread(), conswrite(), consioctl();
 extern struct tty cons_tty[];
 
+/* V7 EOF/rathole device; other memory minors are unavailable. */
+extern int mmopen(), mmread(), mmwrite();
+
 /* Stubs */
 extern int nodev(), nulldev();
 
@@ -45,6 +49,7 @@ struct cdevsw cdevsw[] = {
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 1 = spare */
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 2 = tty */
 	{ hdrawopen, hdclose, hdread, hdwrite, nodev, nulldev, 0 }, /* 3 = raw hd */
+	{ mmopen, nulldev, mmread, mmwrite, nodev, nulldev, 0 }, /* 4 = memory */
 	{ 0 }
 };
 

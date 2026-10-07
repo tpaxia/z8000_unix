@@ -62,6 +62,12 @@
 ! Common error handler
 ! R0 = -1, R1 = errno code
 ! ======================================================================
+	.data
+	.even
+	.globl	_curbrk
+_curbrk:
+	.word	_end
+	.text
 	.comm	_errno, 2
 cerror:
 	ld	_errno, r1	! store errno
@@ -240,7 +246,12 @@ _brk:
 	ld	r1, 2(sp)	! addr
 	sc	#17
 	cp	r0, #0xFFFF
-	jr eq,	cerror
+	jp eq,	cerror
+	ld	r2, 2(sp)
+	test	r2
+	jr eq,	.Lbrk0	! preserve the port's raw brk(0) size query
+	ld	_curbrk, r2
+.Lbrk0:
 	ret
 
 ! ======================================================================
@@ -644,4 +655,26 @@ _profil:
 	ld r4,10(sp)
 	sc #44
 	pop r4,@sp
+	ret
+
+! int mknod(path, mode, dev) -- syscall #14
+	.globl	_mknod
+_mknod:
+	ld	r1, 2(sp)
+	ld	r2, 4(sp)
+	ld	r3, 6(sp)
+	sc	#14
+	cp	r0, #0xFFFF
+	jp eq,	cerror
+	ret
+
+! int stime(tloc) -- syscall #25, time value in R1:R2 (high:low)
+	.globl	_stime
+_stime:
+	ld	r3, 2(sp)
+	ld	r1, @r3
+	ld	r2, 2(r3)
+	sc	#25
+	cp	r0, #0xFFFF
+	jp eq,	cerror
 	ret

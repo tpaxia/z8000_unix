@@ -16,7 +16,7 @@ The Zilog Z8000 was a 16-bit microprocessor introduced in 1979. It came in two v
 
 The most relevant precedent is the Onyx C8002, which ported V7 Unix with only 60 lines of C code changes by using the non-segmented Z8002 with a custom paged MMU. This made the architecture PDP-11-like, keeping the port straightforward.
 
-See [doc/PCC-Research.md](doc/PCC-Research.md) for the full compiler research and historical analysis.
+See [compiler research](doc/history/pcc-research.md) for the full compiler research and historical analysis.
 
 ## Design Decisions
 
@@ -24,12 +24,12 @@ See [doc/PCC-Research.md](doc/PCC-Research.md) for the full compiler research an
 
 The kernel and user processes run in NONSEG mode (16-bit pointers). The Z8001 CPU automatically maps non-segmented 16-bit addresses using the current PC's segment, so C code compiled for Z8002 works correctly without modification. This avoids the complexity of 32-bit segmented pointers, where `sizeof(char *) = 4` but `sizeof(int) = 2` — a mismatch that would require extensive changes to V7 code that conflates ints and pointers.
 
-The emulated machine also supports separate instruction/data spaces: `ldz8 -i` produces 0411 executables with up to 64 KB of instruction addresses and 64 KB for data, BSS, heap, and stack. Pointers remain 16-bit. Existing 0407 combined-space programs continue to work. See [the kernel reference](doc/kernel-technical-reference.md#separate-instruction-and-data-spaces).
+The emulated machine also supports separate instruction/data spaces: `ldz8 -i` produces 0411 executables with up to 64 KB of instruction addresses and 64 KB for data, BSS, heap, and stack. Pointers remain 16-bit. Existing 0407 combined-space programs continue to work. See [the kernel reference](doc/kernel/memory-and-swapping.md#separate-instruction-and-data-spaces).
 
 Floating-point arithmetic uses the historical Zilog software EPU engine from
 CP/M-8000, in reserved segment 127. User programs execute EPA instructions
 through PCC-compatible wrappers; the engine is not linked into each program.
-See [software EPU service](doc/kernel-technical-reference.md#software-epu-service).
+See [software EPU service](doc/kernel/traps-and-interrupts.md#software-epu-service).
 
 Trap handlers must briefly enter SEG+SYS mode (forced by CPU hardware on trap entry) to access the segmented system stack pointer (RR14), then switch to NONSEG+SYS for C code execution.
 
@@ -37,18 +37,18 @@ The kernel also uses split I/D. The emulated board supports shared read-only
 0411 text with sticky swap caching, conservative stack-fault backout and automatic growth, and whole-process
 swapping through a separate V7 swapper process to a dedicated ATA unit. Raw disk I/O uses V7 buffer locking with
 MMU-owned validation and process pinning. Fatal signals can write
-[V7-layout core files](doc/kernel-technical-reference.md#core-dumps) with a full
+[V7-layout core files](doc/kernel/processes-and-exec.md#core-dumps) with a full
 Z8000 register snapshot. V7 `ptrace` requests 0–8 are supported; single-stepping
 requires machine hardware support and currently returns EIO. Process accounting,
 user profiling and privileged residency locking are supported. Installed kernel
 ABI headers are checked against the kernel sources during builds. Exec arguments
-use the original V7 swap-backed staging; swap is required, including for boot. See the [memory contract](doc/kernel-technical-reference.md#shared-text-and-swapping).
+use the original V7 swap-backed staging; swap is required, including for boot. See the [memory contract](doc/kernel/memory-and-swapping.md#shared-text-and-swapping).
 
 ### MMU: Segment Numbers as Map Set Selectors
 
 Instead of using the Z8001's segmentation with Zilog's Z8010 base+limit MMU, the 7-bit segment number is repurposed as a map set selector for a custom paged MMU. This combines hardware-assisted context selection with fine-grained paged translation: each segment number selects a map set, context switching is free (segment number is embedded in PC), and the kernel accesses user memory by constructing pointers with the target process's segment number.
 
-See [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) for the full design.
+See [MMU design notes](doc/platforms/mmu-design.md) for the full design.
 
 ### Syscall Convention
 
@@ -57,13 +57,13 @@ System calls use the Z8000 `sc` instruction. The syscall number is encoded in th
 The current ABI uses V7's exec/execve, umask and chroot numbers; the Z8000 EPU
 restore extension uses slot 62. Earlier port binaries using the changed slots
 must be rebuilt with the matching libc and kernel. See the
-[ABI migration instructions](doc/kernel-technical-reference.md#user-program-startup).
+[ABI migration instructions](doc/kernel/processes-and-exec.md#user-program-startup).
 
 ### Compiler: PCC
 
 The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing V7 a.out object files natively.
 
-Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [doc/PCC-Research.md](doc/PCC-Research.md) for the compiler research that motivated the switch.
+Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [compiler research](doc/history/pcc-research.md) for the compiler research that motivated the switch.
 
 The native two-pass compiler can rebuild itself under Unix, including its
 optimizer; two successive native generations produce identical objects and
@@ -71,13 +71,13 @@ executables. The toolchain provides
 `cc`, preprocessing, native `-O` assembly optimization, assembly and linking. Build its disk with
 `python3 tools/native-cc/build.py` and run its guest tests with
 `python3 tools/native-cc/test.py`. See [compiler self-hosting results and
-reproduction](doc/implementation-steps.md#step-29-native-compiler-self-hosting).
+reproduction](doc/development/native-rebuild.md#compiler-convergence).
 
 The native development environment also rebuilds `make`, `ar`, `yacc`, the
 supporting compiler tools and libc inside Unix. Native `ar`, `make` and `ldz8`
 share the portable ASCII archive format. Archive framing is independent of
 the Z8001 execution mode; current executable support is NONSEG combined or
-split I/D. See [native development environment](doc/implementation-steps.md#step-30-native-development-environment).
+split I/D. See [native development environment](doc/toolchain/native-development.md).
 
 ### Kernel Configuration
 
@@ -97,51 +97,16 @@ configuration.
 
 The Z8000 software emulator is used as a library with a custom front end (`emu/test_driver.cpp`, kept outside the V7 tree since it is host code, not Unix source) that can simulate I/O and load code segments and data from files at arbitrary physical addresses without needing bootstrap code. This simplifies development considerably — the full kernel trap round-trip can be tested without a real boot ROM or hardware.
 
-See [doc/z8000-emulator.md](doc/z8000-emulator.md) for details.
+See [emulated machine reference](doc/platforms/emulated.md) for details.
 
 ## Building and Testing
 
-Prerequisites: z8k-coff binutils (for rom.s/trap.s), PCC-z8000 toolchain (cz8/az8/ldz8), C++17 compiler, Python 3.
-
-```sh
-git submodule update --init --recursive                   # PCC-z8000 + z8000_emu
-make -C PCC-z8000/z8000/cz8                               # build compiler
-make -C PCC-z8000/z8000/az8                               # build assembler
-make -C PCC-z8000/z8000/test ../ldz8                       # build linker
-make -C tools                                            # build user programs + filesystem images
-cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release
-cmake --build v7z8000/usr/sys/build                       # build kernel
-cmake --build v7z8000/usr/sys/build --target test          # run kernel boot test
-```
-
-The kernel build pulls the emulator in via `add_subdirectory(z8000_emu)`, so the submodule must be initialised before configuring.
-
-The test verifies the kernel boots, the Bourne shell prints a prompt, the pipeline `echo hello | cat` produces correct output, and no panics occurred.
-
-Run these commands from the repository root. The basic boot disk contains a
-small command set. The larger native development disk, including sources and
-makefiles, is built separately using the [Step 29 and Step 30 instructions](doc/implementation-steps.md#step-29-native-compiler-self-hosting).
-
-The upper-layer restoration has completed batches 1–5, including user-access
-fault recovery, shared filesystem/TTY interfaces, ordinary buffer-cache behavior
-and syscall compatibility. The configured process limit is 16 so recursive
-native builds have room for command shells and compiler passes. Resource maps
-and installed RAM sizing now support page-granular text/data/stack extents,
-real `estabur`/`expand` sizing and an unmapped heap/stack gap; see the [restoration audit](doc/v7-upper-layer-audit.md).
-
-To run the current kernel regression targets:
-
-```sh
-cmake --build v7z8000/usr/sys/build --target \
-  test test-libc test-signal test-preempt test-tty test-split test-fpe \
-  test-copy test-fault test-v7-interfaces test-bio test-abi test-memory test-physio test-core test-ptrace test-exec test-services
-python3 PCC-z8000/z8000/test/ratchet/run.py
-```
-
-These cover both executable layouts, copy/fault recovery, filesystem and TTY
-contracts, queued and raw disk I/O, reboot persistence, core images, set-ID exec/tracing interactions, syscall numbers and process
-exhaustion at installed RAM limits. Native self-hosting and development-environment rebuilds use the
-separate Step 29/30 commands linked above.
+Start with [bootstrap](doc/development/bootstrap.md) for a clean checkout or
+[build and run](doc/development/build-and-run.md) for incremental work.
+[Testing](doc/development/testing.md) lists regression entry points;
+[native rebuild](doc/development/native-rebuild.md) covers compiler convergence,
+supporting tools and essential userland. See [current status](doc/status.md)
+for verified scope and remaining work.
 
 ## Files
 
@@ -173,6 +138,7 @@ separate Step 29/30 commands linked above.
 | `v7z8000/usr/sys/sys/pipe.c` | Pipes: pipe syscall, readp/writep, plock/prele |
 | `v7z8000/usr/sys/sys/clock.c` | Clock interrupt handler and `timeout()` callouts |
 | `v7z8000/usr/sys/dev/md.c` | RAM disk driver (I/O port DMA) |
+| `v7z8000/usr/sys/dev/mem.c` | V7 `/dev/null`; other memory-device minors are unavailable |
 | `v7z8000/usr/sys/dev/hd.c` | IDE hard drive driver (ATA PIO, interrupt-driven) |
 | `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
 | `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |
@@ -191,11 +157,8 @@ separate Step 29/30 commands linked above.
 
 ## Documentation
 
-| Document | Contents |
-|----------|----------|
-| [doc/implementation-steps.md](doc/implementation-steps.md) | Step-by-step implementation journal |
-| [doc/v7-upper-layer-audit.md](doc/v7-upper-layer-audit.md) | V7 kernel differences, compatibility findings and restoration order |
-| [doc/kernel-technical-reference.md](doc/kernel-technical-reference.md) | Kernel internals: PSA table, CPU modes, SYSCALL flow, stack layout |
-| [doc/z8000-emulator.md](doc/z8000-emulator.md) | Z8000 software emulator and its use in the project |
-| [doc/z8001_mmu_design_notes.md](doc/z8001_mmu_design_notes.md) | Custom paged MMU design using Z8001 segment numbers as map set selectors |
-| [doc/PCC-Research.md](doc/PCC-Research.md) | Compiler research: PCC history, ACK assessment, Z8000 Unix history |
+The [documentation index](doc/README.md) groups current kernel/toolchain
+references, platform porting guides, development procedures and historical
+records. Start with [current status](doc/status.md),
+[bootstrap](doc/development/bootstrap.md), or
+[porting to a new machine](doc/platforms/porting-guide.md).

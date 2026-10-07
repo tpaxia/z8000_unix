@@ -1,6 +1,6 @@
 # Step 7: V7 Kernel — Process 0, Filesystem, /dev/console
 
-> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; `implementation-steps.md` and `kernel-technical-reference.md` describe the current state.
+> **Snapshot.** This note records the project as it was at this step. Paths (`kernel/...`), the compiler (ACK) and some details have changed since; [current status](../status.md) and [kernel overview](../kernel/overview.md) describe the current implementation.
 
 Replaced the test syscall handler with a real V7 kernel that boots to process 0, mounts a root filesystem from a RAM disk, opens `/dev/console`, and prints a message. This proves the entire V7 filesystem + buffer cache + device driver stack works end-to-end.
 
@@ -28,7 +28,7 @@ Single-process bring-up with no user/kernel boundary:
 
 The Z8000 kernel runs in NONSEG mode with a 64KB address space. The disk image can't live in this space alongside the kernel. Instead, the RAM disk driver uses I/O port-based DMA: it writes a block number and kernel buffer address to I/O ports (0xE0-0xE4), and the emulator performs the memory transfer between the disk image and the kernel's memory region. Reads return zero-filled blocks for addresses beyond the end of the disk image.
 
-See [kernel-technical-reference.md](kernel-technical-reference.md) for the DMA port table.
+See [device reference](../kernel/devices-and-io.md#dma-controller-ports) for the DMA port table.
 
 ## Key Bugs Fixed
 

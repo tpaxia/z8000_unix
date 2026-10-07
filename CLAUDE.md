@@ -6,8 +6,9 @@
 - Z8000 INSTRUCTION ENCODING: ALWAYS use ~/Downloads/z8000.md (Z8000 CPU Technical Manual) as the sole authoritative reference for ALL instruction encoding and decoding. NEVER guess, infer, or use any other source. If z8000.md cannot be found, STOP and ask the user for its location. This is non-negotiable.
 - ALWAYS read README.md and the project docs in doc/ before starting any work. Never miss them. Key files:
   - README.md — project overview, design decisions
-  - doc/implementation-steps.md — progress journal, current state, planned steps
-  - doc/kernel-technical-reference.md — kernel internals (PSA, CPU modes, SYSCALL flow)
-  - doc/z8000-emulator.md — emulator usage
-  - doc/z8001_mmu_design_notes.md — MMU design
+  - doc/README.md — documentation index and reading order
+  - doc/status.md — current state, limitations and next work
+  - doc/kernel/overview.md — kernel architecture and subsystem references
+  - doc/development/bootstrap.md — clean checkout to native development
+  - doc/platforms/porting-guide.md — machine and MMU porting contracts
   This is critical after context compaction when prior conversation is lost.

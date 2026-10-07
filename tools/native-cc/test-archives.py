@@ -3,13 +3,13 @@
 import subprocess
 import sys
 sys.dont_write_bytecode = True
-from build import ROOT, PCC, PASSES, image, run
+from build import ROOT, PCC, image, run
 from selfhost import Filesystem
 
 work = ROOT/'tests/build/portable-ar'
 env = ROOT/'tests/build/native-environment'
 work.mkdir(parents=True,exist_ok=True)
-extra = {'lib/libc.a':PASSES/'libv7.a', 'bin/runner':env/'runner',
+extra = {'lib/libc.a':ROOT/'tools/libv7.a', 'bin/runner':env/'runner',
          'bin/check':env/'check', 'bin/make':env/'make.out',
          'bin/cp':env/'cp.out', 'bin/rm':env/'rm.out',
          'bin/mv':env/'mv.out', 'bin/yacc':env/'yacc.out',
@@ -30,6 +30,8 @@ extra['tmp/host.a']=host
 (work/'bad.a').write_bytes(host.read_bytes()[:12]);extra['tmp/bad.a']=work/'bad.a'
 plan = [
     '0 - /bin/cc -O -i ar.c -o /bin/ar',
+    '0 - /bin/ar rc fresh.a odd',
+    '0 fresh.out /bin/ar p fresh.a odd', '0 - /bin/check same odd fresh.out',
     '0 - /bin/ar qc data.a odd big',
     '0 big.out /bin/ar p data.a big', '0 - /bin/check same big big.out',
     '0 host.out /bin/ar p host.a odd', '0 - /bin/check same odd host.out',
@@ -49,7 +51,7 @@ plan = [
 ]
 (work/'plan').write_text('\n'.join(plan)+'\n');extra['tmp/plan']=work/'plan'
 image(extra,work/'hd.img')
-driver=ROOT/'tests/build/selfhost/host/test_driver'
+driver=ROOT/'v7z8000/usr/sys/build/test_driver'
 result=subprocess.run(list(map(str,[driver,'-c','30000000000','-d',work/'hd.img',
     '-o',work/'saved.img','-i','runner\\n','-w','NATIVE CC DONE','-I','exit\\n',
     '-x','NATIVE CC PASS'])),cwd=ROOT/'v7z8000/usr/sys/build',capture_output=True,timeout=900)

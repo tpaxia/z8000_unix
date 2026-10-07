@@ -45,7 +45,7 @@ Differences fall into four categories:
 
 ### Signal termination status (corrected in batch 1)
 
-[`psig()`](../v7z8000/usr/sys/sys/sig.c) now passes the signal number in the
+[`psig()`](../../v7z8000/usr/sys/sys/sig.c) now passes the signal number in the
 low byte to `exit()`, matching V7. Normal `exit(n)` retains its high-byte
 status. Core dumping was added in batch 8; completed dumps now add the core flag.
 
@@ -56,19 +56,19 @@ and `Terminated` with status 143 for the latter, without a core-dump report.
 
 ### User-copy policy (restored in batch 2)
 
-[`subr.c`](../v7z8000/usr/sys/sys/subr.c) now selects user data (0), kernel (1)
+[`subr.c`](../../v7z8000/usr/sys/sys/subr.c) now selects user data (0), kernel (1)
 and user instructions (2) in `passc()`/`cpass()`, and preserves transfer counters
 when a byte helper fails. The original V7 `passc()` ternary is parenthesized so
 the negative-result comparison applies to both instruction and data helpers.
 This is a correction to the original expression, not a compiler workaround.
 
-[`rdwri.c`](../v7z8000/usr/sys/sys/rdwri.c) now uses V7's original `iomove()`:
+[`rdwri.c`](../../v7z8000/usr/sys/sys/rdwri.c) now uses V7's original `iomove()`:
 aligned user transfers use bulk helpers and check their return values;
 other transfers use `passc()`/`cpass()`. Byte failures retain accounting for
 completed bytes, while bulk failures leave the operation's counters unchanged.
 A failed bulk copy may nevertheless have modified a destination prefix.
 
-The [machine-helper contract](kernel-technical-reference.md#shared-user-copy-policy-and-machine-helper-contract)
+The [machine-helper contract](../kernel/memory-and-swapping.md#shared-user-copy-policy-and-machine-helper-contract)
 records required fault behavior. The following machine-layer step now rejects
 address wrap and recovers SEGT faults at the user-access instructions. Policy
 tests inject helper failures; additional guest tests exercise actual bus denial
@@ -88,7 +88,7 @@ These changes require rebuilding installed programs and images together with
 the kernel; old slot aliases would collide with the restored interfaces.
 Register arguments and error returns remain CPU ABI differences. Missing
 optional syscalls remain unimplemented; number alignment does not add them.
-See [startup and migration](kernel-technical-reference.md#user-program-startup).
+See [startup and migration](../kernel/processes-and-exec.md#user-program-startup).
 
 ## File-by-file restoration map
 
@@ -116,7 +116,7 @@ Paths in this table are relative to `v7z8000/usr/sys`.
 
 ## Headers and optional features
 
-The return-value union in [V7 `user.h`](../v7unix/usr/sys/h/user.h) contains
+The return-value union in [V7 `user.h`](../../v7unix/usr/sys/h/user.h) contains
 an unnamed register pair, `off_t r_off` and `time_t r_time`. Our struct-only
 replacement caused casts in `sys2.c` and `sys4.c`. Batch 1 restored this
 declaration and both named accesses, preserving Z8000 `label_t`, the actual
@@ -134,7 +134,7 @@ context-label size is ABI. Batch 6 corrects `USIZE` to 64 clicks (4 KB), matchin
 u-area/system-stack mapping. `p_addr` still names only that separately allocated
 window; text/data/stack have separate page-rounded core-map allocations. Whole-process swapping and core dumping are implemented through MMU helpers.
 
-Batch 3 installs V7's [sys/fakemx.c](../v7z8000/usr/sys/sys/fakemx.c) and
+Batch 3 installs V7's [sys/fakemx.c](../../v7z8000/usr/sys/sys/fakemx.c) and
 restores the associated filesystem/TTY branches. The selected configuration
 links these disabled-multiplexor stubs; syscall 56 returns `EINVAL`, matching
 V7 without a configured multiplexor. No channel device is installed, `mpxip`
@@ -286,7 +286,7 @@ At batch 4, `swap()`, `physio()` and mapped-I/O cleanup still required lower-lay
 support. Batch 6 supplies whole-process swap; raw/mapped I/O remains absent. Panic-time `update()` was deliberately not restored: source review
 shows a possible wait on a buffer already owned by the panicking path. This
 is a documented remaining behavioral difference, not a tested panic-flush
-implementation. See the [cache reference](kernel-technical-reference.md#buffer-cache-and-asynchronous-disk-requests).
+implementation. See the [cache reference](../kernel/devices-and-io.md#buffer-cache-and-asynchronous-disk-requests).
 
 ## Batch 5 validation
 
@@ -542,3 +542,50 @@ core, services/policy, raw I/O and the broader runtime suites; all ten native
 compiler cases; the 694-file compiler ratchet, kernel-only build and public
 header consistency check. The kernel's global argument array is gone; final
 text/data/BSS sizes are 52,116/2,624/10,074 bytes.
+
+
+## Essential userland audit
+
+`tools/native-cc/userland.py --audit` inventories all 158 top-level source units
+under the original `usr/src/cmd`: 762 files, none missing from the port. 728 files
+are byte-identical; 34 differ, confined to `ar.c`, `make/files.c`, `pstat.c`, the
+shell and yacc's configuration header. A source unit can be a directory or a
+single file; these counts do not imply 158 working executables. The original
+`/bin` has 153 entries, many not installed or runtime-tested in this port.
+
+The essential userland batch builds 26 commands from byte-identical original
+V7 sources using native make and cc: cat, echo, ls, pwd, mkdir, rmdir, ln, cp, mv,
+rm, chmod, chown, chgrp, wc, grep, tail, sort, uniq, tee, cmp, date, sleep, sync,
+kill, test and ed. It reuses the existing portable-archive ar and make plus yacc
+from the native development environment. It does not rewrite command C code.
+
+The audit found missing Z8000 libc wrappers for existing kernel syscalls:
+`mknod` (14), needed by original mkdir, and `stime` (25), needed by date. These
+wrappers marshal the existing register ABI; shared kernel implementations remain
+unchanged. Runtime testing also exposed the old port's independent brk/sbrk
+bookkeeping: sort grew its workspace with brk, then stdio's sbrk could shrink it.
+The libc adaptation now shares one exact break initialized from the linker end
+symbol, as in original V7's sbrk.s; unsuccessful brk leaves it unchanged.
+The install rules mark mkdir, rmdir and mv set-user-ID root for V7's
+privileged directory link operations; the original commands retain their real-ID
+permission checks. Full multiuser startup, login/getty, remaining commands and
+object-inspection tools remain separate work.
+
+
+Background execution also required installing `/dev/null`. The emulated
+configuration now selects the V7 EOF/rathole portion of the memory driver at
+character 4,2; other memory minors are rejected. The portable ar adaptation's
+strict header reader now treats a missing archive as empty for `ar r`, retaining
+V7's creation behavior while continuing to reject malformed existing headers.
+
+
+Validation passes all 29 userland build/integration steps, including the 26
+unchanged commands, native portable-ar creation/linking, yacc generation, and
+0407/0411 syscall and ordinary-user directory tests. The archive interoperability
+suite, libc/ABI, all 32 memory scenarios, services/policy, signals and all ten
+native compiler cases pass. The bootable disk and detailed audit/size reports
+are under `tests/build/userland/`.
+
+The compiler baseline check now covers 695 files, including all 35 kernel C
+files compiling and assembling; it passes along with public-header consistency
+and the kernel-only build.
