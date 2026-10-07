@@ -526,27 +526,63 @@ swap copies. The original V7 `struct text` is retained, including 64-byte click
 units for `x_size`; physical allocation rounds it to 2 KiB pages. Exec prepares the shared 0411 text before replacing the old layout;
 fork shares it; exit/exec drop references. ITEXT and inode references prevent
 writes while executable text is in use, including swapped-out users. Executing
-an inode already open for writing returns ETXTBSY. The last reference releases
-RAM, swap and the inode; there is no idle/sticky text cache. Exec serializes its
-shared argument buffer across sleeping disk reads.
+an inode already open for writing returns ETXTBSY. The last ordinary reference
+releases RAM, swap and the inode. Sticky text retains its inode and swap image,
+releasing RAM; `xrele()` and `xumount()` remove unused cached images. Failure to
+obtain or write swap backing drops an unused cache entry instead of panicking.
+Partial loads and traced text are never cached. A new text entry publishes its
+inode and XLOCK ownership before sleeping for memory, so concurrent execs cannot
+claim the same free entry.
 
 The board supplies a separate ATA unit (major 1, minor 1) for swap; root remains
-unit 0. Port `b2` reports its size in 512-byte blocks. `corealloc()` evicts other
-unlocked resident processes on allocation pressure. Private u-area/data/stack
-images are written completely before their frames are released. The last
-resident text reference writes its immutable swap copy and releases text RAM.
-The scheduler loads runnable nonresident processes before resuming their saved
-continuations; it rechecks the run queue after device interrupts during I/O.
-If a second fork image cannot fit, the saved child continuation and private
-sections are written directly to swap. Exhausted swap causes allocation failure,
-not a root-disk write or a kernel panic.
+unit 0. Port `b2` reports its size in 512-byte blocks. Process 0 now runs V7's
+`sched()` separately from `swtch()`. The latter selects only resident runnable
+processes and restores their saved contexts; it performs no allocation or I/O.
+The original `runout` arrival wakeups and `runin` resource/timer wakeups are active.
+Background swap-in selects by time out adjusted for nice; eviction prefers the
+largest eligible sleeper/stopped process, then resident age plus nice. The original
+three-second-out/two-second-resident gates apply to runnable victims.
 
-Physical transfer uses a private 512-byte bounce buffer and the configured block
-driver. Copy-window masking is bounded to 16-byte transfers. Swap waits enable
-interrupts without sleeping on process 0's scheduler stack. This is whole-process
-swapping, not demand paging; allocation and victim selection are synchronous.
-Contiguous-section fragmentation and temporary resize reservations can still
-cause ENOMEM. Raw `physio`, bus-map ownership, core dumps and ptrace remain absent.
+Contiguous extent growth still prepares all replacement sections before changing
+the old image. A failed immediate `corealloc()` posts a pinned reservation request
+to process 0 and sleeps. `corework()` services these requests ahead of background
+swap-in, using shared `swapvict()` ranking without age delays. It reserves the
+actual extent for the requester, skips failed victims, and reports failure if no
+eligible victim remains. This is a deliberate adaptation to multiple independent
+extents, rather than copying PDP-11 `expand()`'s self-swap of a resized contiguous
+image. CMAPSIZ covers four committed and three provisional extents per process,
+all text entries, and map termination/headroom (150 entries here). This bounds
+concurrent sleeping resizes despite V7 mfree having no overflow check. Fork can still write a child directly to swap if two resident copies do
+not fit; the parent remains pinned through the copy and reference updates.
+
+`swapio()` serializes the 512-byte bounce buffer and sleeps on interrupt-driven
+completion at PSWP. Other resident processes can execute during these waits.
+The buffer owner is pinned even while waiting to acquire it. Physical copies
+retain bounded 16-byte interrupt masking. Swap-out clears SLOAD before the first
+transfer so the victim cannot run against a partial snapshot; failure restores
+residency and frees the provisional swap extent. Swap-in keeps the image
+nonresident until all reads succeed, and frees provisional frames on failure.
+A failed private-image read also releases newly loaded unused text with valid
+swap backing. Transient read errors retain the old swap image for retry; no
+permanent-device-failure recovery or bad-block remapping is claimed.
+
+XLOCK spans text allocation, transfers and resident-count changes. The swapper
+does not wait on a text lock whose owner may need a reservation from process 0;
+locked incoming images use a timed runin retry instead of waiting indefinitely
+for another runout arrival. Raw I/O and explicit process locks exclude victims.
+
+Two progress safeguards accommodate immediate-completion controllers and the
+emulator's accelerated clock. SREADY protects a new resident image until swtch
+first dispatches it, and sched sleeps on runin after successful swap-in so
+resident user work and tracing handoffs can progress. The clock or ordinary
+sleep/free events wake it. These are explicit additions to original V7, whose
+swap loop assumes useful execution opportunities during physical disk waits.
+Without them the contention tests exposed repeated eviction without progress.
+
+This remains whole-process swapping, not demand paging. Contiguous-section
+fragmentation and temporary resize reservations can cause ENOMEM; exhausted
+swap returns allocation failure rather than overwriting the root disk or
+panicking. Asynchronous bus-map ownership remains absent.
 
 ## RAM Disk DMA
 
@@ -584,8 +620,8 @@ the previous kernel disposition back to the previous C handler on return,
 and rolls back its table update if registration fails. Fork copies the table
 and kernel dispositions; exec resets caught dispositions and preserves ignores.
 
-At return to user mode, `psig(usp)` constructs this 104-byte user frame and
-redirects the saved PC to the registered trampoline:
+At return to user mode, `psig(usp)` calls CPU `sendsig()` to construct this
+104-byte user frame and redirect the saved PC to the registered trampoline:
 
 | Offset from new user SP | Value |
 |-------------------------|-------|
@@ -611,7 +647,8 @@ As in V7, caught dispositions reset before delivery except SIGILL and
 SIGTRAP; SIGKILL cannot be caught or ignored. A caught signal interrupting a
 blocking syscall unwinds through `u_qsav`, and the syscall returns EINTR after
 the handler returns. This implements neither modern signal masks/alternate
-stacks nor ptrace/core dumps, and does not add hardware-exception routing.
+stacks, and does not add general hardware-exception routing. Core dumps and
+V7 tracing are implemented as described below.
 
 `test-signal` covers asynchronous register/flag restoration, handler syscalls,
 an interrupted pipe read, nested delivery, one-shot and persistent dispositions,
@@ -647,7 +684,7 @@ root (with the cross-toolchain available):
 
 ```sh
 python3 tools/native-cc/build.py
-cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build
+cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
 cmake -S v7z8000/usr/sys -B tests/build/selfhost/host -DCMAKE_BUILD_TYPE=Release
 cmake --build tests/build/selfhost/host --target test_driver
@@ -673,6 +710,58 @@ Returning from main calls C `exit()`, which flushes stdio and calls `_exit()`.
 The syscall error handler in `syscalls.az8` owns the common `_errno` symbol;
 there is no separate errno archive member or startup initialization helper
 in the active libraries.
+
+### Exec policy and CPU helpers
+
+`sys/sys1.c` retains shared image-loading policy and the original V7 set-ID
+block. An untraced successful exec applies the executable owner's UID when
+ISUID is set and the current effective UID is nonzero; an effective root UID
+remains root. ISGID changes the effective GID, including for root. Real IDs do
+not change. `p_uid` follows effective UID for signal permission checks. A traced
+exec suppresses both set-ID changes and stops with SIGTRAP. Failed exec never
+applies the new credentials. Existing core policy rejects mismatched real and
+effective user or group IDs before creating or truncating a core file.
+
+Exec collects arguments with V7's original swap-backed buffer-cache loop.
+Each call reserves `(NCARGS+BSIZE-1)/BSIZE` blocks (ten here), writes strings with
+`getblk()`/`bawrite()`, reads them back with `bread()`, then frees the reservation
+on success or failure. There is no global argument array or exec lock. `na`
+counts all strings and `ne` counts environment strings, as in V7. The original
+`NCARGS-1` byte limit includes terminating NULs; a null argv pointer suppresses
+environment collection. Register syscall arguments use `u_arg` rather than
+PDP-11's `u_ap`. The stack copy checks user-store and read errors; failure after
+image replacement kills the process instead of returning into the old program.
+
+V7 reserves the full argument extent even with no arguments and calls
+`panic("Out of swap")` if allocation fails. This behavior is retained; booting
+without swap therefore fails at init's exec. There is no memory-only fallback.
+SMAPSIZ covers process, cached-text and concurrent exec extents, including holes
+and the terminator: `2*NPROC+NTEXT+2`, or 74 entries in this configuration.
+
+`machine/cpu.c` supplies `execsize(nc, na, ne, data_bytes)` for stack reservation,
+`execstk(bno, nc, na, ne)` for argument layout and `execregs()` for register/EPU
+reset. Shared `setregs()` retains signal reset, close-on-exec and accounting.
+R0–R14 are cleared and the entry PC comes from the validated executable header.
+The stack starts below fff0 with word alignment. Its SP is staged in the process's
+`u_regs[15]`, since file cleanup can sleep and another process can change hardware
+NSPOFF. Successful exec trap return uses that staged SP; `userret()` installs it
+only at final return to user mode.
+
+CPU `sendsig(handler, signal, &usp)` owns the existing libc signal-frame format,
+stack growth/checks and saved-PC change. It updates SP/PC only after all copies
+succeed and returns -1 on failure; shared policy then terminates with SIGSEGV.
+The user signal ABI and EPU restore syscall are unchanged.
+
+`test-exec` exercises both layouts at 8 MiB and 320 KiB. It checks credentials
+through created-file ownership, real-ID queries and signal permissions; covers
+the effective-root exception, a subsequent ordinary exec, traced set-ID files,
+failed exec, and core suppression for unequal IDs. Tracing inspects startup
+registers, EPU state and argc before the new program executes. Argument probes
+exercise 5,119 bytes (including high-bit characters), E2BIG, bad pointers, V7
+null-argv/environment behavior and concurrent different-inode execs with delayed
+swap interrupts. Six-KiB swap runs allow only one argument reservation and verify
+repeated failure cleanup and successful reuse. Zero/undersized swap probes check
+the original panic explicitly.
 
 ## PCC Calling Convention (Z8002)
 
@@ -743,10 +832,10 @@ and `DISKMON` accounting. `io_info.nbuf` is initialized to NBUF; `nread`,
 cache hits, and `bufcount[]` records the free-list position of reused buffers.
 These are diagnostic counters, not completion/durability statistics.
 
-The ordinary cache still excludes `physio()` and `B_MAP` release.
-Whole-process swap uses its own machine-layer buffer and block-driver transfers. Current drivers do not create physical or bus-mapped requests. Those
-facilities require a machine/device transfer contract; no no-op `mapfree()`
-is substituted for real mapping ownership.
+Raw `physio()` lives separately in `sys/physio.c`, preserving the ordinary
+cache implementation. Whole-process swap uses its own machine-layer buffer
+and block-driver transfers. No current driver creates `B_MAP` requests;
+asynchronous bus-map ownership and release remain unimplemented.
 
 The HD driver now queues busy buffers through `av_forw`, headed by
 `hdtab.b_actf/b_actl`, with one controller request active at a time. This is
@@ -776,3 +865,239 @@ cannot be guaranteed; device/cache corruption is another possible panic cause.
 Restoring V7's unconditional `update()` here would risk hiding the panic behind
 a deadlock. A future best-effort panic flush needs a separate bounded protocol
 that avoids owned buffers and does not depend on normal interrupt completion.
+
+## Raw physical I/O
+
+`sys/physio.c` retains V7's special-buffer B_BUSY/B_WANTED locking,
+uninterruptible PRIBIO completion wait, residual accounting and error handling.
+The selected MMU implements `physmap`, `physunmap` and `physio_copy`. Validation
+and SLOCK pinning happen after waiting for the special buffer: an unpinned
+waiter may have been swapped in the meantime. Pinning lasts through completion;
+a pre-existing SLOCK is retained on release. Pending signals cannot bypass cleanup.
+
+The paged MMU checks the complete data-space range, including address wrap and
+the heap/stack gap. For B_PHYS, b_addr holds the user virtual address and b_xmem
+an opaque owner selector with a saved-lock bit. Drivers must not interpret it as
+a physical address. `physio_copy(bp, offset, kernel_buffer, count, writing)`
+resolves the pinned owner's pages, independently of the currently running process.
+It rejects direction mismatches and transfers outside the submitted range.
+Shared read-only instruction pages are not writable through this data-space path.
+A replacement protected MMU must enforce its own data-page permissions as well.
+
+Character major 3 selects raw ATA, using the block driver's unit minors 0/1.
+The basic boot image supplies root-only `/dev/rhd` (3,0). Invalid units fail
+with ENXIO; opening the active swap unit fails with EBUSY. Raw ATA requires a
+nonnegative, sector-aligned offset and a multiple-of-512 byte count (EINVAL),
+with an even, accessible user address (EFAULT). Zero-length aligned requests
+submit no I/O. The driver supports 16-bit sector addresses, up to 32 MiB.
+
+The ATA queue handles multiple sectors per request through one 512-byte staging
+buffer. Each successful sector reduces the byte residual; an error leaves the
+untransferred suffix intact and releases the queue, special buffer and pin.
+V7 returns an error even after partial progress, but advances the file offset
+by the completed bytes. The emulator reports EIO beyond either attached disk's
+end instead of extending the root image or returning fabricated zero sectors.
+Raw requests bypass the buffer cache; callers must coordinate raw access with
+filesystem use. There is no automatic cache invalidation or partial-sector I/O.
+
+`test-bio` now includes the actual physio and paged mapping helpers in its
+controlled delayed-completion fixture. It switches the current process during
+interrupt completion and checks pinning, special-buffer contention, prior-lock
+preservation, page crossings, rejected ranges and partial read/write errors.
+`test-physio` exercises real syscalls in 0407 and 0411 executables at 8 MiB and
+320 KiB RAM, including eight concurrent workers and verified swap traffic.
+It uses appended scratch sectors outside the filesystem, tests data/stack
+buffers and alignment/bounds errors, and checks progress and recovery at disk end.
+
+## Core dumps
+
+The default actions for SIGQUIT, SIGILL, SIGTRAP, SIGIOT, SIGEMT, SIGFPE,
+SIGBUS, SIGSEGV and SIGSYS use the original V7 fatal-signal switch and `core()`
+file policy in `sys/sig.c`. Caught or ignored signals do not dump. A completed
+dump sets bit 0200 in the low wait-status byte; the signal is in bits 0–6.
+Normal exit status stays in the high byte. SIGKILL/SIGTERM do not dump.
+
+The kernel looks up `core` in the current directory, creates it with V7 mode
+0666 subject to umask when absent, checks write access and regular-file type,
+and truncates an accepted existing file. It uses the existing namei/maknode,
+access/itrunc, writei and iput paths. Two deliberate corrections to the original
+policy are documented in the source: mismatched real/effective user **or group**
+IDs reject dumping before pathname lookup; a rejected nonregular target cannot
+report a successful dump merely because u_error was zero. Detected write errors
+leave a possible partial file and do not set the core bit. As with V7 buffered
+file writes, success does not promise power-loss durability or detect a later
+asynchronous write failure.
+
+The format retains V7's u-area/data/stack ordering, using this port's sizes:
+
+| File offset | Contents |
+|---|---|
+| 0 | USIZE × 64 = 4096 bytes of u-area and kernel stack |
+| 4096 | u_dsize × 64 bytes from user data address 0 |
+| 4096 + u_dsize × 64 | u_ssize × 64 bytes from the top-of-address-space stack mapping |
+
+The unmapped gap and allocation padding are excluded. Shared 0411 instruction
+text is omitted; 0407 text already lies within its combined data image.
+`machine/paged.c:coredump()` writes the sections through their existing mappings.
+It does not call estabur, allocate replacement memory, or reproduce the PDP-11's
+temporary contiguous remapping. Normal scheduling/swap-in restores the mappings
+if file I/O sleeps. A different MMU implements this helper for its own layout.
+
+Core files use Z8000 big-endian values and the kernel's `h/user.h` layout; they
+are not binary-compatible with PDP-11 core files. `u_ar0` remains a kernel virtual
+pointer to the original trap frame (subtract 0xf000 to locate it in the file).
+The added `u_regs[19]` contains R0–R15, FCW, PC segment, and PC offset. Entry wrappers
+pass R13/R14 before C reuses them; the EPU adapter takes them from its full frame.
+`coreregs(usp)` completes the snapshot from the saved frame and process-local SP.
+The ordinary trap frame and user syscall ABI are unchanged. The existing u_fpe
+field contains software EPU state. Core readers must use the matching kernel
+header. Ptrace exposes these saved registers as described below; a native
+debugger frontend remains future work.
+
+`test-core` reads real core files in both executable layouts, checking data and
+stack markers, sizes, modes, registers and PCs after syscall, SEGTRAP and timer
+entries. It tests refused targets, non-core signals, partial files on ENOSPC,
+recovery after freeing disk space and process churn with verified swap traffic
+at 320 KiB RAM. A target-ABI fixture exercises the actual `core()` policy with
+mismatched credentials and a read-only filesystem. Existing signal/fault tests
+mask the core bit when testing only the terminating signal.
+
+## Process tracing
+
+V7 syscall 26 now implements `ptrace(req, pid, addr, data)`. The libc wrapper
+retains V7's kernel argument order (data, pid, addr, req) and clears errno:
+a successful read of word 0xffff returns -1 with errno zero. Existing syscall
+numbers and the user register ABI are unchanged.
+
+The original V7 `issig`, `fsig`, `stop` and parent-side ptrace protocol are reused,
+together with wait's stopped-child branch. A process opts in with request 0;
+signals stop it even when their disposition is ignored. Successful exec reports
+SIGTRAP before the new program runs. Wait reports `(signal << 8) | 0177` once per
+reported stop. Parent requests run in the stopped child, after the scheduler has
+restored its mappings. The global V7 IPC lock serializes debugger pairs. Only a
+stopped, traced child of the caller is eligible; other targets return ESRCH.
+Requests run at uninterruptible IPC priority. Reparenting to init releases orphaned
+stopped tracees through V7's stop/exit path. Fork does not automatically trace the
+tracee's children.
+
+| Request | Behavior |
+|---|---|
+| 0 (V7 also accepts negative values) | Mark the caller traced |
+| 1 / 2 | Read one instruction/data-space word |
+| 3 | Read an aligned word at a byte offset in the 4096-byte u-area |
+| 4 / 5 | Write one instruction/data-space word |
+| 6 | Write an allowed saved user register or EPU-state word |
+| 7 | Continue at addr, or retain PC when addr is 1; data selects the delivered signal, with zero suppressing it |
+| 8 | Force child exit with its pending signal status, following V7 |
+| 9 | Return EIO: this configuration has no hardware single-step facility |
+
+Failed memory/register requests return EIO and leave the tracee stopped. Word
+accesses must be even and wholly mapped; u-area offsets must be within bounds.
+Request 6 permits `u_regs` R0–R15, FCW and PC offset, plus the first 96 bytes of
+software EPU state. PC segment and credentials/mappings are read-only; PC/SP
+must be even. FCW writes change arithmetic flags only, retaining mode, EPA and
+interrupt enables. Writes through the original saved-frame aliases for R0–R12,
+FCW and PC are also accepted. R13/R14 updates are copied through the entry
+wrappers, SP through the process-local return state, and EPU returns update their
+full saved frame. Arbitrary u-area writes are rejected.
+
+The shared protocol calls `traceword`, `traceuser` and `tracego` machine helpers.
+V7's instruction-write restriction is retained: shared or sticky pure text fails
+with EIO. An exclusive 0411 image is patched through the physical copy window;
+its user instruction mapping remains read-only. Any older swap copy is freed so
+subsequent eviction writes the modified image. Unlike blindly reusing V7's
+ITEXT-clearing operation, this port retains inode write exclusion and marks the
+image XTRC; a fresh exec of that patched prototype returns ETXTBSY until its last
+reference exits. Other executing processes and the executable file are untouched.
+0407 instruction writes affect only that process's private combined image.
+
+`SC #255` (word 0x7fff) is the breakpoint trap, outside the syscall table.
+It preserves general registers and reports SIGTRAP. As specified for SC, the
+saved PC points two bytes beyond the breakpoint; a debugger restores the saved
+instruction word and supplies the desired resume PC. This supports breakpoints
+without implementing instruction stepping. Single-stepping is deliberately
+hardware-only: there is no software instruction decoder or temporary-breakpoint
+stepping implementation. A future machine can implement request 9 through the
+CPU/board support; an external STOP pin alone is not a kernel trace exception.
+
+Entry wrappers use nearby NONSEG veneers to preserve the six fixed two-byte
+jumps at 0x0200–0x020a. The SEGTRAP/EPU entries retain direct relative jumps.
+`bout2bin.py` rejects a kernel whose assembler relaxed those table entries into
+longer instructions and displaced the entry addresses.
+
+`test-ptrace` covers both layouts at 8 MiB and 320 KiB: stopped wait statuses,
+access control, 0xffff reads, memory/register changes, FCW protection, signal
+suppression/delivery, exec stops, breakpoint restore/resume, shared/sticky text
+refusal, patched-text swapping and fresh-exec exclusion, debugger death,
+concurrent IPC users and unsupported request 9. Low-memory runs verify swap I/O.
+
+
+## Installed kernel ABI headers
+
+`usr/sys/h` is the source for matching `usr/include/sys` headers. Run
+`python3 tools/export-headers.py` after a kernel-header change; kernel, libc and
+native-image builds run its `--check` mode and reject stale installed copies.
+Public param/types headers use guarded shared typedefs. Public user.h declares
+`extern struct user u` instead of the kernel's fixed-address `u` macro.
+
+The installed layout includes the 24-byte label_t, 4 KiB u-area, actual configured
+table sizes, current exec header and EPU/register fields. Zombie xproc now lives
+in the shared proc.h rather than a private sys1.c declaration; its padding keeps
+times over the intended proc fields. sys/reg.h distinguishes common trap-frame
+indices (R0–R12, RPS=14, PCSEG=15, PC=16) from the complete u_regs image
+(UREG_SP=15, UREG_FCW=16, UREG_SEG=17, UREG_PC=18, UREG_NREG=19). It supplies
+no fictitious trace bit. Full adb/ps/pstat runtime support still needs machine
+adaptations and a kernel-memory device; pstat's user dump selects u_regs on Z8000.
+
+Core, ptrace and exec regression programs now include the installed public
+headers. Libc provides geteuid/getegid, and time(tloc) stores the returned 32-bit
+value when tloc is non-null. ENOSYS is also declared in public errno.h.
+
+## Accounting, profiling and residency locking
+
+Syscall 51 and libc acct(path) enable V7 process accounting; acct(0) disables it.
+The file must already exist and be regular, and only root may change the setting.
+V7's original sysacct/acct routine bodies, compression and syslock policy are
+retained in sys/acct.c (the first two bodies have internal names). A small shared
+lock serializes enable/disable and exit writes across sleeping inode I/O, so a
+waiting writer cannot lose its inode when accounting is disabled. The original
+acct.h supplies AFORK=01 and ASU=02; records retain V7's zero memory/I/O fields.
+Disk-full writes restore the previous file size and do not prevent process exit.
+
+Syscall 44 and libc profil select a user-data histogram. Each user-mode tick calls
+CPU addupc with the interrupted PC. It reproduces V7's unsigned delta/scale
+halving, multiplication, shift and word rounding; only complete buffer words
+are sampled. A counter wraps at 16 bits. Invalid/alignment/wrapping addresses
+and copy faults disable sampling without changing syscall errno. The helper
+never sleeps. Scales 0/1 disable collection; fork inherits it and exec disables it.
+The unchanged V7 monitor() library routine can write a sampled mon.out histogram.
+Compiler call-count instrumentation and the prof command are separate work.
+
+Clock policy again maintains V7's 32 dk_time CPU/disk buckets. CPU helpers decode
+mode/priority and identify the idle return PC. The HD driver supplies per-unit
+busy bits, command counts and V7 transfer counts (b_bcount >> 6 units).
+
+Syscall 53 and libc lock(flag) implement the original root-only SULOCK policy.
+The MMU's eviction scan skips SULOCK as well as kernel-locked/system/current
+processes. Locked residency is not inherited by fork; exit clears it. Locking
+can leave allocations unable to find a victim and return ENOMEM. The current
+contiguous allocator still does not promise that a locked process can grow.
+
+`test-services` exercises both layouts at 8 MiB and 320 KiB: public type sizes,
+time stores, IDs, profiling samples/fork/exec/invalid buffers, monitor output,
+accounting records/credentials/flags, concurrent exits and toggling, disk-full
+recovery and privileged lock calls. Target-ABI fixtures run the actual addupc
+and eviction scan with deterministic scaling, rollover, read/write faults and
+locked/unlocked/stopped candidates. test-exec also checks effective-ID wrappers
+across actual set-ID exec; test-bio verifies disk instrumentation.
+
+### Fork admission and process policy
+
+Fork uses original V7 per-effective-UID counting and its `a > MAXUPRC` boundary,
+and reserves the final process-table slot for root. With NPROC=16 and MAXUPRC=25,
+the reserved slot is the effective limit in this configuration. Root can use it;
+a full table returns EAGAIN to everyone. The PDP-11 preliminary reservation of a
+maximum-size swap image is omitted: resident fork remains possible without swap,
+and actual allocation/direct-to-swap failure rolls back references and returns
+EAGAIN. Exit retains V7 resource/reparenting policy with `freemem()` replacing
+physical release; wait retains original zombie and traced-stop collection.

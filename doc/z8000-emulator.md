@@ -142,7 +142,8 @@ has read-only protection; private data remains writable. See the [memory contrac
 ### Shared text, faults and swap device
 
 `-S KiB` creates the dedicated, ephemeral ATA secondary unit used for swap
-(default 4096 KiB; zero disables swapping; maximum 16000 KiB). `-o` saves only
+(default 4096 KiB; maximum 16000 KiB). Zero disables the device, but the
+V7 exec argument reservation then panics at boot with `Out of swap`. `-o` saves only
 the root unit. Swap traffic never uses the root filesystem's blocks. Final
 statistics report swap sectors read/written, peak simultaneous read-only text
 mappings, protection faults and stack warnings.
@@ -156,3 +157,25 @@ and temporary growth reservations, not only total free bytes.
 `test-memory` covers growth/backout, rejection of unsafe read-modify-write
 replay, shared text/inode write exclusion, low-RAM swapping and full swap.
 See the [MMU and swap contract](kernel-technical-reference.md#stack-faults-and-protection).
+
+### Swap scheduling fault probes
+
+The kernel test driver accepts `-D cycles` to delay swap-unit completion
+interrupts (0 by default, maximum 10,000,000 cycles), and `-E r:N` or `-E w:N`
+to fail exactly the Nth swap read or write command once. Root-disk commands are
+unaffected. Delays are checked at the existing 5,000-cycle clock slices. The
+summary reports injected errors and user-mode samples observed while a delayed
+swap interrupt is pending. The latter verifies resident execution during swap
+waits; it is a scheduling observation, not a throughput measurement.
+
+`test-memory` combines 320 KiB RAM, both executable layouts, 50,000-cycle swap
+completion delays and first-read/twentieth-write errors (skipping early exec
+argument writes for the output probe). Ordinary immediate-I/O, full/small-swap
+and lock/trace/core regressions remain in use. Memory-only pressure probes use
+six KiB of swap for the mandatory exec reservation; their process/text images
+do not fit there. `test-exec` separately checks zero/undersized-swap panics.
+
+Use `-DCMAKE_BUILD_TYPE=Release` when configuring the kernel's host test driver
+for long native compiler regressions. An unoptimized host driver can exceed the
+wall-clock timeout while completing within the same guest cycle budget. This
+setting optimizes the host emulator, not the cross-compiled Unix kernel.

@@ -308,6 +308,12 @@ dousr()
 	printf("dirp %.1o\n", up->u_dirp);
 	printf("dent %d %.14s\n", up->u_dent.d_ino, up->u_dent.d_name);
 	printf("pdir %.1o\n", up->u_pdir);
+#ifdef z8000
+	/* Z8000 core snapshot; PDP-11 MMU prototypes do not exist here. */
+	printf("saved registers");
+	for (i=0; i<19; i++)
+		printf("%8.1o", up->u_regs[i]);
+#else
 	printf("dseg");
 	for (i=0; i<8; i++)
 		printf("%8.1o", up->u_uisa[i]);
@@ -322,6 +328,7 @@ dousr()
 		for (i=8; i<16; i++)
 			printf("%8.1o", up->u_uisd[i]);
 	}
+#endif
 	printf("\nfile");
 	for (i=0; i<10; i++)
 		printf("%8.1o", up->u_ofile[i]);

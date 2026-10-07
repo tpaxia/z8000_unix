@@ -160,7 +160,7 @@ char **argv;
 		_exit(1);
 	}
 	check("unusable signal stack", pid > 0 && wait(&status) == pid &&
-	    status == SIGSEGV);
+	    (status & 0177) == SIGSEGV);
 	signal(SIGTERM, SIG_DFL);
 
 	if (!failed)

@@ -16,7 +16,7 @@ extern int fstat(), getuid(), stime(), alarm(), pause(), utime();
 extern int stty(), gtty(), saccess(), nice(), ftime(), sync();
 extern int kill(), dup(), pipe(), times(), profil(), setgid();
 extern int getgid(), ssig(), ioctl(), umask(), chroot();
-extern int fprestore(), mpxchan(), exece();
+extern int fprestore(), mpxchan(), exece(), ptrace(), sysacct(), syslock();
 
 nosys()
 {
@@ -50,7 +50,7 @@ struct sysent sysent[] = {
 	{ 1, 1, setuid },	/* 23 = setuid */
 	{ 0, 0, getuid },	/* 24 = getuid */
 	{ 2, 2, stime },	/* 25 = stime */
-	{ 0, 0, nosys },	/* 26 = ptrace */
+	{ 4, 4, ptrace },	/* 26 = ptrace */
 	{ 1, 1, alarm },	/* 27 = alarm */
 	{ 2, 2, fstat },	/* 28 = fstat */
 	{ 0, 0, pause },	/* 29 = pause */
@@ -75,9 +75,9 @@ struct sysent sysent[] = {
 	{ 2, 2, ssig },		/* 48 = signal */
 	{ 0, 0, nosys },	/* 49 */
 	{ 0, 0, nosys },	/* 50 */
-	{ 0, 0, nosys },	/* 51 */
+	{ 1, 1, sysacct },	/* 51 = accounting */
 	{ 3, 3, nosys },	/* 52 = sysphys (not implemented) */
-	{ 0, 0, nosys },	/* 53 */
+	{ 1, 1, syslock },	/* 53 = lock in core */
 	{ 3, 3, ioctl },	/* 54 = ioctl */
 	{ 0, 0, nosys },	/* 55 */
 	{ 4, 4, mpxchan },	/* 56 = multiplexor (optional stub) */

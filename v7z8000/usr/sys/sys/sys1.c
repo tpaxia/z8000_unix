@@ -1,5 +1,7 @@
 #include "../h/param.h"
 #include "../h/systm.h"
+#include "../h/map.h"
+#include "../h/buf.h"
 #include "../h/dir.h"
 #include "../h/user.h"
 #include "../h/proc.h"
@@ -7,34 +9,12 @@
 #include "../h/file.h"
 #include "../h/seg.h"
 #include "../h/text.h"
+#include "../h/acct.h"
 
 /*
  * System calls: fork, exit, wait, exec.
  * read/write are now in sys2.c (via rdwr()).
  */
-
-/*
- * xproc overlay for zombie status collection.
- * In V7, the first part of struct proc is overlaid with
- * exit status and times when the process becomes a zombie.
- */
-struct xproc {
-	char	xp_stat;
-	char	xp_flag;
-	char	xp_pri;
-	char	xp_time;
-	char	xp_cpu;
-	char	xp_nice;
-	short	xp_sig;
-	short	xp_uid;
-	short	xp_pgrp;
-	short	xp_pid;
-	short	xp_ppid;
-	short	xp_xstat;	/* overlays p_addr: exit status */
-	short	xp_size;
-	long	xp_utime;	/* overlays p_wchan + p_textp */
-	long	xp_stime;	/* overlays p_link + p_clktim */
-};
 
 /*
  * exit system call:
@@ -131,6 +111,15 @@ loop:
 			p->p_stat = NULL;
 			return;
 		}
+		if(p->p_stat == SSTOP) {
+			if((p->p_flag&SWTED) == 0) {
+				p->p_flag |= SWTED;
+				u.u_r.r_val1 = p->p_pid;
+				u.u_r.r_val2 = (fsig(p)<<8) | 0177;
+				return;
+			}
+			continue;
+		}
 	}
 	if(f) {
 		sleep((caddr_t)u.u_procp, PWAIT);
@@ -149,14 +138,20 @@ loop:
 fork()
 {
 	register struct proc *p1, *p2;
-	int n;
+	int n, a;
 
+	a = 0;
 	p2 = NULL;
 	for(p1 = &proc[0]; p1 < &proc[NPROC]; p1++) {
 		if (p1->p_stat==NULL && p2==NULL)
 			p2 = p1;
+		else {
+			if (p1->p_uid==u.u_uid && p1->p_stat!=NULL)
+				a++;
+		}
 	}
-	if (p2==NULL) {
+	/* V7 per-user admission and the final slot reserved for root. */
+	if (p2==NULL || (u.u_uid!=0 && (p2==&proc[NPROC-1] || a>MAXUPRC))) {
 		u.u_error = EAGAIN;
 		goto out;
 	}
@@ -194,14 +189,18 @@ out:
  * then builds the user stack with argc/argv[]/envp[]/strings.
  *
  * Simplified from V7: no swap for argument collection,
- * shared 0411 text, no SUID/SGID.
+ * shared 0411 text. V7 set-ID policy is retained.
  *
  * u_arg[0] = pathname (user pointer)
  * u_arg[1] = argv (user pointer to array of user pointers)
  * u_arg[2] = envp (user pointer to array of user pointers, or 0)
  */
 
-static char argbuf[NCARGS];	/* kernel buffer for exec arguments */
+struct execa {
+	char *fname;
+	char **argp;
+	char **envp;
+};
 
 exec()
 {
@@ -209,31 +208,19 @@ exec()
 	exece();
 }
 
-static int execlock;
 exece()
-{
-	/* Argument staging is shared kernel storage and readi may sleep. */
-	while (execlock) sleep((caddr_t)&execlock, PZERO);
-	execlock = 1;
-	doexec();
-	execlock = 0;
-	wakeup((caddr_t)&execlock);
-}
-
-doexec()
 {
 	register struct inode *ip;
 	register unsigned i;
 	extern int uchar();
-	extern int useg;
 	char *cp;
-	int nc;		/* total chars in argbuf */
-	int na;		/* number of arg strings */
+	int nc;		/* total argument and environment bytes */
+	int na;		/* total argument and environment strings */
 	int ne;		/* number of env strings */
 	int ap;		/* user pointer to argv[] array */
-	int c;
-	unsigned usp;
-	unsigned strbase;
+	int c, bno;
+	struct buf *bp;
+	struct execa *uap;
 	long datasize, filesize;
 	int sep;
 	unsigned stacksize;
@@ -247,87 +234,64 @@ doexec()
 	ip = namei(uchar, 0);
 	if (ip == NULL)
 		return;
-	if (access(ip, IEXEC) ||
-	    (ip->i_mode & IFMT) != IFREG ||
+	bno = 0;
+	bp = 0;
+	if (access(ip, IEXEC))
+		goto bad;
+	if ((ip->i_mode & IFMT) != IFREG ||
 	    (ip->i_mode & (IEXEC|(IEXEC>>3)|(IEXEC>>6))) == 0) {
 		u.u_error = EACCES;
 		goto bad;
 	}
 
 	/*
-	 * Collect arguments from user space into argbuf[].
-	 * Format in argbuf: NUL-separated strings.
+	 * Collect arguments on "file" in swap space.
 	 */
-	nc = 0;
 	na = 0;
 	ne = 0;
-	cp = argbuf;
-
-	/* Collect argv strings */
-	ap = u.u_arg[1];	/* user pointer to argv[] */
-	if (ap) {
-		for (;;) {
-			int sp;
-			sp = fuword(ap);
-			ap += 2;
-			if (sp == -1) {
-				u.u_error = EFAULT;
-				goto bad;
-			}
-			if (sp == 0)
-				break;
-			na++;
-			/* Copy string from user space */
-			for (;;) {
-				if (nc >= NCARGS) {
-					u.u_error = E2BIG;
-					goto bad;
-				}
-				c = fubyte(sp++);
-				if (c == -1) {
-					u.u_error = EFAULT;
-					goto bad;
-				}
-				*cp++ = c;
-				nc++;
-				if (c == 0)
-					break;
-			}
+	nc = 0;
+	uap = (struct execa *)u.u_arg;
+	if ((bno = malloc(swapmap,(NCARGS+BSIZE-1)/BSIZE)) == 0)
+		panic("Out of swap");
+	if (uap->argp) for (;;) {
+		ap = NULL;
+		if (uap->argp) {
+			ap = fuword((caddr_t)uap->argp);
+			uap->argp++;
 		}
-	}
-
-	/* Collect envp strings */
-	ap = u.u_arg[2];	/* user pointer to envp[] */
-	if (ap) {
-		for (;;) {
-			int sp;
-			sp = fuword(ap);
-			ap += 2;
-			if (sp == -1) {
-				u.u_error = EFAULT;
-				goto bad;
-			}
-			if (sp == 0)
+		if (ap==NULL && uap->envp) {
+			uap->argp = NULL;
+			if ((ap = fuword((caddr_t)uap->envp)) == NULL)
 				break;
+			uap->envp++;
 			ne++;
-			for (;;) {
-				if (nc >= NCARGS) {
-					u.u_error = E2BIG;
-					goto bad;
-				}
-				c = fubyte(sp++);
-				if (c == -1) {
-					u.u_error = EFAULT;
-					goto bad;
-				}
-				*cp++ = c;
-				nc++;
-				if (c == 0)
-					break;
-			}
 		}
+		if (ap==NULL)
+			break;
+		na++;
+		if(ap == -1)
+			u.u_error = EFAULT;
+		do {
+			if (nc >= NCARGS-1)
+				u.u_error = E2BIG;
+			if ((c = fubyte((caddr_t)ap++)) < 0)
+				u.u_error = EFAULT;
+			if (u.u_error)
+				goto bad;
+			if ((nc&BMASK) == 0) {
+				if (bp)
+					bawrite(bp);
+				bp = getblk(swapdev, swplo+bno+(nc>>BSHIFT));
+				cp = bp->b_un.b_addr;
+			}
+			nc++;
+			*cp++ = c;
+		} while (c>0);
 	}
-
+	if (bp)
+		bawrite(bp);
+	bp = 0;
+	nc = (nc + NBPW-1) & ~(NBPW-1);
 	/*
 	 * Read header into u.u_exdata.
 	 */
@@ -345,11 +309,12 @@ doexec()
 	filesize = (long)sizeof(u.u_exdata) + u.u_exdata.ux_tsize + u.u_exdata.ux_dsize;
 	if (!sep)
 		datasize += u.u_exdata.ux_tsize;
+	stacksize = execsize(nc, na, ne, datasize);
 	if (u.u_count || (!sep && u.u_exdata.ux_mag != 0407) ||
 	    !u.u_exdata.ux_tsize || (u.u_exdata.ux_tsize & 1) ||
 	    u.u_exdata.ux_entloc >= u.u_exdata.ux_tsize ||
 	    (u.u_exdata.ux_entloc & 1) || u.u_exdata.ux_trsize || u.u_exdata.ux_drsize ||
-	    filesize > ip->i_size || datasize + nc + (na+ne+3)*2L + 256 > 0xFFF0L) {
+	    filesize > ip->i_size || stacksize == 0) {
 		u.u_error = ENOEXEC;
 		goto bad;
 	}
@@ -359,8 +324,6 @@ doexec()
 	if (sep && !(xp = textget(ip, u.u_exdata.ux_tsize))) goto bad;
 	oldtext = u.u_procp->p_textp;
 	u.u_procp->p_textp = xp;
-	stacksize = ((long)nc+(na+ne+3)*2+17+256+63)/64;
-	if (stacksize < SSIZE) stacksize = SSIZE;
 	if (estabur((unsigned)(sep ? ((long)u.u_exdata.ux_tsize+63)>>6 : 0),
 	    (unsigned)((datasize+63)>>6),
 	    stacksize, sep, 0) < 0) {
@@ -391,106 +354,36 @@ doexec()
 		if (subyte(u.u_exdata.ux_dsize + i, 0) < 0)
 			goto badimage;
 
-	/*
-	 * Set up user stack with arguments.
-	 *
-	 * Stack layout (growing downward from top of segment):
-	 *
-	 *   string data (NUL-terminated arg and env strings)
-	 *   [padding to word boundary]
-	 *   0         (envp terminator)
-	 *   envp[ne-1]
-	 *   ...
-	 *   envp[0]
-	 *   0         (argv terminator)
-	 *   argv[na-1]
-	 *   ...
-	 *   argv[0]
-	 *   argc      <-- sp points here
-	 */
-
-	/* Start strings at top of segment, working down */
-	usp = 0xFFF0;
-
-	/* Copy strings to user stack, recording their user addresses */
-	usp -= nc;
-	/* Word-align */
-	usp &= ~1;
-	strbase = usp;
-	for (i = 0; i < nc; i++)
-		if (subyte(strbase + i, argbuf[i]) < 0)
-			goto badimage;
-
-	/* Now lay out pointers below the strings */
-	/* Space needed: argc(2) + na ptrs(2*na) + NULL(2) + ne ptrs(2*ne) + NULL(2) */
-	usp -= 2 + (na + 1) * 2 + (ne + 1) * 2;
-	usp &= ~1;
-
-	/* Write argc */
-	if (suword(usp, na) < 0)
-		goto badimage;
-
-	/* Write argv[] pointers */
-	cp = argbuf;
-	for (i = 0; i < na; i++) {
-		if (suword(usp + 2 + i * 2, strbase) < 0)
-			goto badimage;
-		/* Advance past this string */
-		while (*cp++)
-			strbase++;
-		strbase++;	/* skip NUL */
-	}
-	/* argv terminator */
-	if (suword(usp + 2 + na * 2, 0) < 0)
-		goto badimage;
-
-	/* Write envp[] pointers */
-	for (i = 0; i < ne; i++) {
-		if (suword(usp + 2 + (na + 1) * 2 + i * 2, strbase) < 0)
-			goto badimage;
-		while (*cp++)
-			strbase++;
-		strbase++;
-	}
-	/* envp terminator */
-	if (suword(usp + 2 + (na + 1) * 2 + ne * 2, 0) < 0)
+	if (execstk(bno, nc, na, ne) < 0)
 		goto badimage;
 
 	/*
-	 * Close EXCLOSE files, reset signals.
+	 * set SUID/SGID protections, if no tracing
 	 */
+	if ((u.u_procp->p_flag&STRC)==0) {
+		if(ip->i_mode&ISUID)
+			if(u.u_uid != 0) {
+				u.u_uid = ip->i_uid;
+				u.u_procp->p_uid = ip->i_uid;
+			}
+		if(ip->i_mode&ISGID)
+			u.u_gid = ip->i_gid;
+	} else
+		psignal(u.u_procp, SIGTRC);
+
 	setregs();
 
-	/* minimal stack */
-
-	/*
-	 * Set return PC to entry point.
-	 * regs[15] = PC high (segment encoding)
-	 * regs[16] = PC low (offset)
-	 */
-	u.u_ar0[15] = useg;
-	u.u_ar0[16] = u.u_exdata.ux_entloc;
-
-	/*
-	 * Clear user registers.
-	 */
-	for (i = 0; i < 13; i++)
-		u.u_ar0[i] = 0;
-
-	/*
-	 * Set user stack pointer.
-	 */
-	set_usp(usp);
-
-	u.u_procp->p_flag &= ~SLOCK;
-	iput(ip);
-	return;
+	goto bad;
 
 badimage:
 	/* The old image has been overwritten; never return into it. */
 	psignal(u.u_procp, SIGKIL);
 	u.u_error = EIO;
 bad:
+	if (bp)
+		brelse(bp);
+	if (bno)
+		mfree(swapmap, (NCARGS+BSIZE-1)/BSIZE, bno);
 	u.u_procp->p_flag &= ~SLOCK;
 	iput(ip);
 }
@@ -501,9 +394,8 @@ bad:
 setregs()
 {
 	register int i;
-	u.u_fpflag = 0;
-	bzero(u.u_fpe, sizeof(u.u_fpe));
-	u.u_fpe[93] = 1;
+	execregs();
+	u.u_prof.pr_scale = 0;
 
 	for (i = 0; i < NSIG; i++)
 		if ((u.u_signal[i] & 1) == 0)

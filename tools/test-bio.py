@@ -16,7 +16,11 @@ headers+='#undef time\n#undef u\nextern struct user u;\nextern char buffers[NBUF
 def body(p): return '\n'.join(l for l in p.read_text().splitlines() if not l.startswith('#include'))+'\n'
 main=(kernel/'sys/main.c').read_text()
 binit=main[main.index('binit()\n{'):main.index('struct buf buf[NBUF];')]
-(work/'cache.c').write_text(headers+body(kernel/'sys/bio.c')+body(kernel/'dev/hd.c')+binit+(tools/'biotest.c').read_text())
+paged=(kernel/'machine/paged.c').read_text()
+mapping=paged[paged.index('/* Physical frames'):paged.index('static struct memspace memory[NPROC];')+len('static struct memspace memory[NPROC];')]
+mapping+=paged[paged.index('/* Validate every covered'):paged.index('/* Grow from the actual')]
+mapping+=paged[paged.index('/* Opaque B_PHYS descriptor:'):paged.index('/* V7 core layout:')]
+(work/'cache.c').write_text(headers+mapping+body(kernel/'sys/bio.c')+body(kernel/'sys/physio.c')+body(kernel/'dev/hd.c')+binit+(tools/'biotest.c').read_text())
 for name,src in [('cache',work/'cache.c'),('persist',tools/'biopersist.c')]:
     pre=run(['cpp','-nostdinc','-undef','-Dz8000','-Dz8002','-I'+str(root/'v7z8000/usr/include'),src])
     (work/(name+'.az8')).write_bytes(run([pcc/'cz8/cz8'],input=pre))

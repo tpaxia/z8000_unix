@@ -15,6 +15,7 @@
  *   Major 0: Console (cons)
  *   Major 1: console alias (spare)
  *   Major 2: TTY (alias to console)
+ *   Major 3: Raw IDE disk (same minors as block major 1)
  */
 
 /* RAM disk driver */
@@ -23,6 +24,7 @@ extern struct buf mdtab;
 
 /* IDE hard drive driver */
 extern int hdopen(), hdclose(), hdstrategy();
+extern int hdrawopen(), hdread(), hdwrite();
 extern struct buf hdtab;
 
 /* Console driver */
@@ -42,6 +44,7 @@ struct cdevsw cdevsw[] = {
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 0 = console */
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 1 = spare */
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 2 = tty */
+	{ hdrawopen, hdclose, hdread, hdwrite, nodev, nulldev, 0 }, /* 3 = raw hd */
 	{ 0 }
 };
 

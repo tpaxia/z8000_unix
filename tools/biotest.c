@@ -6,6 +6,15 @@ char buffers[NBUF][BSIZE];
 struct buf buf[NBUF], bfreelist;
 struct user u;
 int nblkdev;
+struct proc proc[NPROC];
+char physical[8192];
+int busywait;
+physcopy(frame, off, p, n, writing)
+unsigned frame, off, n; char *p;
+{
+ char *q; q=physical+(frame-10)*2048+off;
+ if(writing) bcopy(p,q,n); else bcopy(q,p,n);
+}
 int failed, commands, completed, sleeping, wakes, level;
 int low, high, active, writing, block, status, failblock = -1;
 char media[24][BSIZE], transfer[BSIZE];
@@ -31,7 +40,22 @@ finish()
 	hdintr();
 }
 sleep(p,pri) char *p;
-{ sleeping++;finish();spl0(); }
+{
+ struct proc *saved;
+ sleeping++;
+ if(pri==PRIBIO+1 && busywait) {
+  check("buffer waiter not pinned",!(u.u_procp->p_flag&SLOCK));
+  ((struct buf *)p)->b_flags &= ~B_BUSY; busywait=0;
+ } else {
+  saved=u.u_procp;
+  if(hdtab.b_actf->b_flags&B_PHYS) {
+   check("sleeping owner pinned",(proc[1].p_flag&(SLOAD|SLOCK))==(SLOAD|SLOCK));
+   u.u_procp = &proc[2];
+  }
+  finish();u.u_procp=saved;
+ }
+ spl0();
+}
 bcopy(a,b,n) char *a,*b; { while(n--) *b++ = *a++; }
 outb(port,value)
 {
@@ -71,6 +95,7 @@ main()
 	bp=bread(0,2L);check("dirty cache read",bp->b_un.b_addr[0]==42 && commands==before);brelse(bp);
 	bp=getblk(0,3L);bp->b_un.b_addr[0]=43;bdwrite(bp);
 	bflush(0);
+	check("disk busy",dk_busy==1);
 	check("flush queues both",hdtab.b_actf && hdtab.b_actf->av_forw && commands==before+1);
 	while(active) finish();
 	check("flush completed",media[2][0]==42 && media[3][0]==43 && freecount()==NBUF);
@@ -101,5 +126,59 @@ main()
 	check("default error",u.u_error==EIO);brelse(bp);
 	check("final buffers",freecount()==NBUF && !hdtab.b_actf && !hdtab.b_actl && !hdtab.b_active);
 	check("completion counts",commands==completed && io_info.nwrite>0 && io_info.nread>0);
+	check("disk counters",!dk_busy && dk_numb[0]==commands && dk_wds[0]==commands*8L);
+	rawtests();
 	printf("bio: %s\n",failed?"FAILED":"passed");return(failed!=0);
+}
+
+rawsetup(addr, count, block)
+unsigned addr, count; int block;
+{
+ u.u_procp = &proc[1]; u.u_segflg=0;u.u_error=0;
+ u.u_base=(char *)addr;u.u_count=count;u.u_offset=(long)block*512;
+}
+rawtests()
+{
+ int i, before;
+ struct buf probe;
+ proc[1].p_flag=SLOAD;proc[2].p_flag=SLOAD;
+ memory[1].base[DATA]=10;memory[1].size[DATA]=2;
+ memory[1].base[STACK]=12;memory[1].size[STACK]=1;
+ /* Interrupts execute with a different current process in sleep(). */
+ for(i=0;i<1024;i++) physical[1536+i]=i/512+81;
+ failblock= -1;rawsetup(1536,1024,18);hdwrite(0);
+ check("raw cross-page write",!u.u_error && !u.u_count && media[18][0]==81 && media[19][511]==82);
+ check("raw cleanup",!(proc[1].p_flag&SLOCK) && !(rhdbuf.b_flags&(B_BUSY|B_PHYS)) && !rhdbuf.b_xmem);
+ for(i=0;i<1024;i++) physical[1536+i]=0;
+ rawsetup(1536,1024,18);hdread(0);
+ check("raw owner mapping",!u.u_error && physical[1536]==81 && physical[2559]==82 && u.u_offset==20L*512);
+ rawsetup(0xf800,512,18);hdread(0);
+ check("raw stack mapping",!u.u_error && physical[4096]==81 && physical[4607]==81);
+ rawsetup(1536,1024,18);failblock=19;physical[2048]=99;hdread(0);
+ check("partial read error",u.u_error==EIO && u.u_count==512 && u.u_offset==19L*512 && physical[2048]==99);
+ rawsetup(1536,1024,18);hdwrite(0);
+ check("partial write error",u.u_error==EIO && u.u_count==512 && !(proc[1].p_flag&SLOCK));
+ failblock= -1;before=commands;rawsetup(3584,1024,18);hdread(0);
+ check("gap rejected before IO",u.u_error==EFAULT && commands==before && !(rhdbuf.b_flags&B_BUSY));
+ rawsetup(0xff00,512,18);hdread(0);
+ check("wrap rejected",u.u_error==EFAULT && commands==before);
+ rawsetup(1537,512,18);hdread(0);
+ check("odd address rejected",u.u_error==EFAULT && commands==before);
+ rawsetup(1536,511,18);hdread(0);
+ check("short sector rejected",u.u_error==EINVAL && commands==before);
+ rawsetup(1536,512,18);u.u_offset++;hdread(0);
+ check("unaligned offset rejected",u.u_error==EINVAL && commands==before);
+ rawsetup(1536,0,18);hdread(0);
+ check("zero count",!u.u_error && commands==before);
+ rawsetup(1536,512,18);u.u_offset=65536L*512;hdread(0);
+ check("strategy rejection unpins",u.u_error==EINVAL && !(proc[1].p_flag&SLOCK) && commands==before);
+ rawsetup(1536,512,18);proc[1].p_flag|=SLOCK;hdread(0);
+ check("existing lock retained",!u.u_error && (proc[1].p_flag&SLOCK));proc[1].p_flag &= ~SLOCK;
+ rawsetup(1536,512,18);rhdbuf.b_flags=B_BUSY;busywait=1;hdread(0);
+ check("special buffer wait",!busywait && !u.u_error && !(proc[1].p_flag&SLOCK));
+ rawsetup(1536,512,18);probe.b_flags=B_PHYS|B_READ;probe.b_bcount=512;physmap(&probe,B_READ);
+ check("copy cannot escape request",physio_copy(&probe,2,transfer,512,1)<0);
+ physunmap(&probe);
+ check("copy after unpin rejected",physio_copy(&probe,0,transfer,512,1)<0);
+ check("raw final queue",!hdtab.b_actf && !hdtab.b_active && commands==completed);
 }

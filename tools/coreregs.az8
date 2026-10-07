@@ -1,0 +1,30 @@
+! Register-capture probes, using LD/SC/JR from the Z8000 CPU manual.
+	.text
+	.globl _corequit
+	.globl _coreqpc
+	.globl _corefault
+	.globl _corefpc
+	.globl _corewait
+_corequit:
+	ld r1,2(sp)
+	ld r2,#3
+	ld r4,#0x4444
+	ld r13,#0x1313
+	ld r14,#0x1414
+	sc #37
+_coreqpc:
+	jr _coreqpc
+_corefault:
+	ld r1,#0x8000
+	ld r4,#0x4444
+	ld r13,#0x1313
+	ld r14,#0x1414
+	ld r0,@r1
+_corefpc:
+	jr _corefpc
+_corewait:
+	ld r4,#0x4444
+	ld r13,#0x1313
+	ld r14,#0x1414
+.Lspin:
+	jr .Lspin

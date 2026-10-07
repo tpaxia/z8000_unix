@@ -138,7 +138,8 @@ main() {
         (WORK / 'plan').write_text('\n'.join(plan) + '\n')
         extra['tmp/plan'] = WORK / 'plan'
         image(extra)
-        cycles = '12000000000' if name == 'optimizer' else '2000000000'
+        # Restored clock statistics push optimized split I/D just past 2B cycles.
+        cycles = '12000000000' if name == 'optimizer' else '3000000000'
         result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', cycles,
             '-d', WORK / 'hd.img', '-i', 'runner\\n', '-w', 'NATIVE CC DONE',
             '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True,

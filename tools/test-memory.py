@@ -67,9 +67,11 @@ $
 $
 ''')
 run([tools / 'v7mkfs', work / 'hd.img', work / 'proto'])
-def guest(label, ram, command, verdict, reject=False, swap=0):
+# Six KiB permits V7 exec staging but cannot hold these process/text images.
+def guest(label, ram, command, verdict, reject=False, swap=6, delay=0, error=None):
     r = subprocess.run([str(build / 'test_driver'), '-c', '3000000000' if not reject else '1000000',
-        '-R', str(ram), '-S', str(swap), '-d', str(work / 'hd.img'), '-i', command + '\\n',
+        '-R', str(ram), '-S', str(swap), '-D', str(delay),
+        *(['-E', error] if error else []), '-d', str(work / 'hd.img'), '-i', command + '\\n',
         '-w', verdict, '-I', 'exit\\n', '-x', verdict], cwd=build, capture_output=True, timeout=90)
     output = r.stdout + r.stderr
     (work / (label + '.log')).write_bytes(output)
@@ -77,6 +79,10 @@ def guest(label, ram, command, verdict, reject=False, swap=0):
         r.returncode == 0 and b': FAIL' not in output and b'Absent RAM accesses: 0' in output)
     if not ok:
         sys.stdout.buffer.write(output); raise SystemExit(label + ': failed')
+    if delay:
+        sample = re.search(rb'Swap-wait user samples: (\d+); injected swap errors: (\d+)', output)
+        assert sample and int(sample[1]) > 0, label + ': no resident user progress during swap I/O'
+        assert int(sample[2]) == (1 if error else 0), label + ': missing injected failure'
     print(label + ': passed', flush=True)
 nproc = int(re.search(r'#define\s+NPROC\s+(\d+)', (kernel / 'h/param.h').read_text())[1])
 for layout in ['n', 'i']:
@@ -85,7 +91,10 @@ for layout in ['n', 'i']:
     for ram in [320, 322, 384]:
         guest(f'memory-{layout}-{ram}', ram, f'memory{layout} {nproc-4 if layout == "i" and ram == 384 else -1}', 'memory: passed')
     guest('memory-' + layout + '-8192', 8192, f'memory{layout} {nproc - 4}', 'memory: passed')
+guest('fork-root-reserve', 8192, f'memoryn r{nproc-5}', 'memory: passed')
 guest('text-lifecycle', 8192, 'textn', 'text: passed')
+guest('text-sticky-swap', 320, 'textn sticky', 'text: passed', swap=4096)
+guest('text-sticky-small-swap', 8192, 'textn sticky', 'text: passed')
 guest('too-small', 136, '', 'unused', reject=True)
 guest('too-small-init', 200, '', 'unused', reject=True)
 for ram in [320, 322]:
@@ -120,3 +129,12 @@ r = subprocess.run([str(build/'test_driver'), '-c', '2000000000', '-R', '256',
 if r.returncode or b'swapfork: FAILED' in r.stdout:
     sys.stdout.buffer.write(r.stdout+r.stderr); raise SystemExit('direct swap fork failed')
 print('direct swap fork: passed', flush=True)
+
+# Delayed completion proves resident execution during I/O; one read/write error
+# must preserve the old image and release provisional resources for recovery.
+# Skip the initial exec argument writes to inject into process swap output.
+run([tools / 'v7mkfs', work / 'hd.img', work / 'proto'])
+for layout in ['n', 'i']:
+    for kind in ['r', 'w']:
+        guest(f'swap-delay-{layout}-{kind}', 320, f'memory{layout} {nproc-4}',
+              'memory: passed', swap=4096, delay=50000, error='w:20' if kind == 'w' else 'r:1')

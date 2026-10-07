@@ -1463,10 +1463,235 @@ all ten native compiler cases and the profile/persistence probe pass.
 Raw physio, core dumps, ptrace, scattered-page allocation and general instruction
 restart remain separate work; contiguous growth can still return ENOMEM.
 
+## Batch 7: raw physical I/O
+
+Shared physio now manages the special buffer and uninterruptible completion wait;
+the MMU owns whole-range validation, process pinning and the opaque transfer
+mapping. Raw ATA is character major 3, with aligned multi-sector transfers and
+byte residuals after partial errors. A single staging sector keeps interrupt-time
+copies independent of the currently running process. The active swap device
+rejects raw access. Both emulator disks report errors beyond their attached size.
+
+Tests include delayed completion with an alternate current process and real
+0407/0411 syscalls at 8 MiB and 320 KiB, including concurrent workers, actual
+swap traffic, page crossings and disk-end partial progress. The runtime and
+25-scenario memory suites, kernel-only build, new test-physio target and
+693-file compiler ratchet (33 kernel files) pass. See the
+[raw-I/O contract](kernel-technical-reference.md#raw-physical-io) for alignment,
+cache-coherency and replacement-MMU requirements.
+
+## Batch 8: V7 core-file creation
+
+Restored V7 fatal-signal/core-file policy, keeping filesystem operations in
+sys/sig.c and isolating noncontiguous process-image writing in the MMU layer.
+The core image has the port's 4 KiB u-area followed by click-sized data and stack;
+shared instruction text is omitted. Z8000 register snapshots include all general
+registers, FCW and PC, with R13/R14 passed from entry wrappers and SP captured
+from the process-local return state. The existing trap frame is unchanged.
+
+Two intentional policy corrections reject unequal effective/real group IDs as
+well as user IDs before creating a file, and avoid reporting success for a
+nonregular target. Incomplete writes retain a partial file and clear the core
+wait-status bit. See the [format and tests](kernel-technical-reference.md#core-dumps).
+
+Validation: both layouts pass the core-image, permission and disk-full cases;
+low-RAM runs verify swap traffic. Runtime suites, all 25 memory scenarios,
+raw I/O, kernel-only build, the 693-file compiler ratchet and all ten native
+compiler pipeline cases pass.
+
+## Batch 9: V7 ptrace requests 0–8
+
+Restored V7 stop/wait/IPC and signal selection, with CPU/MMU hooks for word and
+register access. Traced exec stops before entry. Stopped children can swap and
+resume requests against restored mappings. Register changes include R13/R14/SP;
+privileged FCW fields and process metadata remain protected. Exclusive instruction
+patches invalidate swap backing and prevent fresh exec sharing. SC 255 supplies
+a breakpoint trap, with debugger-managed restoration and resume PC.
+
+Single-step request 9 returns EIO. Per the selected scope, it will remain optional
+and require hardware support; no software stepping is implemented. Wrapper growth
+also exposed jump relaxation moving fixed kernel entry addresses. Nearby veneers
+and a build-time short-jump check now protect that ABI.
+
+Validation: tracing passes in both executable layouts at 8 MiB and 320 KiB,
+including swap, breakpoint restoration, register writes and concurrent debuggers.
+Runtime, raw-I/O, core-dump and all 25 memory scenarios pass, as do the kernel-only
+build, 693-file compiler ratchet and all ten native compiler pipeline cases.
+
+## Batch 10: exec credentials and CPU helpers
+
+Restored V7 set-UID/set-GID exec rules, including tracing suppression and the
+existing-effective-root exception. Credentials commit only after successful
+image/stack construction. CPU helpers now own startup stack sizing and layout,
+register/EPU reset and signal frames; shared code retains filesystem, credential,
+signal-disposition and accounting policy. R13/R14 now reset with the other user
+registers. Exec SP stays process-local through sleeping cleanup until trap return.
+
+The new test-exec target covers credentials, tracing, initial registers/stack,
+signal dispositions, failed exec and core suppression in both executable layouts
+at 8 MiB and 320 KiB.
+
+Validation: test-exec, ABI, signals, preemption, split I/D, EPU, access faults,
+all 25 memory scenarios, core dumps and ptrace pass. The kernel-only build,
+693-file compiler ratchet and all ten native compiler pipeline cases pass.
+
+## Batch 11: public ABI, accounting, profiling and memory locking
+
+Installed sys headers now match the kernel via an export/check tool. Core and
+ptrace tests consume those public layouts. Libc adds effective-ID queries,
+time-pointer stores, acct/lock/profil, and the unchanged V7 monitor routine.
+The pstat user dump selects the Z8000 register image instead of PDP-11 MMU fields.
+
+Restored original accounting routine bodies and flags, with serialization around
+sleeping accounting-file changes and writes. Restored V7 CPU/disk tick counters
+and user PC sampling through fault-safe CPU helpers. The original syslock policy
+now reaches an eviction scan that respects SULOCK. Tests cover both layouts at
+8 MiB and 320 KiB, accounting concurrency/full-disk recovery, profiling lifecycle,
+monitor output and deterministic sampling/eviction policy.
+
+The optimized split-I/D native compiler case completed at 2.011 billion cycles
+with restored clock statistics, just above the former two-billion test limit.
+Normal native cases now have a three-billion-cycle allowance; correctness
+checks and the optimizer-specific budget are unchanged.
+
+Validation: public-header core/ptrace/exec tests, the new services suite, all
+existing runtime targets and 25 memory scenarios pass. Kernel-only and normal
+builds, the 694-file compiler ratchet (34 kernel files), and all ten native
+compiler pipeline cases pass. Accounting routine bodies and acct.h were checked
+against pristine V7; only internal routine names and serialization wrappers differ.
+
 ## Planned Steps
 
-- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), continuing with raw physical I/O, core dumping and tracing after batch 6. Resource maps, RAM sizing, page-granular estabur/expand, conservative stack backout/growth, shared text and whole-process swapping are implemented. Ordinary cache restoration is complete; panic-specific flushing and raw physical I/O remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
+- **Restore reusable V7 kernel code**: follow the [upper-layer audit](v7-upper-layer-audit.md), with raw physical I/O, core dumping and ptrace requests 0–8 complete (batches 7–9), plus V7 exec credentials and CPU context separation (batch 10), and public ABI/accounting/profiling/residency locking (batch 11). Hardware single-stepping is optional and deferred. Resource maps, RAM sizing, page-granular estabur/expand, conservative stack backout/growth, shared text and whole-process swapping are implemented. Ordinary cache restoration is complete; panic-specific flushing and bus-map ownership remain separate. Batches 1–5 and machine-layer range checks/SEGT recovery are complete within their documented scopes. Future protected MMUs must supply actual mapping/permission policy.
 - **More commands**: extend beyond the boot disk and native development tools, including ls, wc and grep
 - **Multi-stage pipelines**: `ls | grep foo | wc`
-- **Missing kernel features**: ptrace/core dumps, raw `physio` and unsupported syscalls
+- **Missing kernel features**: remaining unsupported syscalls; single-stepping only if a machine supplies hardware support
 - **Native build coverage**: extend the development environment to remaining V7 commands and kernel builds
+
+## Batch 12: V7 process and shared-text policy
+
+Compared slp.c, sys1.c and text.c with the original sources function by function.
+Exit/wait and ordinary sleep/run-queue policy were already closely reused;
+setrun's channel-wide wakeup is original V7 behavior. Fork now restores V7's
+per-effective-user count, MAXUPRC comparison and final-slot reservation for root.
+The port retains its register return convention and recoverable allocation failure.
+
+Moved victim selection from the MMU's first-eligible scan into shared swapvict,
+using V7 sched's largest-sleeper/stopped preference and age-plus-nice ranking.
+Current/system/locked/nonresident/locked-text processes cannot be selected.
+The MMU excludes failed transfers during an allocation attempt and resets age
+on successful swap transitions. Synchronous allocation still cannot wait for
+the original background swapper's age gates; young negative-nice processes
+remain eligible. Physical allocation and transfer mechanics stay in machine code.
+
+Sticky text now retains its inode and immutable swap image after the last user
+exits, releasing its physical memory. Original V7 text locks and xumount lookup
+are reused; xrele corrects the original ITEXT precedence error. Failed cache
+writes drop the unused entry, and incomplete loads or traced text are not cached.
+Release rechecks an empty entry after taking its lock. The swap map is sized from
+NPROC+NTEXT+2 (58 entries here) and guarded at compile time, allowing retained-text
+allocation holes without overrunning V7's unchecked map insertion routine.
+
+Tests add target-compiled fixtures using the actual shared text/fork/victim
+routines, including failing swap writes and transfers, cached reload/release,
+locked inodes/text, V7 admission boundaries and root reservation. Guest memory
+tests add unprivileged exhaustion and sticky text with/without swap. Map fixtures
+exercise the maximum configured fragmented map with an overrun guard.
+
+Validation: all 28 memory scenarios, four tracing layouts/RAM combinations,
+four exec combinations, raw-I/O/swapping, six core scenarios plus core policy,
+service/accounting/profiling guests and process/text/victim fixtures pass.
+Signal, preemption and syscall-ABI suites pass. The 694-file compiler ratchet
+passes against reviewed baselines; all 34 kernel C files compile and assemble.
+Kernel-only configuration and public-header consistency checks pass. Final kernel
+text is 50,220 bytes including the 512-byte entry reserve, data 7,640 and BSS 9,674.
+All ten native compiler cases pass, including both executable layouts, optimized
+compilation, separate stages, object linking, the standalone optimizer and error
+paths. No compiler implementation changes were required.
+
+## Batch 13: separate V7 swapper and sleeping swap I/O
+
+Process 0 now runs the adapted original sched loop. Restored runin/runout
+wakeups, time-out/nice selection and the original three-second-out/two-second-
+resident gates. swtch selects resident runnable processes only and performs no
+allocation or disk transfer. Machine swap I/O owns a serialized bounce buffer
+and sleeps at PSWP for interrupt-driven completion; resident processes can run.
+
+Explicit replacement-extent requests go to corework in process 0. Their owners
+remain pinned, and proc 0 reserves the actual extent before waking them; failed
+transfers are skipped and allocation failure is reported without destroying the
+old layout. This differs from PDP-11 expand's self-swap of a resized contiguous
+image. Swap-out removes SLOAD before sleeping and restores it on failure.
+Swap-in commits residency only after successful reads and releases provisional
+frames, including unused newly loaded text, on error. Fork pins its source
+through copying and reference updates. XLOCK protects shared text across I/O
+and count changes. Locked incoming images receive a timed retry, avoiding a
+wait for an unrelated arrival when their lock becomes available.
+
+Testing exposed fast-controller thrashing: immediate completion and accelerated
+clock aging allowed repeated swaps before useful resident work. SREADY protects
+an image until first dispatch; a post-swap-in runin wait also allows resident IPC
+and tracing handoffs to progress. Both safeguards are explicit port additions,
+not claims of byte-identical V7 scheduling. The former alone did not resolve the
+tracing contention case. Transfer and allocation mechanisms remain machine code.
+
+CMAPSIZ now conservatively covers concurrent sleeping resizes: four committed
+plus three provisional extents per process, all NTEXT entries and map headroom
+(150 entries, versus 66 previously). The actual V7 map allocator is exercised
+against this worst-case fragmented table with an adjacent overrun guard.
+
+The emulator adds optional delayed swap completion IRQs and one-shot Nth read/
+write failures. Memory probes use both layouts at 320 KiB and assert that user
+mode is observed while a swap IRQ is pending, that the injected error occurred,
+and that fork/data isolation and reaping still complete. Target fixtures execute
+the actual sched loop through its wait/transfer choices, covering age gates,
+locked arrivals, first-dispatch exclusion, failed output and reservation priority.
+Exec argument staging is unchanged and remains the next separate batch.
+
+Validation passes: all 32 memory scenarios (including four delayed/error cases),
+tracing, exec, six core scenarios, raw I/O, accounting/profiling/lock guests and
+all three target policy fixtures. The libc, signals, preemption, TTY, split I/D,
+EPU, copy/fault, V7 interfaces, buffer-cache and ABI suites pass. All ten native
+compiler cases pass, with optimized split I/D rechecked on the final kernel.
+The 694-file compiler ratchet, public-header check and kernel-only build pass.
+Final kernel: text 51,912 bytes including the 512-byte entry reserve, data 7,736,
+BSS 10,010. No compiler implementation changes were needed.
+
+The final native recheck exposed a host-build configuration issue: the unoptimized
+emulator completed successfully in 69.836 seconds and 2,009,955,801 guest cycles,
+exceeding the harness's 60-second wall limit. Reconfiguring that host build as
+Release passed the unchanged test. Build instructions now specify Release;
+no guest cycle limit or assertion was relaxed for this batch.
+
+
+## 2026-10-06 — V7 exec argument swap staging (batch 14)
+
+Replaced the 5,120-byte global argument buffer and exec lock with the original
+V7 collection loop: reserve ten swap blocks, collect through getblk/bawrite,
+copy back through bread and release buffers/reservation on every exit. The
+register ABI selects u_arg rather than u_ap. V7 total-string/environment counts,
+NCARGS-1 limit and null-argv behavior are retained. The existing CPU helper owns
+the Z8000 stack address and staged SP, with checked stores and read errors.
+
+Original V7 calls panic("Out of swap") when the fixed reservation cannot be
+allocated, even with no arguments. This is retained without a no-swap fallback;
+zero or undersized swap therefore prevents init's exec. Memory-pressure probes
+use six KiB for the reservation, too little for their process/text images.
+Their delayed output-error injection skips early argument writes.
+
+Removing serialization required publishing new shared-text ownership before
+corealloc sleeps. The swap map also includes concurrent argument reservations:
+SMAPSIZ is now 2*NPROC+NTEXT+2 (74 entries), checked by the guarded fragmentation
+fixture. No compiler implementation changes were needed.
+
+Validation: both layouts at 320 KiB and 8 MiB pass credentials/startup and new
+argument tests, including 5,119-byte high-bit strings, concurrent different-inode
+execs, bad pointers, E2BIG and environment/null argv. The eight-buffer cache
+spills the ten-block argument extent; observed swap reads/writes confirm real
+backing-device use. Both layouts pass repeated failed exec and successful reuse
+with room for only one reservation. Zero/undersized swap panics are verified.
+All 32 memory scenarios, ptrace, core, services/policy, raw I/O, libc, signals,
+preemption, TTY, split I/D, EPU, copy/fault, V7 interfaces, buffer cache and ABI
+regressions pass. All ten native compiler cases, the 694-file compiler ratchet,
+public-header check and kernel-only build pass. Final kernel: text 52,116 bytes
+including the 512-byte entry reserve, data 2,624, BSS 10,074.

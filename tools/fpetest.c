@@ -53,11 +53,11 @@ char **argv;
 	for(i=0;i<200;i++) check("preempted arithmetic",value*other== -56.875);
 	check("concurrent arithmetic",wait(&status)==pid && status==0);
 	pid=fork();if(pid==0) { fpbad();exit(4); }
-	check("invalid EPU instruction",wait(&status)==pid && status==SIGILL);
+	check("invalid EPU instruction",wait(&status)==pid && (status & 0177) == SIGILL);
 	pid=fork();if(pid==0) { fpbadmem();exit(4); }
-	check("invalid EPU memory",wait(&status)==pid && status==SIGSEGV);
+	check("invalid EPU memory",wait(&status)==pid && (status & 0177) == SIGSEGV);
 	pid=fork();if(pid==0) { fptrapdiv();exit(4); }
-	check("enabled EPU exception",wait(&status)==pid && status==SIGFPE);
+	check("enabled EPU exception",wait(&status)==pid && (status & 0177) == SIGFPE);
 	printf("fpe: %s\n",failed?"FAILED":"all checks passed");
 	return failed!=0;
 }

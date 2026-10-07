@@ -42,6 +42,11 @@ def main():
 
     content = data[16 + (512 if magic == 0o411 else 0):16 + tsize + (dsize if magic == 0o407 else 0)]
 
+    if sys.argv[1].endswith('handler.bout'):
+        entries = struct.unpack('>6H', content[:12])
+        if any(word & 0xff00 != 0xe800 for word in entries):
+            sys.exit('error: fixed kernel entry table must contain six short unconditional jumps')
+
     with open(sys.argv[2], 'wb') as f:
         f.write(content)
 

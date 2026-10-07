@@ -38,3 +38,5 @@
 /* math software */
 #define	EDOM	33
 #define	ERANGE	34
+
+#define ENOSYS 35	/* Z8000: unimplemented system call */

@@ -44,26 +44,27 @@ extern struct proc proc[];	/* the proc table itself */
 #define	STRC	020		/* process is being traced */
 #define	SWTED	040		/* another tracing flag */
 #define	SULOCK	0100		/* user settable lock in core */
+#define	SREADY	0200		/* resident image awaiting its first CPU turn */
 
 /*
- * parallel proc structure
- * to replace part with times
- * to be passed to parent process
- * in ZOMBIE state.
+ * xproc overlay for zombie status collection.
+ * In V7, the first part of struct proc is overlaid with
+ * exit status and times when the process becomes a zombie.
  */
-struct	xproc {
+struct xproc {
 	char	xp_stat;
 	char	xp_flag;
-	char	xp_pri;		/* priority, negative is high */
-	char	xp_time;	/* resident time for scheduling */
-	char	xp_cpu;		/* cpu usage for scheduling */
-	char	xp_nice;	/* nice for cpu usage */
-	short	xp_sig;		/* signals pending to this process */
-	short	xp_uid;		/* user id, used to direct tty signals */
-	short	xp_pgrp;	/* name of process group leader */
-	short	xp_pid;		/* unique process id */
-	short	xp_ppid;	/* process id of parent */
-	short	xp_xstat;	/* Exit status for wait */
-	time_t	xp_utime;	/* user time, this proc */
-	time_t	xp_stime;	/* system time, this proc */
+	char	xp_pri;
+	char	xp_time;
+	char	xp_cpu;
+	char	xp_nice;
+	short	xp_sig;
+	short	xp_uid;
+	short	xp_pgrp;
+	short	xp_pid;
+	short	xp_ppid;
+	short	xp_xstat;	/* overlays p_addr: exit status */
+	short	xp_size;
+	long	xp_utime;	/* overlays p_wchan + p_textp */
+	long	xp_stime;	/* overlays p_link + p_clktim */
 };

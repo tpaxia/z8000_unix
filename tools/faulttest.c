@@ -75,7 +75,7 @@ main(argc, argv) int argc; char **argv;
 					_exit(98);
 				}
 				check("faulted child",pid>0 && wait(&status)==pid &&
-				    status==(strcmp(argv[1],"exec")==0 ? SIGKILL : SIGSEGV));
+				    (status & 0177)==(strcmp(argv[1],"exec")==0 ? SIGKILL : SIGSEGV));
 			}
 			/* A successful copy after each trap checks stack/mode restoration. */
 			check("subsequent syscall",fstat(fd,&st)==0 && getpid()>0);

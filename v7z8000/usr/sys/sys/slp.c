@@ -3,6 +3,7 @@
 #include "../h/dir.h"
 #include "../h/user.h"
 #include "../h/proc.h"
+#include "../h/text.h"
 #include "../h/file.h"
 #include "../h/inode.h"
 
@@ -48,6 +49,10 @@ caddr_t chan;
 			goto psig;
 		}
 		spl0();
+		if(runin != 0) {
+			runin = 0;
+			wakeup((caddr_t)&runin);
+		}
 		swtch();
 		if(issig())
 			goto psig;
@@ -136,6 +141,10 @@ register struct proc *p;
 	setrq(p);
 	if(p->p_pri < curpri)
 		runrun++;
+	if(runout != 0 && (p->p_flag&SLOAD) == 0) {
+		runout = 0;
+		wakeup((caddr_t)&runout);
+	}
 }
 
 /*
@@ -153,6 +162,170 @@ register struct proc *pp;
 	if(p < curpri)
 		runrun++;
 	pp->p_pri = p;
+	return(p);
+}
+
+/*
+ * The main loop of the scheduling (swapping)
+ * process.
+ * The basic idea is:
+ *  see if anyone wants to be swapped in;
+ *  swap out processes until there is room;
+ *  swap him in;
+ *  repeat.
+ * The runout flag is set whenever someone is swapped out.
+ * Sched sleeps on it awaiting work.
+ *
+ * Sched sleeps on runin whenever it cannot find enough
+ * core (by swapping out or otherwise) to fit the
+ * selected swapped process.  It is awakened when the
+ * core situation changes and in any case once per second.
+ */
+sched()
+{
+	register struct proc *rp, *p;
+	register outage, inage;
+	int maxsize, blocked;
+
+	/*
+	 * find user to swap in;
+	 * of users ready, select one out longest
+	 */
+
+loop:
+	/* Service explicit extent reservations before background swap-in. */
+	spl0();
+	if (corework())
+		goto loop;
+	spl6();
+	outage = -20000;
+	blocked = 0;
+	for (rp = &proc[0]; rp < &proc[NPROC]; rp++)
+	if (rp->p_stat==SRUN && (rp->p_flag&SLOAD)==0) {
+		if ((rp->p_flag&SLOCK) ||
+		    (rp->p_textp && (rp->p_textp->x_flag&XLOCK))) {
+			blocked = 1;
+			continue;
+		}
+		if (rp->p_time - (rp->p_nice-NZERO)*8 > outage) {
+			p = rp;
+			outage = rp->p_time - (rp->p_nice-NZERO)*8;
+		}
+	}
+	/*
+	 * If there is no one there, wait.
+	 */
+	if (outage == -20000) {
+		/* Locked incoming images need a timed retry, not a new arrival. */
+		if (blocked) {
+			runin++;
+			sleep((caddr_t)&runin, PSWP);
+		} else {
+			runout++;
+			sleep((caddr_t)&runout, PSWP);
+		}
+		goto loop;
+	}
+	spl0();
+
+	/*
+	 * See if there is core for that process;
+	 * if so, swap it in.
+	 */
+
+	if (swapin(p) == 0) {
+		/* Immediate I/O completion need not yield. Give resident IPC and
+		 * user work a turn before the next background swap-in pass.
+		 */
+		spl6();
+		runin++;
+		sleep((caddr_t)&runin, PSWP);
+		goto loop;
+	}
+
+	/*
+	 * none found.
+	 * look around for core.
+	 * Select the largest of those sleeping
+	 * at bad priority; if none, select the oldest.
+	 */
+
+	spl6();
+	p = NULL;
+	maxsize = -1;
+	inage = -1;
+	for (rp = &proc[0]; rp < &proc[NPROC]; rp++) {
+		if (rp->p_stat==SZOMB
+		 || (rp->p_flag&(SSYS|SLOCK|SULOCK|SREADY|SLOAD))!=SLOAD)
+			continue;
+		if (rp->p_textp && rp->p_textp->x_flag&XLOCK)
+			continue;
+		if (rp->p_stat==SSLEEP&&rp->p_pri>=PZERO || rp->p_stat==SSTOP) {
+			if (maxsize < rp->p_size) {
+				p = rp;
+				maxsize = rp->p_size;
+			}
+		} else if (maxsize<0 && (rp->p_stat==SRUN||rp->p_stat==SSLEEP)) {
+			if (rp->p_time+rp->p_nice-NZERO > inage) {
+				p = rp;
+				inage = rp->p_time+rp->p_nice-NZERO;
+			}
+		}
+	}
+	spl0();
+	/*
+	 * Swap found user out if sleeping at bad pri,
+	 * or if he has spent at least 2 seconds in core and
+	 * the swapped-out process has spent at least 3 seconds out.
+	 * Otherwise wait a bit and try again.
+	 */
+	if (maxsize>=0 || (outage>=3 && inage>=2)) {
+		/* Machine code clears SLOAD before I/O, restoring it on failure. */
+		if (swapout(p) == 0)
+			goto loop;
+	}
+	spl6();
+	runin++;
+	sleep((caddr_t)&runin, PSWP);
+	goto loop;
+}
+
+/*
+ * V7 sched() victim policy, shared by machine allocators.
+ * Prefer the largest interruptible sleeper or stopped process; otherwise
+ * choose by resident age plus nice. The caller excludes failed transfers.
+ * Explicit extent reservations use this ranking without sched()'s age gates;
+ * callers retain the old image while waiting for storage or failure.
+ */
+struct proc *
+swapvict(skip)
+char *skip;
+{
+	register struct proc *rp, *p;
+	register inage;
+	int maxsize;
+
+	p = NULL;
+	maxsize = -1;
+	inage = -20000;
+	for (rp = &proc[0]; rp < &proc[NPROC]; rp++) {
+		if (rp == u.u_procp || skip[rp-proc] || rp->p_stat==SZOMB
+		 || (rp->p_flag&(SSYS|SLOCK|SULOCK|SREADY|SLOAD))!=SLOAD)
+			continue;
+		if (rp->p_textp && rp->p_textp->x_flag&XLOCK)
+			continue;
+		if (rp->p_stat==SSLEEP&&rp->p_pri>=PZERO || rp->p_stat==SSTOP) {
+			if (maxsize < rp->p_size) {
+				p = rp;
+				maxsize = rp->p_size;
+			}
+		} else if (maxsize<0 && (rp->p_stat==SRUN||rp->p_stat==SSLEEP)) {
+			if (rp->p_time+rp->p_nice-NZERO > inage) {
+				p = rp;
+				inage = rp->p_time+rp->p_nice-NZERO;
+			}
+		}
+	}
 	return(p);
 }
 
@@ -194,7 +367,7 @@ loop:
 	 * Search for highest-priority runnable process
 	 */
 	for(p=runq; p!=NULL; p=p->p_link) {
-		if (p->p_stat == SRUN) {
+		if ((p->p_stat==SRUN) && (p->p_flag&SLOAD)) {
 			if(p->p_pri < n) {
 				pp = p;
 				pq = q;
@@ -211,28 +384,16 @@ loop:
 		idle();
 		goto loop;
 	}
-	if (!(p->p_flag&SLOAD) && swapin(p) < 0) {
-		/* A runnable resident can release memory or swap space. */
-		for (p = runq, q = NULL; p; q = p, p = p->p_link)
-			if (p->p_stat == SRUN && (p->p_flag&SLOAD)) break;
-		if (!p) { idle(); goto loop; }
-		pq = q;
-		n = p->p_pri;
-	}
-	/* Device completions during swapin may have changed the run queue. */
-	spl6();
-	for (q = runq, pq = NULL; q != p; pq = q, q = q->p_link) ;
 	q = pq;
 	if(q == NULL)
 		runq = p->p_link;
 	else
 		q->p_link = p->p_link;
-	curpri = p->p_pri;
-	/* Give the selected process its turn after a long swap transfer. */
-	runrun = 0;
+	curpri = n;
 	spl0();
 	n = p->p_flag&SSWAP;
-	p->p_flag &= ~SSWAP;
+	/* Fast completion must not recycle a loaded image before its first turn. */
+	p->p_flag &= ~(SSWAP|SREADY);
 	resume(p->p_addr, n? u.u_ssav: u.u_rsav);
 }
 
@@ -248,7 +409,7 @@ newproc()
 	struct proc *p, *up;
 	register struct proc *rpp, *rip;
 	register n;
-	int resident;
+	int resident, locked;
 
 	p = NULL;
 	/*
@@ -275,13 +436,15 @@ retry:
 	 */
 	rip = u.u_procp;
 	up = rip;
+	locked = rip->p_flag&SLOCK;
+	rip->p_flag |= SLOCK;
 	rpp->p_stat = SRUN;
 	rpp->p_clktim = 0;
 	rpp->p_flag = SLOAD|SLOCK;
 	rpp->p_uid = rip->p_uid;
 	rpp->p_pgrp = rip->p_pgrp;
 	rpp->p_nice = rip->p_nice;
-	rpp->p_textp = NULL;		/* no text sharing */
+	rpp->p_textp = NULL;		/* machine copy attaches shared text */
 	rpp->p_pid = mpid;
 	rpp->p_ppid = rip->p_pid;
 	rpp->p_time = 0;
@@ -293,6 +456,7 @@ retry:
 	resident = newmem(rpp) == 0;
 	if (!resident && nswap <= 1) {
 		rpp->p_stat = NULL;
+		if (!locked) rip->p_flag &= ~SLOCK;
 		return(-1);
 	}
 
@@ -333,12 +497,19 @@ retry:
 		u.u_cdir->i_count--;
 		if (u.u_rdir) u.u_rdir->i_count--;
 		rpp->p_stat = NULL;
+		if (!locked) rip->p_flag &= ~SLOCK;
 		return(-1);
 	}
 
 	rpp->p_flag &= ~SLOCK;
+	if (rpp->p_flag&SLOAD) rpp->p_flag |= SREADY;
 	setrq(rpp);
 	rpp->p_flag |= SSWAP;
+	if (!locked) rip->p_flag &= ~SLOCK;
+	if (runout && !(rpp->p_flag&SLOAD)) {
+		runout = 0;
+		wakeup((caddr_t)&runout);
+	}
 	return(0);
 }
 

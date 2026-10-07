@@ -1,15 +1,14 @@
+#ifndef _SYS_USER_H
+#define _SYS_USER_H
 /*
  * The user structure.
  * One allocated per process.
  * Contains all per process data
  * that doesn't need to be referenced
  * while the process is swapped.
- * The user block is USIZE*64 bytes
- * long; resides at virtual kernel
- * loc 140000; contains the system
- * stack per user; is cross referenced
- * with the proc structure for the
- * same process.
+ *
+ * Z8000 adaptation: removed PDP-11 MMU fields (u_uisa, u_uisd),
+ * FPU fields (u_fper, u_fpsaved, u_fps). u_sep selects split I/D.
  */
 
 #define	EXCLOSE	01
@@ -17,12 +16,6 @@
 struct	user
 {
 	label_t	u_rsav;			/* save info when exchanging stacks */
-	int	u_fper;			/* FP error register */
-	int	u_fpsaved;		/* FP regs saved for this proc */
-	struct {
-		int	u_fpsr;		/* FP status register */
-		double	u_fpregs[6];	/* FP registers */
-	} u_fps;
 	char	u_segflg;		/* IO flag: 0:user D; 1:system; 2:user I */
 	char	u_error;		/* return error code */
 	short	u_uid;			/* effective user id */
@@ -48,8 +41,6 @@ struct	user
 	caddr_t	u_dirp;			/* pathname pointer */
 	struct direct u_dent;		/* current directory entry */
 	struct inode *u_pdir;		/* inode of parent directory of dirp */
-	int	u_uisa[16];		/* prototype of segmentation addresses */
-	int	u_uisd[16];		/* prototype of segmentation descriptors */
 	struct file *u_ofile[NOFILE];	/* pointers to file structures of open files */
 	char	u_pofile[NOFILE];	/* per-process flags of open files */
 	int	u_arg[5];		/* arguments to current system call */
@@ -71,7 +62,6 @@ struct	user
 		unsigned pr_scale;	/* pc scaling */
 	} u_prof;
 	char	u_intflg;		/* catch intr from sys */
-	char	u_sep;			/* flag for I and D separation */
 	struct tty *u_ttyp;		/* controlling tty pointer */
 	dev_t	u_ttyd;			/* controlling tty dev */
 	struct {			/* header of executable file */
@@ -81,14 +71,17 @@ struct	user
 		unsigned ux_bsize;	/* bss size */
 		unsigned ux_ssize;	/* symbol table size */
 		unsigned ux_entloc;	/* entry location */
-		unsigned ux_unused;
-		unsigned ux_relflg;
+		unsigned ux_trsize;
+		unsigned ux_drsize;
 	} u_exdata;
 	char	u_comm[DIRSIZ];
 	time_t	u_start;
 	char	u_acflag;
-	short	u_fpflag;		/* unused now, will be later */
+	short	u_fpflag;		/* software EPU initialized */
 	short	u_cmask;		/* mask for file creation */
+	int	u_sep;			/* separate instruction/data maps */
+	char	u_fpe[208];		/* software EPU registers/control and scratch */
+	unsigned u_regs[19];		/* core: R0-R15, FCW, PC segment, PC offset */
 	int	u_stack[1];
 					/* kernel stack per user
 					 * extends from u + USIZE*64
@@ -133,3 +126,6 @@ extern struct user u;
 #define	EPIPE	32
 #define	EDOM	33
 #define	ERANGE	34
+#define	ENOSYS	35
+
+#endif

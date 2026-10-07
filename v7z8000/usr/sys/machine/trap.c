@@ -22,14 +22,25 @@ extern int useg;
  *   Error: regs[0] = -1, regs[1] = errno
  *   Success: regs[0] = r_val1, regs[1] = r_val2
  */
-trap(num, regs)
+trap(num, regs, extra)
 int num;
 unsigned *regs;
+unsigned *extra;
 {
 	int saved_usp;
 
 	saved_usp = get_usp();
+	u.u_regs[13] = extra[0]; u.u_regs[14] = extra[1];
 	u.u_ar0 = (int *)regs;
+	/* SC 255 is the Z8000 breakpoint instruction, outside the syscall table.
+	 * Preserve registers; saved PC is the following word, as specified for SC.
+	 */
+	if (num == 255) {
+		psignal(u.u_procp, SIGTRC);
+		userret(regs, saved_usp);
+		extra[0] = u.u_regs[13]; extra[1] = u.u_regs[14];
+		return;
+	}
 	u.u_error = 0;
 	u.u_intflg = 0;
 	u.u_segflg = 0;		/* user-mode caller -> user address space */
@@ -54,11 +65,11 @@ unsigned *regs;
 	}
 
 	/*
-	 * exec replaces the user stack entirely via set_usp().
-	 * Re-read it so we don't clobber the new SP at trap exit.
+	 * exec stages its new SP in the process-local register image. Hardware
+	 * NSPOFF may belong to another process after sleeping in closef/iput.
 	 */
 	if ((num == 11 || num == 59) && u.u_error == 0)
-		saved_usp = get_usp();
+		saved_usp = u.u_regs[15];
 
 	if (u.u_intflg) {
 		u.u_error = EINTR;
@@ -81,17 +92,22 @@ unsigned *regs;
 	regs[15] = useg;
 
 	userret(regs, saved_usp);
+	extra[0] = u.u_regs[13]; extra[1] = u.u_regs[14];
 }
 
 /*
  * Interrupt return. The assembly wrapper supplies the same saved-register
  * layout as a syscall. Kernel interrupts never switch processes here.
  */
-intrret(regs)
+intrret(regs, extra)
 unsigned *regs;
+unsigned *extra;
 {
-	if ((regs[14] & 0x4000) == 0)
+	if ((regs[14] & 0x4000) == 0) {
+		u.u_regs[13] = extra[0]; u.u_regs[14] = extra[1];
 		userret(regs, get_usp());
+		extra[0] = u.u_regs[13]; extra[1] = u.u_regs[14];
+	}
 }
 
 /*
@@ -126,8 +142,9 @@ int usp;
  * Z8001 SEGT is delivered after the offending instruction; the table holds
  * that saved PC and a landing pad restoring the helper's original FCW/stack.
  */
-segtrap(regs)
+segtrap(regs, extra)
 unsigned *regs;
+unsigned *extra;
 {
 	extern unsigned ufixups[];
 	register unsigned *p;
@@ -147,9 +164,11 @@ unsigned *regs;
 		panic("kernel access fault");
 		return;
 	}
+	u.u_regs[13] = extra[0]; u.u_regs[14] = extra[1];
 	if (!stackfault(regs, fault))
 		psignal(u.u_procp, SIGSEG);
 	userret(regs, get_usp());
+	extra[0] = u.u_regs[13]; extra[1] = u.u_regs[14];
 }
 
 /* Z8001 completes the faulting instruction. Only replay stores with no
@@ -214,4 +233,57 @@ unsigned *regs, *f;
 	regs[15] = useg;
 	regs[16] = f[5];
 	return(1);
+}
+
+/* R13/R14 are passed by the entry wrappers before C reuses them. Other
+ * registers come from the unchanged trap frame; USP is process-local here.
+ */
+coreregs(usp)
+unsigned usp;
+{
+	int i;
+	for(i = 0; i < 13; i++) u.u_regs[i] = u.u_ar0[i];
+	u.u_regs[15] = usp;
+	for(i = 0; i < 3; i++) u.u_regs[16+i] = u.u_ar0[14+i];
+}
+
+/* V7 u-area reads, with writes confined to saved user registers and EPU state.
+ * FCW writes affect arithmetic flags only, never mode, EPU or IRQ enables.
+ */
+traceuser(req, off, value)
+unsigned off;
+int *value;
+{
+	int *p, i, v;
+	if (off&1 || off >= ctob(USIZE)) return(-1);
+	p = (int *)((char *)&u+off);
+	if (req == 3) { *value = *p; return(0); }
+	for(i = 0; i < 19; i++) if (p == &u.u_regs[i]) goto reg;
+	for(i = 0; i < 13; i++) if (p == &u.u_ar0[i]) goto reg;
+	if (p == &u.u_ar0[14]) { i = 16; goto reg; }
+	if (p == &u.u_ar0[16]) { i = 18; goto reg; }
+	if (p >= (int *)u.u_fpe && p < (int *)(u.u_fpe+96)) {
+		*p = *value; u.u_fpflag = 1; return(0);
+	}
+	return(-1);
+reg:
+	v = *value;
+	if (i == 17 || ((i == 15 || i == 18) && (v&1))) return(-1);
+	if (i == 16) v = (u.u_regs[16]&~0xfc) | (v&0xfc);
+	u.u_regs[i] = v;
+	if (i < 13) u.u_ar0[i] = v;
+	if (i == 16) u.u_ar0[14] = v;
+	if (i == 18) u.u_ar0[16] = v;
+	return(0);
+}
+
+/* Hardware stepping is optional. This Z8001 configuration has no trace
+ * facility; reject request 9 without changing the stopped register image.
+ */
+tracego(addr, step)
+unsigned addr;
+{
+	if (step || (addr != 1 && (addr&1))) return(-1);
+	if (addr != 1) u.u_regs[18] = u.u_ar0[16] = addr;
+	return(0);
 }

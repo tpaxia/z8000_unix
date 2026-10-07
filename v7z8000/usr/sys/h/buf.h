@@ -37,7 +37,7 @@ struct buf
 	daddr_t	b_blkno;		/* block # on device */
 	char	b_xmem;			/* high order core address */
 	char	b_error;		/* returned after I/O */
-	unsigned int b_resid;		/* words not transferred after error */
+	unsigned int b_resid;		/* bytes not transferred after error */
 };
 
 extern struct buf buf[];		/* The buffer pool itself */

@@ -79,7 +79,7 @@ char **argv;
 	check("valid copy after fault", fstat(fd, &st) == 0 && st.st_size == 0);
 	pid = fork();
 	if (!pid) _exit(*p);
-	check("user gap is SIGSEGV", pid > 0 && wait(&status) == pid && status == SIGSEGV);
+	check("user gap is SIGSEGV", pid > 0 && wait(&status) == pid && (status & 0177) == SIGSEGV);
 	close(fd);
 	pid = fork();
 	if (!pid) { *(int *)0xf002 = 123; _exit(*(int *)0xf002 != 123); }
@@ -98,7 +98,7 @@ char **argv;
 	check("PUSH backout", pid > 0 && wait(&status) == pid && status == 0);
 	pid = fork();
 	if (!pid) { rmwgrow(); _exit(99); }
-	check("unsafe RMW rejected", pid > 0 && wait(&status) == pid && status == SIGSEGV);
+	check("unsafe RMW rejected", pid > 0 && wait(&status) == pid && (status & 0177) == SIGSEGV);
 	printf("pages: %s\n", failed ? "FAILED" : "passed");
 	return(failed);
 }

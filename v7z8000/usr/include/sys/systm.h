@@ -22,7 +22,7 @@ int	nblkdev;
 
 /*
  * Number of character switch entries.
- * Set by cinit/tty.c
+ * Set by cinit/machdep.c
  */
 int	nchrdev;
 
@@ -37,13 +37,10 @@ daddr_t	swplo;			/* block number of swap space */
 int	nswap;			/* size of swap space */
 int	updlock;		/* lock for sync */
 daddr_t	rablock;		/* block to be read ahead */
-extern	char	regloc[];	/* locs. of saved user registers (trap.c) */
 char	msgbuf[MSGBUFS];	/* saved "printf" characters */
 dev_t	rootdev;		/* device of the root */
 dev_t	swapdev;		/* swapping device */
 dev_t	pipedev;		/* pipe device */
-extern	int	icode[];	/* user init code */
-extern	int	szicode;	/* its size */
 
 dev_t getmdev();
 daddr_t	bmap();
@@ -61,6 +58,9 @@ struct filsys *getfs();
 struct file *getf();
 struct file *falloc();
 int	uchar();
+extern int	schar();
+extern int	icode[];
+extern int	szicode;
 /*
  * Instrumentation
  */

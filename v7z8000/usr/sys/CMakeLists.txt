@@ -162,7 +162,7 @@ foreach(source IN LISTS KERNEL_ASM)
 endforeach()
 
 # Shared V7 services. Machine configuration never changes this list.
-foreach(name main bio malloc text alloc iget nami rdwri subr fio prf slp
+foreach(name main acct bio physio malloc text alloc iget nami rdwri subr fio prf slp
              sys1 sys2 sys3 sys4 pipe sig sysent clock prim)
     pcc_compile_c(sys ${name})
 endforeach()
@@ -217,6 +217,10 @@ add_custom_command(OUTPUT ${B}/handler.bin ${B}/handler-data.bin
 # Kernel artifacts are independent of the host emulator/test harness.
 add_custom_target(kernel ALL DEPENDS
     ${B}/rom.bin ${B}/kernel.bin ${B}/handler.bin ${B}/handler-data.bin ${B}/fpe.bin)
+add_custom_target(check_headers
+    COMMAND python3 ${TOOLS_DIR}/export-headers.py --check
+    COMMENT "Checking installed kernel ABI headers")
+add_dependencies(kernel check_headers)
 
 add_custom_command(OUTPUT ${B}/fpe.bin
     COMMAND ${CMAKE_COMMAND} -E make_directory ${B}/fpe

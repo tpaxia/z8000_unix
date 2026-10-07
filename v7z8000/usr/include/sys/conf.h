@@ -23,7 +23,7 @@ extern struct cdevsw
 	int	(*d_open)();
 	int	(*d_close)();
 	int	(*d_read)();
-	char	*(*d_write)();
+	int	(*d_write)();
 	int	(*d_ioctl)();
 	int	(*d_stop)();
 	struct tty *d_ttys;
@@ -37,7 +37,7 @@ extern struct linesw
 	int	(*l_open)();
 	int	(*l_close)();
 	int	(*l_read)();
-	int	(*l_write)();
+	char	*(*l_write)();
 	int	(*l_ioctl)();
 	int	(*l_rint)();
 	int	(*l_rend)();

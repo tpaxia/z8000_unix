@@ -34,6 +34,7 @@
 	.globl	_lseek
 	.globl	_getpid
 	.globl	_setuid
+	.globl	_geteuid
 	.globl	_getuid
 	.globl	_alarm
 	.globl	_fstat
@@ -50,6 +51,7 @@
 	.globl	_pipe
 	.globl	_times
 	.globl	_setgid
+	.globl	_getegid
 	.globl	_getgid
 	.globl	_signal
 	.globl	_ioctl
@@ -195,11 +197,17 @@ _chdir:
 	ret
 
 ! ======================================================================
-! long time(0) -- syscall #13
+! long time(tloc) -- syscall #13
 ! Returns time in R0:R1 (high:low).
 ! ======================================================================
 _time:
 	sc	#13
+	ld	r2, 2(sp)
+	cp	r2, #0
+	jr eq,	.Ltime
+	ld	@r2, r0
+	ld	2(r2), r1
+.Ltime:
 	ret
 
 ! ======================================================================
@@ -288,6 +296,10 @@ _setuid:
 ! ======================================================================
 _getuid:
 	sc	#24
+	ret
+_geteuid:
+	sc	#24
+	ld	r0, r1
 	ret
 
 ! ======================================================================
@@ -447,6 +459,10 @@ _setgid:
 _getgid:
 	sc	#47
 	ret
+_getegid:
+	sc	#47
+	ld	r0, r1
+	ret
 
 ! ======================================================================
 ! int (*signal(sig, func))() -- syscall #48
@@ -580,4 +596,52 @@ _chroot:
 	sc	#61
 	cp	r0, #0xFFFF
 	jp eq,	cerror
+	ret
+
+! V7 ptrace(req,pid,addr,data), kernel order data,pid,addr,req.
+! A successful word read may return -1: errno distinguishes it from failure.
+	.globl _ptrace
+_ptrace:
+	push @sp,r4
+	ld r1,10(sp)
+	ld r2,6(sp)
+	ld r3,8(sp)
+	ld r4,4(sp)
+	clr _errno
+	sc #26
+	pop r4,@sp
+	cp r0,#0xffff
+	jr ne,.Lptrdone
+	test r1
+	jr eq,.Lptrdone
+	ld _errno,r1
+.Lptrdone:
+	ret
+
+! V7 accounting and user residency lock.
+	.globl _acct
+	.globl _lock
+_acct:
+	ld r1, 2(sp)
+	sc #51
+	cp r0, #0xffff
+	jp eq,cerror
+	ret
+_lock:
+	ld r1, 2(sp)
+	sc #53
+	cp r0, #0xffff
+	jp eq,cerror
+	ret
+
+! Four-argument profiling setup; preserve the callee-saved R4.
+	.globl _profil
+_profil:
+	push @sp,r4
+	ld r1,4(sp)
+	ld r2,6(sp)
+	ld r3,8(sp)
+	ld r4,10(sp)
+	sc #44
+	pop r4,@sp
 	ret

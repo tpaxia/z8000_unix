@@ -53,8 +53,16 @@ and console on shared vector zero. Drivers contain their own I/O registers.
 
 `machine/krt.s`, `trap.s` and `trap.c` implement the Z8000 trap and calling
 conventions, interrupt masking and user-memory access. `machine/cpu.c` holds
-bootstrap code and remaining compatibility stubs; `machine/fpe.c` handles
+bootstrap code, exec startup and signal-frame construction; `machine/fpe.c` handles
 the software EPU. `machine/emurom.s` supplies this board's reset sequence.
+
+Shared exec calls CPU `execsize(nc, na, ne, data_bytes)` (click reservation,
+zero on collision), `execstk(bno, nc, na, ne)` (zero/-1), and `execregs()`
+(register/EPU reset). `execstk` stages SP in process-local storage for trap
+return; it must survive sleeping file cleanup. Shared signal policy calls
+`sendsig(handler, signal, &usp)` (zero/-1), which commits SP/PC only after a
+complete frame copy. Filesystem policy, credential changes and signal defaults
+remain in shared code.
 
 The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 
@@ -68,6 +76,13 @@ The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 | `resume(p_addr, label)` | Switch u-area/kernel-stack mapping and restore the saved continuation atomically |
 | `copyuarea(child)` | Copy the current u-area, including the continuation saved before this call |
 | `copyproc(parent, child)` | Copy user data and, for split executables, instruction space |
+| `physmap(bp, rw)` / `physunmap(bp)` | Validate and pin the complete user range after special-buffer acquisition; release the pin while preserving a pre-existing lock |
+| `physio_copy(bp, off, buffer, count, writing)` | Copy through the pinned request owner's mappings, independent of the current process; reject bounds/direction violations |
+| `coredump(inode)` | Write u-area, data and stack in V7 order through this machine's mappings; preserve errors and reject incomplete writes |
+| `traceword(req, addr, value)` | Read/write a tracee word through its I/D mappings; enforce exclusive text ownership and invalidate stale swap copies |
+| `traceuser(req, offset, value)` | CPU support reads u-area words and permits only safe register/EPU writes |
+| `tracego(addr, step)` | Validate resume state; hardware stepping is optional and currently returns -1 when requested |
+| `coreregs(usp)` | CPU support snapshots user registers for the core image, including the process-local SP |
 | `useracc(base, count, writing)` | Return nonzero if the complete user-data range permits the requested access; reject address wrap |
 
 The scheduler no longer writes MMU ports or derives user-bank numbers from
@@ -131,3 +146,68 @@ process residency transitions used by the scheduler. The emulated implementation
 keeps those services in `machine/paged.c`; swap uses the configured block device.
 The split kernel reserves a separate instruction bank and keeps PSA vectors in
 ROM data space. See the kernel reference before reusing its reset/trap layout.
+
+## Raw device transfers
+
+Shared `sys/physio.c` owns buffer locking, completion waits and byte residuals.
+A character driver supplies raw entry points and passes its strategy routine and
+special buffer to physio. Its strategy handles B_PHYS through the selected MMU's
+opaque descriptor and `physio_copy`; ordinary kernel-buffer transfers still use
+b_addr directly. Pinning must prevent swapping or relocation until completion.
+Drivers must call iodone on success and failure, retaining the untransferred
+byte count in b_resid. No current device uses B_MAP bus-map allocation.
+
+The emulated configuration adds raw ATA at character major 3, with sector-aligned
+requests and the same minors as block major 1. The active swap unit rejects raw
+opens. See the [raw-I/O contract](../../../../doc/kernel-technical-reference.md#raw-physical-io).
+
+
+## Tracing capability
+
+The current Z8001 configuration supports ptrace requests 0–8 and the SC 255
+breakpoint trap. Request 9 fails with EIO: software single-stepping is deliberately
+excluded. Any future hardware implementation must provide instruction-step
+completion as a kernel-visible trace event, with correct process ownership and
+interrupt handling; the STOP pin alone does not supply that interface. Shared
+V7 stop/wait/IPC code remains independent of this optional capability.
+
+
+## Public ABI and clock sampling
+
+After changing kernel headers, run `python3 tools/export-headers.py` from the
+repository root. Kernel/libc/native-image builds check the matching installed
+headers; public user.h exposes the structure without the kernel address macro.
+
+CPU `clktick(frame)` passes saved PC/FCW to shared `clock(pc, flags)`.
+`usermode`, `basepri` and `idlepc` interpret CPU state; `addupc` performs a
+non-sleeping, fault-safe profiling word update. Clock acknowledgement belongs
+to the machine. Disk drivers supply dk_busy/dk_numb/dk_wds instrumentation.
+An MMU implementing eviction must honor SULOCK as well as its internal locks;
+shared syslock supplies permission and flag policy.
+
+Shared process policy supplies `swapvict(skip)`: `skip` is an NPROC-byte exclusion
+array owned by the allocating machine routine. It ranks eligible residents with
+V7's sleeper/stopped-size and age/nice rules. The machine layer performs the
+transfer, skips failed candidates for that allocation attempt and resets p_time
+on successful swap-in/out. It must not swap the current process or locked text.
+Process 0 runs the adapted original sched loop; swtch selects residents only.
+corealloc may sleep on a pinned extent reservation, serviced by corework in proc 0.
+Background swap-in uses V7 aging gates, while explicit reservations use immediate
+victim ranking. Swap I/O must sleep with buffer ownership and pinned sources;
+swap-out must remove SLOAD before a transfer can schedule another process.
+Shared text callers hold XLOCK across transfers and count changes. SREADY is
+cleared by swtch at first dispatch, and excludes an undispatched image from
+victim selection. A post-swap-in runin wait provides resident execution time on
+immediate-completion controllers.
+
+Sticky text can outlive its final process reference on swap. Configurations must
+size swap-map storage for process, text and concurrent exec argument extents,
+including free holes and the terminator; paged.c checks
+SMAPSIZ >= 2*NPROC+NTEXT+2. Exec always reserves ten blocks for arguments and
+retains V7's Out of swap panic when no reservation fits. An unused cache
+entry is discarded if backing storage cannot be obtained or written.
+
+Sleeping allocation permits concurrent provisional replacements. The paged MMU
+requires CMAPSIZ >= 7*(NPROC-1)+NTEXT+5: four committed plus three provisional
+extents per process, all text entries and map termination/headroom. The bound is
+conservative; it avoids relying on only one allocator being active at a time.

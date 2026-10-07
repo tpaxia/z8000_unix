@@ -34,8 +34,15 @@ See [software EPU service](doc/kernel-technical-reference.md#software-epu-servic
 Trap handlers must briefly enter SEG+SYS mode (forced by CPU hardware on trap entry) to access the segmented system stack pointer (RR14), then switch to NONSEG+SYS for C code execution.
 
 The kernel also uses split I/D. The emulated board supports shared read-only
-0411 text, conservative stack-fault backout and automatic growth, and whole-process
-swapping to a dedicated ATA unit. See the [memory contract](doc/kernel-technical-reference.md#shared-text-and-swapping).
+0411 text with sticky swap caching, conservative stack-fault backout and automatic growth, and whole-process
+swapping through a separate V7 swapper process to a dedicated ATA unit. Raw disk I/O uses V7 buffer locking with
+MMU-owned validation and process pinning. Fatal signals can write
+[V7-layout core files](doc/kernel-technical-reference.md#core-dumps) with a full
+Z8000 register snapshot. V7 `ptrace` requests 0–8 are supported; single-stepping
+requires machine hardware support and currently returns EIO. Process accounting,
+user profiling and privileged residency locking are supported. Installed kernel
+ABI headers are checked against the kernel sources during builds. Exec arguments
+use the original V7 swap-backed staging; swap is required, including for boot. See the [memory contract](doc/kernel-technical-reference.md#shared-text-and-swapping).
 
 ### MMU: Segment Numbers as Map Set Selectors
 
@@ -102,7 +109,7 @@ make -C PCC-z8000/z8000/cz8                               # build compiler
 make -C PCC-z8000/z8000/az8                               # build assembler
 make -C PCC-z8000/z8000/test ../ldz8                       # build linker
 make -C tools                                            # build user programs + filesystem images
-cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build          # configure kernel build
+cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release
 cmake --build v7z8000/usr/sys/build                       # build kernel
 cmake --build v7z8000/usr/sys/build --target test          # run kernel boot test
 ```
@@ -127,12 +134,12 @@ To run the current kernel regression targets:
 ```sh
 cmake --build v7z8000/usr/sys/build --target \
   test test-libc test-signal test-preempt test-tty test-split test-fpe \
-  test-copy test-fault test-v7-interfaces test-bio test-abi test-memory
+  test-copy test-fault test-v7-interfaces test-bio test-abi test-memory test-physio test-core test-ptrace test-exec test-services
 python3 PCC-z8000/z8000/test/ratchet/run.py
 ```
 
 These cover both executable layouts, copy/fault recovery, filesystem and TTY
-contracts, queued disk I/O and reboot persistence, syscall numbers and process
+contracts, queued and raw disk I/O, reboot persistence, core images, set-ID exec/tracing interactions, syscall numbers and process
 exhaustion at installed RAM limits. Native self-hosting and development-environment rebuilds use the
 separate Step 29/30 commands linked above.
 

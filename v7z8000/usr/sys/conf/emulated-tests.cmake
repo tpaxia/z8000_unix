@@ -167,3 +167,43 @@ add_custom_target(test-memory
     COMMENT "Testing resource maps, physical RAM bounds and low-memory fork recovery"
     VERBATIM
 )
+
+add_custom_target(test-physio
+    COMMAND python3 "${TOOLS_DIR}/test-physio.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing raw disk transfers, mapping ownership and low-memory swapping"
+    VERBATIM
+)
+
+add_custom_target(test-core
+    COMMAND python3 "${TOOLS_DIR}/test-core.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing V7 core images, registers, permissions, disk exhaustion and swapping"
+    VERBATIM
+)
+
+add_custom_target(test-ptrace
+    COMMAND python3 "${TOOLS_DIR}/test-ptrace.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing V7 tracing, register writes, protected text and stopped-process swapping"
+    VERBATIM
+)
+
+add_custom_target(test-exec
+    COMMAND python3 "${TOOLS_DIR}/test-exec.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing set-ID exec, CPU startup, tracing and credential core policy"
+    VERBATIM
+)
+
+add_custom_target(test-services
+    COMMAND python3 "${TOOLS_DIR}/test-services.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing public ABI, accounting, profiling and memory locking"
+    VERBATIM
+)

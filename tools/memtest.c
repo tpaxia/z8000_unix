@@ -29,7 +29,11 @@ char **argv;
 		}
 		printf("execmem: passed\n"); return(0);
 	}
-	expected = atoi(argv[1]); failed = 0;
+	if (argv[1][0] == 'r') {
+		if (setuid(1) < 0) return(3);
+		expected = atoi(argv[1]+1);
+	} else expected = atoi(argv[1]);
+	failed = 0;
 	for (round = 0; round < 3; round++) {
 		if (pipe(p) < 0) return(2);
 		first = 0;

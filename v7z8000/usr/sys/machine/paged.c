@@ -44,9 +44,15 @@ int iseg;
 #define TEXT 1
 #define STACK 2
 
-/* Four extents per process, plus three provisional resize allocations. */
-#if CMAPSIZ < 4*(NPROC-1)+5
-#error coremap must hold allocation holes, resize reservations and terminator
+/* Sleeping allocators may all retain provisional replacements concurrently.
+ * Bound four committed and three provisional extents per process, every text
+ * slot, plus holes/terminator and bootstrap headroom. V7 mfree is unchecked.
+ */
+#if CMAPSIZ < 7*(NPROC-1)+NTEXT+5
+#error coremap must hold concurrent resize and shared-text allocation holes
+#endif
+#if SMAPSIZ < 2*NPROC+NTEXT+2
+#error swapmap must hold process, cached-text and exec allocation holes
 #endif
 #if USIZE != 64
 #error paged MMU requires a 4KB u-area and system stack
@@ -169,7 +175,9 @@ struct proc *p;
 		return(-1);
 	}
 	if (p->p_textp) {
+		xlock(p->p_textp);
 		p->p_textp->x_count++; p->p_textp->x_ccount++;
+		xunlock(p->p_textp);
 	}
 	return(0);
 }
@@ -184,7 +192,8 @@ struct proc *p;
 
 /* Validate click counts before rounding to hardware pages. Commit size and
  * layout accounting only after every required extent has been acquired.
- * Shared text mappings are read-only; traced writable text (xrw) is unsupported.
+ * Shared text mappings stay read-only, including under tracing. Ptrace writes
+ * use the physical-copy helper rather than granting user write access (xrw).
  */
 estabur(nt, nd, ns, sep, xrw)
 unsigned nt, nd, ns;
@@ -375,7 +384,7 @@ unsigned sp;
 
 /* Whole-process swapping. The scheduler never resumes a nonresident u-area.
  * Transfers use a private kernel bounce buffer and the ordinary block driver.
- * Wait with interrupts enabled, without sleeping on proc 0's scheduler stack.
+ * Process 0 sleeps on its own saved continuation while residents run.
  */
 static struct buf swbuf;
 static char swbounce[512];
@@ -409,39 +418,107 @@ swapio(block, frame, pages, reading)
 unsigned block, frame, pages;
 {
 	unsigned i;
-	int s, error;
+	int s, error, locked;
+	struct proc *owner;
+
+	if (!pages) return(0);
+	owner = u.u_procp;
+	locked = owner->p_flag&SLOCK;
+	owner->p_flag |= SLOCK;
+	s = spl6();
+	while (swbuf.b_flags&B_BUSY) {
+		swbuf.b_flags |= B_WANTED;
+		sleep((caddr_t)&swbuf, PSWP);
+	}
+	swbuf.b_flags = B_BUSY;
+	spl0();
+	error = 0;
 	for (i = 0; i < pages*4; i++) {
 		if (!reading) physcopy(frame+i/4, (i%4)*512, swbounce, 512, 0);
-		swbuf.b_flags = B_BUSY | (reading ? B_READ : B_WRITE);
+		spl6();
+		swbuf.b_flags = B_BUSY | (swbuf.b_flags&B_WANTED) |
+		    (reading ? B_READ : B_WRITE);
 		swbuf.b_dev = swapdev;
 		swbuf.b_blkno = swplo + block+i;
 		swbuf.b_bcount = 512;
 		swbuf.b_un.b_addr = swbounce;
 		swbuf.b_error = swbuf.b_resid = 0;
-		s = spl0();
 		(*bdevsw[major(swapdev)].d_strategy)(&swbuf);
-		while (!(swbuf.b_flags & B_DONE)) idle();
-		error = swbuf.b_flags & B_ERROR;
-		splx(s);
-		if (error) return(-1);
+		while (!(swbuf.b_flags&B_DONE))
+			sleep((caddr_t)&swbuf, PSWP);
+		error = (swbuf.b_flags&B_ERROR) || swbuf.b_resid;
+		spl0();
+		if (error) break;
 		if (reading) physcopy(frame+i/4, (i%4)*512, swbounce, 512, 1);
 	}
-	return(0);
+	spl6();
+	swbuf.b_flags = 0;
+	wakeup((caddr_t)&swbuf);
+	if (!locked) owner->p_flag &= ~SLOCK;
+	splx(s);
+	return(error ? -1 : 0);
 }
+
+/* Extent growth must keep the old image intact until all replacements exist.
+ * Ask proc 0 to reserve the extent; the waiting owner is pinned. Unlike the
+ * PDP-11 contiguous expand(), this port does not swap a half-resized image.
+ */
+static struct {
+	unsigned need, frame;
+	int done;
+} corereq[NPROC];
 
 corealloc(pages)
 unsigned pages;
 {
+	struct proc *p;
+	unsigned frame;
+	int slot, locked, s;
+
+	frame = malloc(coremap, pages);
+	p = u.u_procp;
+	if (frame || p == &proc[0] || nswap <= 1) return(frame);
+	slot = p-proc;
+	locked = p->p_flag&SLOCK;
+	p->p_flag |= SLOCK;
+	s = spl6();
+	corereq[slot].need = pages;
+	corereq[slot].done = 0;
+	runout = runin = 0;
+	wakeup((caddr_t)&runout);
+	wakeup((caddr_t)&runin);
+	while (!corereq[slot].done)
+		sleep((caddr_t)&corereq[slot], PSWP);
+	frame = corereq[slot].frame;
+	if (!locked) p->p_flag &= ~SLOCK;
+	splx(s);
+	return(frame);
+}
+
+/* Called only by sched(), never by the context switcher. */
+corework()
+{
 	register struct proc *p;
+	extern struct proc *swapvict();
 	unsigned f;
-	while (!(f = malloc(coremap, pages))) {
-		for (p = &proc[1]; p < &proc[NPROC]; p++)
-			if (p != u.u_procp && (p->p_flag & (SLOAD|SLOCK|SSYS)) == SLOAD &&
-			    (p->p_stat == SSLEEP || p->p_stat == SRUN) && swapout(p) == 0)
-				break;
-		if (p == &proc[NPROC]) return(0);
+	int i, slot;
+	char skip[NPROC];
+
+	for (slot = 1; slot < NPROC; slot++)
+		if (corereq[slot].need) break;
+	if (slot == NPROC) return(0);
+	for (i = 0; i < NPROC; i++) skip[i] = 0;
+	while (!(f = malloc(coremap, corereq[slot].need))) {
+		p = swapvict(skip);
+		if (!p) break;
+		skip[p-proc] = 1;
+		swapout(p);
 	}
-	return(f);
+	corereq[slot].frame = f;
+	corereq[slot].need = 0;
+	corereq[slot].done = 1;
+	wakeup((caddr_t)&corereq[slot]);
+	return(1);
 }
 
 swapout(p)
@@ -450,19 +527,26 @@ struct proc *p;
 	register struct memspace *m;
 	unsigned block, pos, pages;
 	int i;
+	struct text *xp;
+	if (!(p->p_flag&SLOAD) || (p->p_flag&(SSYS|SLOCK|SULOCK|SREADY)) ||
+	    p == u.u_procp) return(-1);
+	xp = p->p_textp;
+	if (xp && (xp->x_flag&XLOCK)) return(-1);
 	m = &memory[p-proc];
 	pages = UFRAMES;
 	for (i = 0; i < 3; i++) pages += m->size[i];
 	block = malloc(swapmap, pages*4);
 	if (!block) return(-1);
-	p->p_flag |= SLOCK;
+	if (xp) xlock(xp);
+	p->p_flag = (p->p_flag|SLOCK)&~SLOAD;
 	if (swapio(block, p->p_addr, UFRAMES, 0) < 0) goto fail;
 	pos = block+UFRAMES*4;
 	for (i = 0; i < 3; i++) {
 		if (swapio(pos, m->base[i], m->size[i], 0) < 0) goto fail;
 		pos += m->size[i]*4;
 	}
-	if (textout(p->p_textp) < 0) goto fail;
+	if (textout(xp) < 0) goto fail;
+	if (xp) xunlock(xp);
 	frame_free(p->p_addr);
 	for (i = 0; i < 3; i++) {
 		if (m->size[i]) mfree(coremap, m->size[i], m->base[i]);
@@ -470,6 +554,7 @@ struct proc *p;
 	}
 	p->p_addr = block;
 	p->p_flag &= ~(SLOAD|SLOCK);
+	p->p_time = 0;
 	/* Retain sizes for swapin, but remove every stale physical mapping. */
 	for (i = 0; i < 32; i++) {
 		outw(MM_PAGESEL, (p-proc+1)*32+i); outw(MM_PAGEFRAME, 0xffff);
@@ -478,7 +563,8 @@ struct proc *p;
 	swapouts++;
 	return(0);
 fail:
-	p->p_flag &= ~SLOCK;
+	p->p_flag = (p->p_flag|SLOAD)&~SLOCK;
+	if (xp) xunlock(xp);
 	mfree(swapmap, pages*4, block);
 	return(-1);
 }
@@ -489,7 +575,12 @@ struct proc *p;
 	register struct memspace *m;
 	unsigned frame, base[3], pos, block;
 	int i, j;
+	struct text *xp;
 	if (p->p_flag & SLOAD) return(0);
+	xp = p->p_textp;
+	/* Never wait for a lock whose owner may need proc 0 to allocate. */
+	if (xp && (xp->x_flag&XLOCK)) return(-1);
+	if (xp) xlock(xp);
 	p->p_flag |= SLOCK;
 	m = &memory[p-proc];
 	frame = frame_alloc();
@@ -509,16 +600,26 @@ struct proc *p;
 	for (j = 0; j < 3; j++) m->base[j] = base[j];
 	mfree(swapmap, pos-block, block);
 	p->p_addr = frame;
-	if (p->p_textp) p->p_textp->x_ccount++;
-	p->p_flag = (p->p_flag|SLOAD)&~SLOCK;
+	if (xp) {
+		xp->x_ccount++;
+		xunlock(xp);
+	}
+	p->p_flag = (p->p_flag|SLOAD|SREADY)&~SLOCK;
+	p->p_time = 0;
 	mapspace(p-proc);
 	swapins++;
 	return(0);
 release:
+	/* A failed private read must not strand a newly loaded, unused text. */
+	if (xp && !xp->x_ccount && xp->x_caddr && xp->x_daddr) {
+		mfree(coremap, PAGES(xp->x_size), xp->x_caddr);
+		xp->x_caddr = 0;
+	}
 	for (j = 0; j < i; j++)
 		if (m->size[j]) mfree(coremap, m->size[j], base[j]);
 	frame_free(frame);
 fail:
+	if (xp) xunlock(xp);
 	p->p_flag &= ~SLOCK;
 	return(-1);
 }
@@ -548,10 +649,125 @@ struct proc *p;
 	}
 	p->p_addr = block; p->p_size = u.u_procp->p_size;
 	p->p_flag &= ~SLOAD;
-	if (p->p_textp) p->p_textp->x_count++;
+	if (p->p_textp) {
+		xlock(p->p_textp);
+		p->p_textp->x_count++;
+		xunlock(p->p_textp);
+	}
 	swapouts++;
 	return(0);
 fail:
 	mfree(swapmap, pages*4, block);
 	return(-1);
+}
+
+/* Opaque B_PHYS descriptor: virtual data address and stable process-map selector.
+ * Bit 7 remembers an existing SLOCK so unpin never releases another owner's lock.
+ * Pin after the special buffer wait: a waiter may have been swapped meanwhile.
+ */
+physmap(bp, rw)
+struct buf *bp;
+{
+	register struct proc *p;
+	if (u.u_segflg || !useracc(u.u_base, u.u_count, rw == B_READ)) {
+		u.u_error = EFAULT;
+		return(-1);
+	}
+	p = u.u_procp;
+	bp->b_un.b_addr = u.u_base;
+	bp->b_xmem = (p-proc+1) | ((p->p_flag&SLOCK) ? 0200 : 0);
+	p->p_flag |= SLOCK;
+	return(0);
+}
+
+physunmap(bp)
+struct buf *bp;
+{
+	register struct proc *p;
+	p = &proc[(bp->b_xmem&0177)-1];
+	if (!(bp->b_xmem&0200)) p->p_flag &= ~SLOCK;
+	bp->b_xmem = 0;
+}
+
+physio_copy(bp, off, buf, count, writing)
+struct buf *bp;
+unsigned off, count;
+char *buf;
+{
+	register struct memspace *m;
+	unsigned addr, page, frame, n;
+	int slot;
+	slot = (bp->b_xmem&0177)-1;
+	if (!(bp->b_flags&B_PHYS) || slot <= 0 || slot >= NPROC ||
+	    (proc[slot].p_flag&(SLOAD|SLOCK)) != (SLOAD|SLOCK) ||
+	    (long)off+count > bp->b_bcount ||
+	    (long)(unsigned)bp->b_un.b_addr+off+count > 65536L ||
+	    (writing != ((bp->b_flags&B_READ) != 0))) return(-1);
+	m = &memory[slot];
+	addr = (unsigned)bp->b_un.b_addr+off;
+	while (count) {
+		page = addr>>11;
+		if (page < m->size[DATA]) frame = m->base[DATA]+page;
+		else if (page >= BANKFRAMES-m->size[STACK])
+			frame = m->base[STACK]+page-(BANKFRAMES-m->size[STACK]);
+		else return(-1);
+		n = 2048-(addr&2047); if (n > count) n = count;
+		physcopy(frame, addr&2047, buf, n, writing);
+		addr += n; buf += n; count -= n;
+	}
+	return(0);
+}
+
+/* V7 core layout: USIZE clicks of u-area, then data and stack clicks.
+ * Each section already has its own user mapping. Do not call estabur: it
+ * allocates/reclaims extents here, unlike PDP-11 register-only remapping.
+ * writei may sleep and swap this process; normal resume restores its mappings.
+ */
+coredump(ip)
+struct inode *ip;
+{
+	u.u_offset = 0;
+	u.u_base = (caddr_t)&u;
+	u.u_count = ctob(USIZE);
+	u.u_segflg = 1;
+	writei(ip);
+	if(u.u_error || u.u_count) goto done;
+	u.u_base = 0;
+	u.u_count = ctob(u.u_dsize);
+	u.u_segflg = 0;
+	writei(ip);
+	if(u.u_error || u.u_count) goto done;
+	u.u_base = (caddr_t)(-ctob(u.u_ssize));
+	u.u_count = ctob(u.u_ssize);
+	writei(ip);
+done:
+	if(u.u_count && !u.u_error) u.u_error = EIO;
+}
+
+/* Execute in the tracee, after normal scheduling has restored its mappings.
+ * V7 permits instruction writes only to exclusively referenced, non-sticky
+ * text. Keep user mappings read-only and use the physical copy window.
+ */
+traceword(req, addr, value)
+unsigned addr;
+int *value;
+{
+	struct text *xp;
+	int probe;
+	if (addr&1 || addr > 65534) return(-1);
+	if (req == 1) return(copyiin(addr, value, 2));
+	if (req == 2) return(copyin(addr, value, 2));
+	if (req == 5) return(copyout(value, addr, 2));
+	if (copyiin(addr, &probe, 2) < 0) return(-1);
+	xp = u.u_procp->p_textp;
+	if (!xp) return(copyiout(value, addr, 2));
+	if (xp->x_count != 1 || xp->x_iptr->i_mode&ISVTX) return(-1);
+	physcopy(xp->x_caddr, addr, value, 2, 1);
+	/* Future exec must not share this patched image; future swap must save it. */
+	xp->x_flag |= XTRC|XWRIT;
+	if (xp->x_daddr) {
+		mfree(swapmap, PAGES(xp->x_size)*4, xp->x_daddr);
+		xp->x_daddr = 0;
+	}
+	return(0);
 }

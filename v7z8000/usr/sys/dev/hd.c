@@ -53,6 +53,8 @@ extern int inb(), outb();
 extern int insw(), outsw();
 
 struct buf hdtab;
+static struct buf rhdbuf;
+static char hdsector[512];
 /* Busy buffers use av_forw as the pending-request queue link. */
 
 hdopen(dev, rw)
@@ -70,6 +72,12 @@ register struct buf *bp;
 {
 	int s;
 
+	bp->b_resid = bp->b_bcount;
+	if (minor(bp->b_dev) > 1 || !bp->b_bcount || (bp->b_bcount&511) ||
+	    bp->b_blkno < 0 || bp->b_blkno+(bp->b_bcount>>9) > 65536L) {
+		bp->b_flags |= B_ERROR; bp->b_error = EINVAL;
+		iodone(bp); return;
+	}
 	s = spl6();
 	bp->av_forw = 0;
 	if (hdtab.b_actf)
@@ -92,7 +100,16 @@ hdstart()
 	if (bp == 0)
 		return;
 	hdtab.b_active = 1;
-	blkno = bp->b_blkno;
+	blkno = bp->b_blkno + ((bp->b_bcount-bp->b_resid)>>9);
+	if ((bp->b_flags&(B_PHYS|B_READ)) == B_PHYS &&
+	    physio_copy(bp, bp->b_bcount-bp->b_resid, hdsector, 512, 0) < 0) {
+		bp->b_flags |= B_ERROR; bp->b_error = EFAULT;
+		hddone(); return;
+	}
+	/* V7 clock instrumentation: one bit/counter per emulated disk. */
+	dk_busy |= 1 << minor(bp->b_dev);
+	dk_numb[minor(bp->b_dev)]++;
+	dk_wds[minor(bp->b_dev)] += 512 >> 6;
 	outb(HD_SC, 1);
 	outb(HD_SN, blkno & 0xFF);
 	outb(HD_CL, (blkno >> 8) & 0xFF);
@@ -102,7 +119,8 @@ hdstart()
 		outb(HD_CMD, CMD_READ);
 	else {
 		outb(HD_CMD, CMD_WRITE);
-		outsw(HD_DATA, bp->b_un.b_addr, 256);
+		outsw(HD_DATA, (bp->b_flags&B_PHYS) ? hdsector :
+		    bp->b_un.b_addr+(bp->b_bcount-bp->b_resid), 256);
 	}
 }
 
@@ -128,15 +146,66 @@ hdintr()
 	} else {
 		if ((bp->b_flags & B_READ) && !(status & ST_DRQ))
 			return;
-		if (bp->b_flags & B_READ)
-			insw(HD_DATA, bp->b_un.b_addr, 256);
-		bp->b_resid = 0;
+		if (bp->b_flags & B_READ) {
+			if (bp->b_flags & B_PHYS) {
+				insw(HD_DATA, hdsector, 256);
+				if (physio_copy(bp, bp->b_bcount-bp->b_resid,
+				    hdsector, 512, 1) < 0) {
+					bp->b_flags |= B_ERROR; bp->b_error = EFAULT;
+				}
+			} else insw(HD_DATA, bp->b_un.b_addr+
+			    (bp->b_bcount-bp->b_resid), 256);
+		}
+		if (!(bp->b_flags&B_ERROR)) {
+			bp->b_resid -= 512;
+			if (bp->b_resid) { hdstart(); return; }
+		}
 	}
+	hddone();
+}
+
+hddone()
+{
+	register struct buf *bp;
+	bp = hdtab.b_actf;
 	/* Unlink before iodone(): asynchronous completion releases av_forw. */
+	dk_busy &= ~(1 << minor(bp->b_dev));
 	hdtab.b_actf = bp->av_forw;
 	if (hdtab.b_actf == 0)
 		hdtab.b_actl = 0;
 	hdtab.b_active = 0;
 	iodone(bp);
 	hdstart();
+}
+
+/* Raw ATA nodes use the same minor numbers as the block driver. The active
+ * swap unit is kernel-owned; raw access to it would invalidate saved images.
+ */
+hdrawopen(dev, rw)
+dev_t dev;
+{
+	if (minor(dev) > 1) u.u_error = ENXIO;
+	else if (makedev(1, minor(dev)) == swapdev && nswap > 1)
+		u.u_error = EBUSY;
+}
+
+hdread(dev)
+dev_t dev;
+{
+	hdrawio(dev, B_READ);
+}
+
+hdwrite(dev)
+dev_t dev;
+{
+	hdrawio(dev, B_WRITE);
+}
+
+hdrawio(dev, rw)
+dev_t dev;
+{
+	if (u.u_offset < 0 || (u.u_offset&511) || (u.u_count&511)) {
+		u.u_error = EINVAL; return;
+	}
+	physio(hdstrategy, &rhdbuf, dev, rw);
 }

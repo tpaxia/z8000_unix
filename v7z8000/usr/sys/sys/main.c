@@ -10,6 +10,7 @@
 #include "../h/conf.h"
 #include "../h/buf.h"
 #include "../h/file.h"
+#include "../h/acct.h"
 
 /*
  * V7 kernel main() for Z8000.
@@ -101,10 +102,10 @@ main()
 	}
 
 	/*
-	 * Parent (process 0): become idle/scheduler.
-	 * swtch() will find proc[1] on the run queue and switch to it.
+	 * Parent (process 0): run V7's separate swapping process.
+	 * Its sleeps enter swtch(), which runs resident processes.
 	 */
-	swtch();
+	sched();
 }
 
 /* open1 is now provided by sys2.c */
@@ -181,3 +182,6 @@ struct buf buf[NBUF];
 struct buf bfreelist;
 struct inode inode[NINODE];
 struct file file[NFILE];
+
+struct acct acctbuf;
+struct inode *acctp;

@@ -6,6 +6,8 @@ splx(s) {}
 copyframes(a, b, n) {}
 corealloc(n) { return(malloc(coremap, n)); }
 sureg() {}
+xlock(xp) struct text *xp; {xp->x_flag |= XLOCK;}
+xunlock(xp) struct text *xp; {xp->x_flag &= ~XLOCK;}
 check(name, ok) char *name;
 { if (!ok) { printf("maps: FAIL %s\n", name); failed++; } }
 wakeup(p) char *p;
@@ -16,9 +18,26 @@ panic(s) char *s;
 { printf("maps: FAIL panic %s\n", s); exit(1); }
 struct proc proc[NPROC];
 struct map trial[16];
+struct { struct map slots[CMAPSIZ]; int guard; } cores;
+struct { struct map slots[SMAPSIZ]; int guard; } swaps;
 main()
 {
 	int a, b, c, i, frames[15];
+	cores.guard = 012345;
+	for (i = 0; i < 7*(NPROC-1)+NTEXT+4; i++) mfree(cores.slots, 1, 2*i+1);
+	check("concurrent resize map holes", cores.guard == 012345 &&
+	    cores.slots[7*(NPROC-1)+NTEXT+3].m_size == 1 &&
+	    cores.slots[7*(NPROC-1)+NTEXT+4].m_size == 0);
+	for (i = 0; i < 7*(NPROC-1)+NTEXT+4; i++)
+		check("fragmented core-map allocation", malloc(cores.slots, 1) == 2*i+1);
+	check("core-map terminator", cores.slots[0].m_size == 0 && cores.guard == 012345);
+	swaps.guard = 012345;
+	for (i = 0; i < 2*NPROC+NTEXT+1; i++) mfree(swaps.slots, 1, 2*i+1);
+	check("process and cached-text map holes", swaps.guard == 012345 &&
+	    swaps.slots[2*NPROC+NTEXT].m_size == 1 && swaps.slots[2*NPROC+NTEXT+1].m_size == 0);
+	for (i = 0; i < 2*NPROC+NTEXT+1; i++)
+		check("fragmented swap-map allocation", malloc(swaps.slots, 1) == 2*i+1);
+	check("swap-map terminator", swaps.slots[0].m_size == 0 && swaps.guard == 012345);
 	mfree(trial, 10, 100);
 	mfree(trial, 10, 130);
 	a = malloc(trial, 4); b = malloc(trial, 6); c = malloc(trial, 10);

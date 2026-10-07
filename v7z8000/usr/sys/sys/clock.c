@@ -8,14 +8,6 @@
 #define	SCHMAG	8/10
 
 /*
- * Z8000 FCW macros for clock():
- *   USERMODE: F_S_N (bit 0x4000) clear means normal (user) mode
- *   BASEPRI:  either enable clear means above base priority
- */
-#define	USERMODE(ps)	(((ps) & 0x4000) == 0)
-#define	BASEPRI(ps)	(((ps) & 0x1800) != 0x1800)
-
-/*
  * clock is called straight from
  * the real time clock interrupt.
  *
@@ -27,12 +19,12 @@
  *	alarm clock signals
  *	jab the scheduler
  *
- * Z8000: called from nvi_dispatch with ps = interrupted FCW.
- * No clock reprime needed (emulator auto-delivers ticks).
- * No profiling, no display, no dk_busy/dk_time accounting.
+ * CPU support supplies interrupted PC/flags and mode/priority predicates.
+ * The machine acknowledges/reprimes its clock before calling this routine.
  */
 
-clock(ps)
+clock(pc, ps)
+caddr_t pc;
 {
 	register struct callo *p1, *p2;
 	register struct proc *pp;
@@ -59,7 +51,7 @@ clock(ps)
 	/*
 	 * if ps is high, just return
 	 */
-	if (BASEPRI(ps))
+	if (basepri(ps))
 		goto out;
 
 	/*
@@ -87,16 +79,25 @@ clock(ps)
 	 * and time of day
 	 */
 out:
-	if (USERMODE(ps)) {
+	a = dk_busy&07;
+	if (usermode(ps)) {
 		u.u_utime++;
+		if(u.u_prof.pr_scale)
+			addupc(pc, &u.u_prof, 1);
+		if(u.u_procp->p_nice > NZERO)
+			a += 8;
 	} else {
+		a += 16;
+		if (idlepc(pc))
+			a += 8;
 		u.u_stime++;
 	}
+	dk_time[a] += 1;
 	pp = u.u_procp;
 	if(++pp->p_cpu == 0)
 		pp->p_cpu--;
 	if(++lbolt >= HZ) {
-		if (BASEPRI(ps))
+		if (basepri(ps))
 			return;
 		lbolt -= HZ;
 		++time;

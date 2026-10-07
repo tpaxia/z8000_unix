@@ -13,6 +13,7 @@ char **argv;
 		write(4, "r", 1); read(5, &c, 1); return(0);
 	}
 	failed = 0;
+	if (argc > 1 && chmod("/bin/texti", 01755) < 0) return(6);
 	fd = open("/bin/texti", 1);
 	if (fd < 0) return(3);
 	pid = fork();

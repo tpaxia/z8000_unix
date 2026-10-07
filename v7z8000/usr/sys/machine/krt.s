@@ -47,12 +47,23 @@
 	.globl	_display
 
 ! --- Jump table at offset 0x0000 (address 0x0200) ---
-	jr	syscall_dispatch	! 0x0200: syscall entry
-	jr	boot_entry		! 0x0202: boot entry
-	jr	nvi_dispatch		! 0x0204: NVI handler entry (clock)
-	jr	vi_dispatch		! 0x0206: VI handler entry (devices)
+	jr	.Lsysvec		! 0x0200: syscall entry
+	jr	.Lbootvec		! 0x0202: boot entry
+	jr	.Lnvivec		! 0x0204: NVI handler entry (clock)
+	jr	.Lvivec		! 0x0206: VI handler entry (devices)
 	jr	epu_dispatch		! 0x0208: SEG call from EPU service
 	jr	seg_dispatch		! 0x020a: SEGTRAP, entered in SEG+SYS
+
+! NONSEG entry veneers keep the fixed two-byte jump table in JR range.
+! SEGTRAP/EPU entries jump directly: their first instructions run segmented.
+.Lsysvec:
+	jp syscall_dispatch
+.Lbootvec:
+	jp boot_entry
+.Lnvivec:
+	jp nvi_dispatch
+.Lvivec:
+	jp vi_dispatch
 
 ! SEGTRAP uses the same saved-register layout as syscall entry.
 seg_dispatch:
@@ -72,9 +83,15 @@ seg_dispatch:
 	ld	r0, #0x4000
 	ldctl	fcw, r0
 	ld	r0, sp
+	push	@sp, r14
+	push	@sp, r13
+	ld	r1, sp
+	push	@sp, r1
 	push	@sp, r0
 	call	_segtrap
-	add	sp, #2
+	ld	r13, 4(sp)
+	ld	r14, 6(sp)
+	add	sp, #8
 	ld	r0, #0xC000
 	ldctl	fcw, r0
 	pop	r0, @r14
@@ -111,11 +128,20 @@ syscall_dispatch:
 	ld	r13, sp
 	ld	r0, 4(r13)		! num
 	ld	r1, 6(r13)		! regs
-	sub	sp, #4
+	sub	sp, #10
+	ld	8(sp), r14
+	ld	r2, @r13		! interrupted user R13
+	ld	6(sp), r2
+	ld	r2, sp
+	add	r2, #6
+	ld	4(sp), r2
 	ld	2(sp), r1
 	ld	0(sp), r0
 	calr	_trap
-	add	sp, #4
+	ld	r14, 8(sp)
+	ld	r2, 6(sp)
+	ld	@r13, r2
+	add	sp, #10
 	ld	sp, r13
 	pop	r13, @sp
 	ret
@@ -123,13 +149,15 @@ syscall_dispatch:
 ! --- NVI dispatch entry (clock) ---
 ! Called from trap.s nvi_entry in NONSEG+SYS mode.
 ! R0 = interrupted FCW (passed by nvi_entry from IRET frame).
-! Calls clock(ps) where ps = interrupted FCW.
+! Pass the saved frame to CPU clock dispatch.
 nvi_dispatch:
 	push	@sp, r13
 	ld	r13, sp
 	sub	sp, #2
-	ld	0(sp), r0		! push argument: ps = interrupted FCW
-	calr	_clock
+	ld	r0, r13
+	add	r0, #4
+	ld	0(sp), r0
+	calr	_clktick
 	add	sp, #2
 	jr	irq_return
 
@@ -148,9 +176,17 @@ irq_return:
 	! return address). intrret only schedules when returning to user mode.
 	ld	r0, r13
 	add	r0, #4
+	push	@sp, r14
+	ld	r1, @r13		! interrupted R13, before wrapper frame
+	push	@sp, r1
+	ld	r1, sp
+	push	@sp, r1
 	push	@sp, r0
 	calr	_intrret
-	add	sp, #2
+	ld	r1, 4(sp)
+	ld	@r13, r1
+	ld	r14, 6(sp)
+	add	sp, #8
 	! Mask before restoring the wrapper frame and entering the SEG epilog.
 	ldctl	r1, fcw
 	and	r1, #0xE7FF
@@ -212,6 +248,8 @@ _idle:
 	or	r0, #0x1800		! set VIE+NVIE
 	ldctl	fcw, r0
 	halt
+	.globl _waitloc
+_waitloc:
 	ret
 
 ! =============================================================================

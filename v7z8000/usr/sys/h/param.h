@@ -13,8 +13,8 @@
 #define	SINCR	20		/* increment of stack (*64 bytes) */
 #define	NOFILE	20		/* max open files per process */
 #define	CANBSIZ	256		/* max size of typewriter line */
-#define	CMAPSIZ	66		/* size of core allocation area */
-#define	SMAPSIZ	50		/* size of swap allocation area */
+#define	CMAPSIZ	(7*(NPROC-1)+NTEXT+5) /* committed/provisional extents and text */
+#define	SMAPSIZ	(2*NPROC+NTEXT+2) /* process/text/exec extents, holes and terminator */
 #define	NCALL	20		/* max simultaneous time callouts */
 #define	NPROC	16		/* room for recursive make, shell and compiler */
 #define	NTEXT	40		/* max number of pure texts */

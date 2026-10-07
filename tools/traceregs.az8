@@ -1,0 +1,35 @@
+! User register probes; instruction forms from the Z8000 CPU manual.
+	.text
+	.globl _tracerun
+	.globl _tracego
+	.globl _traceval
+_tracerun:
+	push @sp,r13
+	push @sp,r14
+	push @sp,r4
+	ld r1,8(sp)
+	ld r2,#5
+	ld r4,#0x4444
+	ld r13,#0x1313
+	ld r14,#0x1414
+	sc #37
+	ld r0,#99
+	jr .Ldone
+_tracego:
+	add sp,#2
+	ld r0,#1
+	cp r4,#0x4567
+	jr ne,.Ldone
+	cp r13,#0x1357
+	jr ne,.Ldone
+	cp r14,#0x2468
+	jr ne,.Ldone
+	clr r0
+.Ldone:
+	pop r4,@sp
+	pop r14,@sp
+	pop r13,@sp
+	ret
+_traceval:
+	ld r0,#7
+	ret

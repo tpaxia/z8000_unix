@@ -79,6 +79,7 @@ struct	user
 	short	u_cmask;		/* mask for file creation */
 	int	u_sep;			/* separate instruction/data maps */
 	char	u_fpe[208];		/* software EPU registers/control and scratch */
+	unsigned u_regs[19];		/* core: R0-R15, FCW, PC segment, PC offset */
 	int	u_stack[1];
 					/* kernel stack per user
 					 * extends from u + USIZE*64
@@ -124,4 +125,3 @@ struct	user
 #define	EDOM	33
 #define	ERANGE	34
 #define	ENOSYS	35
-#define	AFORK	02

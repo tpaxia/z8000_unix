@@ -92,6 +92,7 @@ unsigned *r;
 	error = fprun(r, u.u_fpe, useg, iseg);
 	error = (error & 255) ? SIGSEG : (error ? SIGFPT : 0);
 done:
+	u.u_regs[13] = r[13]; u.u_regs[14] = r[14];
 	for (i = 0; i < 13; i++)
 		v[i] = r[i];
 	for (i = 13; i < 17; i++)
@@ -103,6 +104,7 @@ done:
 		r[i] = v[i];
 	for (i = 13; i < 17; i++)
 		r[i+3] = v[i];
+	r[13] = u.u_regs[13]; r[14] = u.u_regs[14];
 	r[15] = get_usp();
 }
 

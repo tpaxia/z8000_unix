@@ -28,6 +28,7 @@ run, compile_c = helpers.run, helpers.compile_c
 
 def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None):
     """Install target tools, V7 headers, and optional test fixtures."""
+    run([sys.executable, ROOT / 'tools/export-headers.py', '--check'])
     files = {
         'bin/cc': WORK / 'cc', 'bin/az8': BINUTILS / 'az8/az8',
         'bin/ldz8': BINUTILS / 'ldz8/ldz8', 'bin/sh': ROOT / 'tools/sh',

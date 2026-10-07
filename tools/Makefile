@@ -68,7 +68,7 @@ libc.a: $(LIBC_ASM_OBJS) $(LIBC_C_OBJS) libv7/csv.b Makefile
 #
 # The linker reads an archive once, front to back, so the order below is
 # V7's own (libc/mklib): callers before the routines they call.
-# Not built: mon.c (profiling), mpx.c and pkon.c (multiplexor), nlist.c.
+# Not built: mpx.c and pkon.c (multiplexor), nlist.c.
 # Also not built: gen/stty.c, which implements stty and gtty through ioctl;
 # the system call stubs provide them directly, as the kernel has both calls.
 # =============================================================================
@@ -82,7 +82,7 @@ LIBV7_NAMES = getgrgid getgrnam getgrent getpass getpwnam getpwuid getpwent \
     ttyslot ttyname abort abs atof atoi atol crypt ctime calloc malloc ecvt \
     errlst fakcu fpsup isatty l3 mktemp qsort rand swab tell ctype_ \
     index rindex strcat strncat strcmp strncmp strcpy strncpy strlen \
-    sbrk execl execv
+    sbrk execl execv mon
 LIBV7_OBJS = $(LIBV7_NAMES:%=$(LIBV7_DIR)/%.b) \
     $(LIBC_DIR)/setjmp.b $(LIBC_DIR)/syscalls.b \
     $(LIBV7_DIR)/float.b $(LIBV7_DIR)/softfp.b $(LIBV7_DIR)/epu.b arith.b $(LIBV7_DIR)/csv.b
@@ -121,6 +121,15 @@ $(LIBV7_DIR)/%.b: $(LIBV7_DIR)/%.az8
 libv7.a: $(LIBV7_OBJS) Makefile
 	rm -f $@
 	ar cr $@ $(LIBV7_OBJS)
+
+# Installed ABI headers are exported from the selected kernel's headers.
+.PHONY: check-headers
+check-headers:
+	python3 export-headers.py --check
+libc.a libv7.a: | check-headers
+PUBLIC_HEADERS = $(wildcard $(USR_INCLUDE)/*.h $(USR_INCLUDE)/sys/*.h)
+$(LIBV7_OBJS:.b=.az8) $(LIBC_C_OBJS:.b=.az8) $(SHELL_SRCS:.c=.az8): $(PUBLIC_HEADERS)
+.INTERMEDIATE: $(LIBC_C_OBJS:.b=.az8)
 
 # =============================================================================
 # libctest - exercises libv7.a under the kernel; see libctest.c

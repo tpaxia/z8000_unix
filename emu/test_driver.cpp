@@ -322,6 +322,17 @@ public:
     }
 
     unsigned swap_reads = 0, swap_writes = 0;
+    uint64_t swap_delay = 0;
+    char swap_fail_kind = 0;
+    unsigned swap_fail_nth = 0, swap_errors = 0, swap_user_samples = 0;
+    void poll_swap() {
+        if (!m_swap_irq_due) return;
+        if (!(m_cpu->get_fcw() & 0x4000)) swap_user_samples++;
+        if (m_cpu->get_cycles() >= m_swap_irq_due) {
+            m_swap_irq_due = 0;
+            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+        }
+    }
     void swap_size(unsigned kib) { m_swap.resize(kib * 1024); }
     bool load_hd(const char *filename) {
         FILE *f = fopen(filename, "rb");
@@ -556,9 +567,17 @@ private:
         unsigned lba = m_ata_sn | ((unsigned)m_ata_cl << 8);
         unsigned disk_off = lba * 512;
 
-        if ((m_ata_dh & 0x10) && disk_off + 512 > disk.size()) {
+        bool inject = false;
+        if (m_ata_dh & 0x10) {
+            unsigned nth = cmd == 0x20 ? ++m_swap_read_cmds : ++m_swap_write_cmds;
+            inject = nth == swap_fail_nth &&
+                (cmd == 0x20 ? swap_fail_kind == 'r' : swap_fail_kind == 'w');
+        }
+        if (inject || disk_off + 512 > disk.size()) {
+            if (inject) swap_errors++;
+            m_ata_active = false; m_ata_writing = false;
             m_ata_status = 0x41; m_ata_error = 0x10;
-            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+            ata_interrupt();
             return;
         }
         if (cmd == 0x20) {
@@ -575,7 +594,7 @@ private:
             m_ata_writing = false;
             m_ata_status = 0x48;  // DRDY + DRQ
             m_ata_error = 0;
-            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+            ata_interrupt();
         } else if (cmd == 0x30) {
             // WRITE SECTORS: set DRQ, driver fills buffer
             memset(m_ata_buf, 0, 512);
@@ -602,8 +621,16 @@ private:
         m_ata_active = false;
         m_ata_status = 0x40;  // DRDY, clear DRQ
         m_ata_error = 0;
-        m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+        ata_interrupt();
     }
+
+    void ata_interrupt() {
+        if ((m_ata_dh & 0x10) && swap_delay)
+            m_swap_irq_due = m_cpu->get_cycles() + swap_delay;
+        else m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+    }
+    uint64_t m_swap_irq_due = 0;
+    unsigned m_swap_read_cmds = 0, m_swap_write_cmds = 0;
 
     bool m_trace;
     MemoryRegion *m_memory;
@@ -688,9 +715,28 @@ int main(int argc, char* argv[]) {
     char fault_kind = 0;
     unsigned fault_offset = 0;
     unsigned ram_kib = 8192, swap_kib = 4096;
+    uint64_t swap_delay = 0;
+    char swap_fail_kind = 0;
+    unsigned swap_fail_nth = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:D:E:")) != -1) {
         switch (opt) {
+            case 'D': {
+                char *end;
+                swap_delay = strtoull(optarg, &end, 10);
+                if (*end || !*optarg || swap_delay > 10000000) {
+                    fprintf(stderr, "-D requires swap IRQ delay cycles from 0 to 10000000\n"); return 1;
+                }
+                break;
+            }
+            case 'E': {
+                char extra;
+                if (sscanf(optarg, "%c:%u%c", &swap_fail_kind, &swap_fail_nth, &extra) != 2 ||
+                    (swap_fail_kind != 'r' && swap_fail_kind != 'w') || !swap_fail_nth) {
+                    fprintf(stderr, "-E requires r:N or w:N for one failing swap command\n"); return 1;
+                }
+                break;
+            }
             case 'S': {
                 char *end;
                 unsigned long value = strtoul(optarg, &end, 10);
@@ -742,7 +788,7 @@ int main(int argc, char* argv[]) {
                         "[-d hd-image] [-i console-input] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
-                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB]\n", argv[0]);
+                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
                 return 1;
         }
     }
@@ -800,6 +846,9 @@ int main(int argc, char* argv[]) {
     if (!io.load_disk("root.img"))
         return 1;
     io.swap_size(swap_kib);
+    io.swap_delay = swap_delay;
+    io.swap_fail_kind = swap_fail_kind;
+    io.swap_fail_nth = swap_fail_nth;
     if (!io.load_hd(disk_image))
         return 1;
 
@@ -848,6 +897,7 @@ int main(int argc, char* argv[]) {
 
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
+        io.poll_swap();
         if (fault_kind && io.console_output().find(wait_output) != std::string::npos)
             mmu.arm_fault();
         // Sample before injection: the previous pulse has had a full slice
@@ -945,6 +995,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Verify: console output contains kernel msg, shell prompt, echo output, no panics
+    if (swap_delay || swap_fail_nth)
+        printf("Swap-wait user samples: %u; injected swap errors: %u\n",
+               io.swap_user_samples, io.swap_errors);
     std::string output = io.console_output();
     bool has_kernel_msg = output.find("Z8000 Unix") != std::string::npos;
     bool has_prompt = output.find("# ") != std::string::npos;

@@ -5,7 +5,13 @@ configuration commit `14e85a1` (compiler `67a8dcc`). This is a source audit and
 restoration plan. Batches 1–5 and access-fault recovery are implemented and
 tested within the scopes below. Batch 4 covers ordinary cache operation; panic
 flushing remains deferred. Batch 6 now includes resource maps and installed RAM
-sizing, page-granular section allocation and real estabur/expand sizing. The current batch adds conservative stack backout/growth, shared read-only text and whole-process swapping. Raw physical I/O, core dumps and ptrace remain unimplemented.
+sizing, page-granular section allocation and real estabur/expand sizing.
+Subsequent batches add conservative stack backout/growth, shared read-only text,
+whole-process swapping, raw physical I/O and V7 core-file creation. Ptrace
+requests 0–8 are now implemented; single-stepping requires hardware support.
+Batch 10 restores V7 set-ID exec policy and separates CPU startup/signal frames
+from shared exec and signal policy. Batch 11 synchronizes installed ABI headers
+and restores accounting, profiling and user residency locking.
 
 The objective is to retain V7 policy and interfaces above replaceable CPU,
 MMU and device mechanisms. Driver improvements are outside this audit except
@@ -31,7 +37,7 @@ Differences fall into four categories:
 - **Restorable shared code:** upper-layer rewrites or declarations for which
   there is no inherent Z8000 requirement.
 - **Missing facility:** code removed along with an entire feature, such as
-  raw physical I/O, core dumping or multiplexed channels.
+  multiplexed channels. Raw physical I/O, core dumping and ptrace requests 0–8 are now implemented.
 - **Behavioral discrepancy:** observable departure from V7 that needs a
   deliberate correction and an independent regression test.
 
@@ -41,7 +47,7 @@ Differences fall into four categories:
 
 [`psig()`](../v7z8000/usr/sys/sys/sig.c) now passes the signal number in the
 low byte to `exit()`, matching V7. Normal `exit(n)` retains its high-byte
-status. Core dumping is still absent, so no core flag is added.
+status. Core dumping was added in batch 8; completed dumps now add the core flag.
 
 The signal, preemption and EPU tests previously asserted shifted signal
 numbers and now check V7 status. Independent normal-exit coverage distinguishes
@@ -98,14 +104,14 @@ Paths in this table are relative to `v7z8000/usr/sys`.
 | `sys/nami.c` | Restored byte-for-byte in batch 3; lookup/create beyond a 64 KB directory offset pass. |
 | `sys/iget.c` | Keep big-endian three-byte disk-address conversion. Batch 3 restored the multiplexed-inode exception alongside its supporting declarations. Do not reinstate PDP-11 byte order. |
 | `sys/rdwri.c`, `sys/subr.c` | Batch 2 restored shared copy dispatch/error accounting as described above. Treat extra offset casts as convergence candidates, not proven compiler requirements. |
-| `sys/bio.c` | Batch 4 restored V7 ordinary cache code, DISKMON counters and word clearing. Physical-map release and raw-I/O remain excluded; whole-process swap now has a separate machine-layer transfer buffer. |
+| `sys/bio.c` | Batch 4 restored V7 ordinary cache code, DISKMON counters and word clearing. Raw physio now has separate MMU mapping/pinning hooks; whole-process swap now has a separate machine-layer transfer buffer. |
 | `dev/tty.c` | Batch 3 restored original shared control flow, multiplexor callbacks, discipline controls and the common-handler return contract; retains validated/interrupt-protected parameter updates. |
 | `sys/prf.c` | `panic()` still omits `update()`. Batch 4 source review found that normal flushing can wait on buffers owned by the panicking path; a bounded panic-specific protocol remains separate. |
-| `sys/clock.c` | FCW tests and call signature are architecture adaptations. Profiling and disk/CPU instrumentation were removed. Keep shared accounting/callout policy and place CPU predicates/clock acknowledgement behind machine interfaces. |
+| `sys/clock.c` | FCW tests and call signature are architecture adaptations. Batch 11 restores profiling and disk/CPU instrumentation. CPU predicates, saved PC and fault-safe samples are behind machine interfaces; shared accounting/callout policy remains V7. |
 | `sys/main.c` | Extra console open/dup bootstrap, relocated global tables, core-map initialization delegated to the MMU; a dedicated swap map and residency-aware process-0 scheduler. Configuration retains boot-device selection. |
-| `sys/slp.c` | The original monolithic swapper remains adapted; residency transitions and `expand()` are machine services. `setrun()` preserves residency; fork allocates sections or writes a child image directly to swap, returning EAGAIN if both fail. Machine-layer expand now resizes data storage. Shared scheduling is retained, but restoring memory policy needs more than changing source paths. |
-| `sys/sys1.c` | Fork/exit/wait and exec were substantially rewritten. Exec supports shared 0411 text but lacks set-ID handling; argument collection uses a serialized fixed kernel buffer. Saved-register/stack construction is still embedded in shared code and should move behind CPU helpers. Preserve current executable validation and split-I/D support. |
-| `sys/sig.c` | Signal-frame construction is Z8000/EPU-specific and belongs behind a `sendsig`-style interface. Common selection/default-action policy can converge; core dumping and tracing remain missing; signal frames now request stack growth; wait status was fixed in batch 1. |
+| `sys/slp.c` | Process 0 runs adapted V7 sched with runin/runout and aging; swtch selects residents only. Machine services allocate/copy extents and sleep during swap I/O. Explicit extent reservations, first-dispatch protection and a post-swap-in yield are documented port additions. Fork retains direct-to-swap fallback and EAGAIN rollback. |
+| `sys/sys1.c` | Fork/exit/wait and exec were substantially rewritten. Exec supports shared 0411 text and original V7 set-ID rules, including tracing suppression and the effective-root exception. Argument collection uses a serialized fixed kernel buffer. CPU helpers now own startup stack sizing/construction and register/EPU initialization. Preserve current executable validation and split-I/D support. |
+| `sys/sig.c` | Z8000/EPU signal-frame construction now lives behind the CPU `sendsig` interface. Common selection/default-action policy can converge; core dumping now uses V7 policy with machine-layer image writing; V7 stop/wait/ptrace requests 0–8 are restored; signal frames now request stack growth; wait status was fixed in batch 1. |
 | `sys/sysent.c` | Preserve register-based dispatch, but reconcile interface numbering and optional syscalls explicitly. Reserved V7 slots should not be counted as missing implemented features. |
 
 ## Headers and optional features
@@ -118,15 +124,15 @@ a.out header and EPU fields. Generated code is unchanged except for the
 intentional signal-status fix; long time/seek returns pass on target.
 
 `file.h` and `mx.h` now match V7, including the channel pointer and FMP flags.
-`proc.h` still lacks `struct xproc`, which was recreated differently inside
-`sys1.c`. Move the zombie overlay back to the shared header only after checking
-its offsets against the actual target `struct proc`.
+`proc.h` now owns the port's zombie overlay, formerly private to sys1.c; its
+extra size word preserves the target offsets. Installed sys/proc.h is exported
+from the same definition.
 
-`acct.h` is a stub. `reg.h`/`seg.h` need Z8000 definitions rather than PDP-11
-register constants. Table sizes in `param.h` are tuning decisions, while the
+`acct.h` is restored unchanged. `reg.h` describes Z8000 trap/core registers;
+`seg.h` deliberately exposes no PDP-11 MMU registers. Table sizes in `param.h` are tuning decisions, while the
 context-label size is ABI. Batch 6 corrects `USIZE` to 64 clicks (4 KB), matching the current
 u-area/system-stack mapping. `p_addr` still names only that separately allocated
-window; text/data/stack have separate page-rounded core-map allocations. Swapping and dumping require further work.
+window; text/data/stack have separate page-rounded core-map allocations. Whole-process swapping and core dumping are implemented through MMU helpers.
 
 Batch 3 installs V7's [sys/fakemx.c](../v7z8000/usr/sys/sys/fakemx.c) and
 restores the associated filesystem/TTY branches. The selected configuration
@@ -157,16 +163,18 @@ The following omissions form a dependency chain, not independent file copies:
    whitelist now enable automatic stack growth; arbitrary instruction restart
    and scattered-page allocation remain absent.
 3. Shared 0411 text lifecycle is implemented in `sys/text.c`, with inode write
-   exclusion, resident/reference counts and an immutable swap copy. Idle/sticky
-   text caching is omitted; there are no unreferenced texts for xrele/xumount.
+   exclusion, resident/reference counts and an immutable swap copy. Sticky text
+   retains unused swap backing; original xrele/xumount lookup policy releases it.
 4. Whole-process swap transfers use machine physical-copy helpers and the block
-   driver. Raw `physio()` and bus-map ownership remain future work; the original
-   PDP-11 UISA/UDSA and b_xmem mechanisms are not portable interfaces.
-5. Memory pressure evicts other unlocked processes; the scheduler loads runnable
-   nonresident processes. Fork can create its child directly on swap. This is
-   synchronous policy, not a byte-for-byte restoration of V7 sched(). Contiguous
-   growth still reserves a replacement before releasing the old extent.
-6. Core dumping and ptrace still need CPU register and memory-access interfaces.
+   driver. Raw `physio()` now uses MMU validation/pinning and an opaque request
+   descriptor; PDP-11 UISA/UDSA translation is not copied into shared policy.
+   Bus-map ownership remains future work.
+5. Process 0 runs V7 sched with aging and runin/runout wakeups; swap transfers
+   sleep while residents execute. Fork can create a child directly on swap.
+   Extent reservations and fast-controller progress safeguards remain port
+   additions. Contiguous growth reserves replacements before freeing old extents.
+6. Core dumping and ptrace requests 0–8 now use CPU register and MMU access
+   interfaces. Request 9 is unsupported without hardware single-step support.
    Preserve safe Z8000 signal/EPU restoration and the explicit retry whitelist.
 
 V7 `ureg.c` is useful as an interface/policy reference, not an implementation
@@ -174,10 +182,10 @@ to copy: its mapping registers are specifically PDP-11 hardware. Likewise,
 `B_MAP` cleanup is a device/bus mapping contract, not a reason to emulate the
 PDP-11 UNIBUS map on every target.
 
-Additional reusable facilities include process accounting (`acct.c`, real
-`acct.h`, syscall 51) and profiling. `profil()` currently records parameters,
-but `clock()` has no sampling operation. These should be tracked as incomplete
-features rather than inferred to work from the presence of syscall entries.
+Batch 11 restores process accounting (`acct.c`, original `acct.h`, syscall 51),
+profiling and privileged residency locking (53). Sampling is now connected to
+clock ticks and tested through the public libc interfaces; the previous
+parameter-only profil implementation is no longer the current state.
 
 ## Compile-only feasibility probe
 
@@ -201,7 +209,7 @@ that current syscall/driver contracts satisfy every restored caller.
 | 3 (complete) | Restore optional multiplexor declarations/stubs and filesystem/TTY call sites; restore common ioctl contract | Directory traversal and large offsets, open/dup/close, pipes, ioctl fallback, ordinary/raw/cbreak TTY behavior; no active multiplexor required |
 | 4 (ordinary cache complete; panic flush deferred) | Restore remaining ordinary buffer-cache code and instrumentation; review panic flush separately | Cache reuse, delayed writes, read-ahead, async completion, error propagation and reboot persistence |
 | 5 (complete) | Reconcile syscall numbering and exec interfaces in one kernel/libc/image migration | All native tools rebuilt; exec/execve environment, umask/chroot and EPU signal return verified |
-| 6 (memory allocation, text, swap and stack growth implemented) | Raw physical I/O, core dumping and tracing remain | Allocation exhaustion without kernel panic, fork/exec isolation, text lifetime, raw/swap transfers, growth faults and trace/core correctness |
+| 6–9 (memory, raw I/O, core dumping and tracing implemented) | Hardware single-step remains optional | Allocation exhaustion without kernel panic, fork/exec isolation, text lifetime, raw/swap transfers, growth faults and trace/core correctness |
 
 Do not make a lower diff-line count the acceptance criterion. Preserve tested
 port fixes and validate observable V7 behavior. Existing passing tests need
@@ -220,8 +228,8 @@ review where they encode the port's current behavior rather than V7 semantics.
   layout and all other generated accesses. Full 689-file compiler ratchet passes;
   baselines record the restored unnamed-struct warning and reviewed source hashes.
 
-The time test uses `time(0)`: the existing Z8000 libc wrapper ignores a non-null
-pointer argument. Full V7 `time(&value)` compatibility remains separate work.
+The batch-1 time test used `time(0)`. Batch 11 adds the missing time(&value)
+store and effective-ID wrappers, with guest tests.
 
 ## Batch 2 validation
 
@@ -347,3 +355,190 @@ The memory suite covers warning growth, page-skipping stores, CALL/PUSH backout,
 unsafe retry rejection, inode lifetime, shared mappings, full/disabled swap,
 low-RAM process churn and private-data isolation. Original ordinary cache code
 remains intact; raw physio and asynchronous bus-map ownership are still absent.
+
+
+## Batch 7: raw physical I/O
+
+Added shared `sys/physio.c` with V7 special-buffer ownership, uninterruptible
+completion waits and residual/error handling. The MMU validates and pins the
+user range, preserves existing SLOCK ownership, and resolves transfers using
+the sleeping owner's mappings. Device code contains no process-map arithmetic.
+The ATA driver supplies raw character entry points, multi-sector queue service
+and a 512-byte staging buffer. Active swap is protected from raw opens.
+
+Deferred-controller tests cover owner changes during completion, buffer waits,
+lock preservation, bounds and partial errors. Real guest tests cover both
+executable layouts, page-crossing data/stack buffers, disk-end errors and eight
+concurrent workers under actual swapping. Bus-map allocation, core dumps and
+ptrace remain separate work. Ordinary cache policy remains unchanged.
+
+
+## Batch 8: V7 core files
+
+Reused V7's fatal-signal switch and core-file lookup/create, access, truncation
+and inode-release sequence in sys/sig.c. The PDP-11-specific estabur remapping
+and contiguous memory write are replaced by one machine-layer coredump helper.
+It writes the u-area, data and stack separately through existing mappings.
+No changes to common filesystem writing or allocation policy were needed.
+
+The explicit policy deviations are early rejection of unequal effective/real
+user or group IDs and failure reporting for a nonregular target. The original
+could leave an empty file for elevated credentials and could return success
+when no dump had been written. Z8000 CPU wrappers preserve the missing R13/R14
+values for a full register snapshot without changing the trap-frame layout.
+
+Target tests check real images in both layouts, all ordinary entry paths,
+permissions, disk-full partial writes and memory pressure with swap traffic.
+Ptrace and bus-map ownership remain separate work.
+
+
+## Batch 9: V7 ptrace, with optional hardware stepping
+
+Restored original V7 signal selection, tracing stops, parent/child IPC and stopped
+wait reporting. The child executes requests against its own restored mappings;
+stopped processes are swappable. CPU/MMU hooks replace PDP-11 register offsets
+and writable-text remapping. Requests 0–8 are supported. Request 9 returns EIO
+without hardware support; software stepping is explicitly outside the scope.
+
+V7's exclusive/non-sticky instruction-write rule remains. Patched pure text stays
+read-only to user code, invalidates prior swap backing and rejects fresh exec
+sharing until released; inode write exclusion remains active. This is a deliberate
+adaptation to the port's immutable shared-text lifecycle. A reserved SC 255 supplies
+a breakpoint trap. Register writes preserve privileged FCW fields and propagate
+R13/R14/SP updates through the unchanged saved-frame layout.
+
+Tests cover memory/register access, signals, exec, breakpoints, concurrent debugger
+pairs, orphan cleanup, protected text and patched images surviving real swapping.
+Fixed entry jumps now use nearby veneers and a build-time layout check.
+
+
+## Batch 10: exec credentials and CPU context separation
+
+Restored the original V7 set-ID block: untraced exec applies ISUID to effective
+UID and p_uid unless already effectively root, and applies ISGID to effective
+GID. Real IDs remain unchanged. Tracing suppresses both changes and reports the
+existing SIGTRAP exec stop. Credentials change only after successful image and
+stack construction; early failures leave the old process intact and late copy
+failures kill the unusable image without applying new credentials.
+
+Shared exec retains argument collection, image loading, signal reset, EXCLOSE
+handling and accounting. CPU helpers now own startup stack sizing/construction,
+entry PC and register/EPU reset. All R0–R14 are cleared, including the separately
+saved R13/R14. The new SP stays in process-local storage through sleeping cleanup;
+trap return installs it in NSPOFF. Shared signal policy calls sendsig for the
+Z8000/libc/EPU frame and retains SIGSEGV handling if frame construction fails.
+
+The new test-exec target checks both layouts at 8 MiB and 320 KiB, including
+file ownership, real IDs, p_uid signal permissions, effective-root behavior,
+credential retention through another exec, traced set-ID suppression, startup
+registers/EPU/stack, signal dispositions, failed exec and core-file suppression.
+
+
+## Batch 11: installed ABI and remaining shared services
+
+Public kernel headers now export the real Z8000 layout, with build-time drift
+checks. Public typedefs/context size and proc/user/register layouts match the
+kernel. Core/trace tests consume those installed headers. Libc adds effective-ID
+queries, time-pointer stores, acct/lock/profil and unchanged V7 monitor(). Pstat's
+Z8000 user dump no longer refers to nonexistent PDP-11 mapping registers; complete
+live kernel-inspection tools remain outside this batch.
+
+Accounting restores V7 routine bodies and acct.h, including AFORK/ASU values.
+Thin wrappers serialize accounting file changes with exit writes during sleeping
+I/O. Profiling and CPU/disk counters are restored through CPU helpers; the original
+syslock sets SULOCK and the actual MMU eviction scan now honors it. Exec disables
+profiling and fork inherits samples but not residency locking. Sampling never
+sleeps and disables itself on a user-copy fault.
+
+Current comparable shared tree: 48 files, 25 byte-identical to original V7, plus
+physio.c split out from original dev/bio.c. Machine code/drivers are excluded.
+At batch 11, remaining substantive differences included synchronous swap policy,
+exec argument staging/formats, panic flushing and optional multiplexor/
+bus-mapping facilities. The installed userland and machine-specific inspection
+utilities still need expansion.
+
+## Batch 12: process admission, eviction and sticky text
+
+Function comparison confirmed that exit differs chiefly at machine memory release,
+wait retains V7 collection policy, and the channel-wide wakeup in setrun is original
+V7 behavior. These already-reused policies were preserved. Fork restores original
+per-user counting, the MAXUPRC comparison and final-slot reservation for root;
+Z8000 return registers and allocation rollback remain necessary adaptations.
+
+Shared swapvict now reuses the selection loop from V7 sched: largest eligible
+sleeper/stopped process, otherwise age plus nice. Machine corealloc supplies
+failed-transfer exclusions and performs actual allocations/transfers. Ages reset
+on swap transitions. Unlike the original background swapper, synchronous allocation
+does not wait for age thresholds; negative-nice young residents remain eligible.
+
+Sticky text now retains swap backing and its inode after the last user exits.
+Original xlock/xunlock and xumount lookup bodies are reused; xrele's ITEXT test
+has explicit parentheses to correct the original precedence bug. Frame rounding,
+conditional swap allocation and inode locking are port adaptations. Failed cache
+writes release unused images, and failed loads or traced text cannot enter the cache.
+The separate V7 sched loop, swap-backed exec arguments and additional executable
+formats remain outstanding; this batch does not claim byte-identical scheduling.
+
+Validation passes: 28 memory scenarios, process/text/victim policy fixtures,
+tracing, exec, raw I/O, core, services, signal/preemption/ABI, all ten native compiler
+cases, kernel-only build and the 694-file compiler regression baseline comparison.
+
+## Batch 13: separate swapper and sleeping transfers
+
+Restored process 0's sched loop, resident-only swtch and original runin/runout
+wakeups. Background incoming/outgoing selection retains V7's age/nice policy and
+its three-second-out/two-second-resident gates. Swap transfer sleeps now permit
+resident execution; the swap buffer, source process, victim residency and text
+locks remain protected throughout I/O. Failed writes preserve the resident image;
+failed reads release provisional storage and retain the swap image for retry.
+
+Port additions are explicit: corework reserves independent replacement extents
+for pinned callers instead of self-swapping a partly resized image; locked incoming
+texts get timed retries; SREADY and a post-swap-in runin wait prevent fast-controller
+thrashing before resident user and tracing work can progress. This is a restored
+V7 swapper with tested adaptations, not a byte-identical copy.
+
+Memory regressions now include delayed swap interrupts and one injected read or
+write failure in each executable layout. User-mode samples while a swap interrupt
+is pending prove that resident code executes during I/O. Target fixtures execute
+the actual sched loop to check idle/locked waits, aging thresholds, victim ranking,
+first-dispatch protection, failure retry and reservation priority.
+
+Swap-backed exec argument staging follows in batch 14. Additional executable
+formats and full distribution startup/commands remain separate work.
+
+Validation: all 32 memory scenarios, scheduler/process/text/victim fixtures,
+tracing, exec, core, raw I/O, services and the broader runtime suites pass. All
+ten native compiler cases pass; optimized split I/D was rechecked on the final
+kernel with the host emulator built in Release mode. Kernel-only build, public
+header consistency and the 694-file compiler regression comparison also pass.
+
+
+## Batch 14: original swap-backed exec arguments
+
+Reused V7's argument collection loop, fixed-size swap reservation, buffer-cache
+staging and cleanup. Removed the global NCARGS array and exec serialization.
+The Z8000 stack helper uses the original copy-back structure with checked stores,
+buffer read errors, the existing stack top and process-local SP commit. It keeps
+V7's total-string/environment counts, NCARGS-1 limit and null-argv semantics.
+The allocation failure policy is also original: `panic("Out of swap")`, including
+exec with no arguments. No no-swap fallback was added.
+
+Concurrent execs publish ownership of newly allocated shared-text entries before
+sleeping in corealloc. SMAPSIZ now also includes concurrent argument reservations
+(74 entries). These are consequences of removing serialization, rather than a
+replacement for V7 exec policy. The configured 0407/0411 image loader remains
+specific to the Z8000 executable header and paged MMU.
+
+Argument regressions cover both layouts at 320 KiB and 8 MiB, maximum-size/high-bit
+strings, concurrent different-inode execs, bad vectors/strings, environment and
+null argv, and repeated failures with room for only one reservation. Explicit
+zero/undersized-swap tests require the V7 panic. Memory-pressure tests formerly
+using no swap now provide six KiB: enough for argument staging but too little
+for their process/text images. Ordinary process swapping still uses four MiB.
+
+Validation passes: all 32 memory scenarios, the expanded exec suite, ptrace,
+core, services/policy, raw I/O and the broader runtime suites; all ten native
+compiler cases; the 694-file compiler ratchet, kernel-only build and public
+header consistency check. The kernel's global argument array is gone; final
+text/data/BSS sizes are 52,116/2,624/10,074 bytes.
