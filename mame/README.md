@@ -5,6 +5,9 @@
 - `build_rom.py`: build the small firmware, primary disk bootstrap and V7 standalone `/boot`.
 - `test.py` and `smoke.lua`: disposable-disk console regression runner.
 
+The dedicated MAME branch is `z8001_unix`, built in
+`~/Projects/mame_latest/mame-z8001-unix`.
+
 See [machine contract](../doc/platforms/z8001-unix.md) and
 [build/run procedure](../doc/development/mame.md).
 

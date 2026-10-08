@@ -40,6 +40,8 @@ This host build prepares the native compiler passes, optimizer, preprocessor,
 assembler, linker, cc driver, headers and runtime library. The bootable seed is
 `tests/build/native-cc/hd.img`. Passing these tests establishes that the seeded
 compiler runs inside Unix; self-hosting is checked in the next stage.
+For disk boot in the dedicated MAME branch, follow [the MAME procedure](mame.md)
+to install `/boot`, `/unix` and `/fpe` into a copy of this seed.
 
 ## Native compiler and development environment
 

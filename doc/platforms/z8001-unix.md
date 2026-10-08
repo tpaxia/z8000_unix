@@ -5,6 +5,9 @@ runs the same `emulated` kernel configuration and NONSEG user binaries as the
 standalone emulator. No shared V7 kernel C or device drivers are changed for
 MAME. The assembler/s.out migration is independent and remains on its branch.
 
+The dedicated MAME branch is `z8001_unix`; its permanent local worktree and
+build/test commands are recorded in the [MAME procedure](../development/mame.md).
+
 ## Machine
 
 - Z8001 at 4 MHz, with a 60 Hz clock interrupt.

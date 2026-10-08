@@ -2,7 +2,9 @@
 
 Build the ordinary `emulated` kernel and a root filesystem using
 [bootstrap](bootstrap.md). The driver and bootstrap tools are in `mame/`.
-The tested MAME base is tpaxia/mame revision `e1b99a60ff5`. It includes the Z8001
+The tested MAME machine is commit `9119a0e7ad6` on
+[tpaxia/mame's z8001_unix branch](https://github.com/tpaxia/mame/tree/z8001_unix),
+based on revision `e1b99a60ff5`. The base includes the Z8001
 CPU fixes, first-word instruction-fetch interface and normal/system output used
 by this machine. Compatibility with arbitrary upstream releases is not claimed.
 See the [machine reference](../platforms/z8001-unix.md#boot) for the boot sequence,
@@ -10,13 +12,38 @@ historical V7 sources and current limits.
 
 ## Build and install
 
-Use an isolated MAME checkout/worktree. `build.py` copies the driver into that
-tree and adds its `mame.lst` entry; it does not change CPU sources.
+The local MAME branch is `z8001_unix` in the permanent worktree
+`~/Projects/mame_latest/mame-z8001-unix`. Its executable is
+`~/Projects/mame_latest/mame-z8001-unix/z8001unix`. This worktree belongs to the
+`tpaxia/mame` repository; the original checkout remains on `m40_z8010_sup_test`.
+
+From the Unix repository root, set:
+
+```sh
+MAME_UNIX="$HOME/Projects/mame_latest/mame-z8001-unix"
+CHDMAN="$HOME/Projects/mame_latest/mame/chdman"
+git -C "$MAME_UNIX" branch --show-current
+```
+
+That should report `z8001_unix`. On a different machine, create an equivalent
+worktree once from the published branch (skip this for the existing local worktree;
+these commands assume `origin` points to `tpaxia/mame`):
+
+```sh
+git -C "$HOME/Projects/mame_latest/mame" fetch origin z8001_unix
+git -C "$HOME/Projects/mame_latest/mame" worktree add -b z8001_unix \
+  "$MAME_UNIX" origin/z8001_unix
+```
+
+`build.py` copies the driver from the Unix repository into this MAME branch,
+adds its `mame.lst` entry and compiles there. It does not change CPU sources.
+Repeat it after changing `mame/z8001unix.cpp`; a plain MAME build alone does not
+synchronize the source copy.
 
 ```sh
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
 python3 mame/build_rom.py
-python3 mame/build.py /path/to/isolated/mame -j 8
+python3 mame/build.py "$MAME_UNIX" -j 8
 python3 mame/install_boot.py tests/build/native-cc/hd.img \
   tests/build/z8001unix/boot-hd.img
 ```
@@ -37,7 +64,7 @@ python3 mame/check_disk.py tests/build/native-cc/hd.img \
 Input images must be offline, unmounted V7 filesystems. Trailing unwritten
 sectors of sparse mkfs output are padded to the superblock's declared size.
 
-The focused binary is `/path/to/isolated/mame/z8001unix`. The 2 KiB firmware is
+The focused binary is `$MAME_UNIX/z8001unix`. The 2 KiB firmware is
 `tests/build/z8001unix/roms/z8001unix/unix.rom`; it contains no kernel/FPU payload.
 MAME reports `NO GOOD DUMP KNOWN` for this locally built firmware.
 `build_rom.py` also produces the standalone loader, disk boot block and disk
@@ -45,15 +72,18 @@ files; it cross-builds bootstrap artifacts, not programs at guest runtime.
 
 ## Run
 
-For the 6,000-sector native compiler image:
+For the 6,000-sector native compiler image (create the CHD once, then run it):
 
 ```sh
-/path/to/chdman createhd -i tests/build/z8001unix/boot-hd.img \
-  -o tests/build/z8001unix/root.chd -chs 6000,1,1 -ss 512 -c none
-/path/to/isolated/mame/z8001unix z8001unix \
+"$CHDMAN" createhd -i tests/build/z8001unix/boot-hd.img \
+  -o tests/build/z8001unix/diskboot.chd -chs 6000,1,1 -ss 512 -c none
+"$MAME_UNIX/z8001unix" z8001unix \
   -rompath tests/build/z8001unix/roms \
-  -hard tests/build/z8001unix/root.chd
+  -hard tests/build/z8001unix/diskboot.chd
 ```
+
+The local `diskboot.chd` is already prepared from the disk-boot seed. Skip
+`createhd` when reusing it; choose a new output filename for a fresh disk.
 
 For another disk, set the cylinder count to its byte size divided by 512;
 one head and one sector preserve LBA numbering. At the `: ` prompt press Return
@@ -83,12 +113,16 @@ prepares media and launches MAME; the native compilation below runs inside Unix.
 Use expected output that does not occur merely in the echoed command line.
 
 ```sh
-python3 mame/test.py /path/to/isolated/mame/z8001unix --chdman /path/to/chdman \
+python3 mame/test.py "$MAME_UNIX/z8001unix" --chdman "$CHDMAN" \
   --input 'cc -i /usr/src/hello.c -o /tmp/hello
 /tmp/hello
 ' --expect 'Hello from native C' --seconds 1200 \
-  --output tests/build/z8001unix/diskboot-native
+  --output tests/build/z8001unix/branch-native
 ```
+
+The executable rebuilt in the permanent `z8001_unix` worktree passed this
+check: the disk-loaded guest compiled, linked and ran `/tmp/hello`, printing
+`Hello from native C`. Logs are in `tests/build/z8001unix/branch-native/`.
 
 For other existing regression disks, first run `install_boot.py SOURCE NEW-DISK`
 and pass `--disk NEW-DISK` to the runner. Build their source images with the
