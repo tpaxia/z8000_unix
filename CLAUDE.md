@@ -1,5 +1,6 @@
 # Rules
 
+- ALWAYS launch MAME with `-window`. NEVER launch MAME in fullscreen mode.
 - NEVER commit or push unless explicitly asked by the user.
 - Only do what the user explicitly asks. Do not take extra steps, make additional changes, or start tasks that weren't requested.
 - NEVER modify Unix V7 source files (kernel C, headers, user-space C) to work around toolchain bugs. Fix the toolchain instead. Only modify Unix sources with explicit user approval.

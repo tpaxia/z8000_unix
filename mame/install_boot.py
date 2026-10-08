@@ -14,14 +14,14 @@ class Installer:
     def __init__(self,path):
         self.disk=bytearray(path.read_bytes())
         fsize=self.u32(self.disk,514)
-        if not 2<fsize<=65536 or len(self.disk)>fsize*512 or len(self.disk)%512:
+        if not 2<fsize<=0x10000000 or len(self.disk)>fsize*512 or len(self.disk)%512:
             raise ValueError('invalid V7 filesystem size')
         self.disk.extend(bytes(fsize*512-len(self.disk)))
         self.sb=memoryview(self.disk)[512:1024]
         self.isize=self.u16(self.sb,0)
         self.fsize=self.u32(self.sb,2)
-        if not 2<self.isize<self.fsize<=65536 or len(self.disk)!=self.fsize*512:
-            raise ValueError('expected V7 filesystem, at most 65536 sectors')
+        if not 2<self.isize<self.fsize<=0x10000000 or len(self.disk)!=self.fsize*512:
+            raise ValueError('expected V7 filesystem within the 28-bit LBA range')
         self.allocated=set()
     @staticmethod
     def u16(b,o): return struct.unpack_from('>H',b,o)[0]
@@ -91,17 +91,19 @@ class Installer:
         self.p16(entry,0,inode_number);entry[2:]=name.encode().ljust(14,b'\0')
         return sectors
 
-def install(source,output,build):
+def install(source,output,build,console_profile=False):
     if output.exists(): raise ValueError('refusing to overwrite output disk')
     fs=Installer(source)
     sectors=fs.add('boot',(build/'boot').read_bytes())
     fs.add('unix',(build/'unix').read_bytes())
     fs.add('fpe',(build/'fpe.image').read_bytes())
-    if not 1<=len(sectors)<=111: raise ValueError('/boot exceeds primary-loader capacity')
+    if console_profile:
+        fs.add('.profile',b"/bin/stty erase '^H'\n")
+    if not 1<=len(sectors)<=63: raise ValueError('/boot exceeds primary-loader capacity')
     boot=bytearray((build/'block.bin').read_bytes())
     if len(boot)!=512: raise ValueError('boot block must be 512 bytes')
     struct.pack_into('>H',boot,256,len(sectors))
-    for i,b in enumerate(sectors): struct.pack_into('>H',boot,258+2*i,b)
+    for i,b in enumerate(sectors): struct.pack_into('>I',boot,258+4*i,b)
     fs.disk[:512]=boot
     output.parent.mkdir(parents=True,exist_ok=True)
     output.write_bytes(fs.disk)
@@ -110,6 +112,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('source',type=Path);p.add_argument('output',type=Path)
     p.add_argument('--build',type=Path,default=ROOT/'tests/build/z8001unix')
+    p.add_argument('--console-profile',action='store_true',help='install /.profile configuring Backspace as the shell erase key (requires /bin/stty)')
     a=p.parse_args()
-    install(a.source,a.output,a.build)
+    install(a.source,a.output,a.build,a.console_profile)
     print('Installed disk boot:',a.output)

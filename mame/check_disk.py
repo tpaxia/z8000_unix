@@ -62,7 +62,7 @@ def check(source,installed,build):
     for name,file in [('boot','boot'),('unix','unix'),('fpe','fpe.image')]:
         assert data(new,new.inode(after[name]))==(build/file).read_bytes(),name
     count=new.u16(new.disk,256)
-    sectors=[new.u16(new.disk,258+i*2) for i in range(count)]
+    sectors=[new.u32(new.disk,258+i*4) for i in range(count)]
     assert sectors==blocks(new,new.inode(after['boot']))
     remaining=free(new)
     original=free(old)
@@ -76,8 +76,9 @@ def check(source,installed,build):
         if new.u16(ino,0)&0o170000 not in (0o100000,0o40000): continue
         used.update(b for b in blocks(new,ino) if b)
     assert not used&remaining, 'allocated data on free list'
-    count=sum(new.u16(new.inode(i),0)==0 for i in range(1,(new.isize-2)*8+1))
-    assert count==new.u16(new.sb,422), 'incorrect free inode count'
+    old_count=sum(old.u16(old.inode(i),0)==0 for i in range(1,(old.isize-2)*8+1))
+    new_count=sum(new.u16(new.inode(i),0)==0 for i in range(1,(new.isize-2)*8+1))
+    assert old_count-new_count==old.u16(old.sb,422)-new.u16(new.sb,422), 'incorrect free inode accounting'
     print('Boot files, primary sector list, original files and free lists verified')
 
 if __name__=='__main__':

@@ -20,6 +20,7 @@
 extern int putchar();
 extern int inb();
 extern int consstart();
+extern int consxint();
 extern int ttrstrt();
 
 struct tty cons_tty[1];
@@ -83,16 +84,29 @@ consrint()
 }
 
 /*
- * Console start output routine (t_oproc callback).
- * Drains t_outq via putchar. The emulator console is always ready,
- * so we drain the entire queue. Delay characters (>0200) are
- * handled via timeout for ttrstrt.
+ * Defer transmit completion until after V7 ttwrite sets ASLEEP.
+ * Synchronous draining from ttstart would wake the writer before it sleeps
+ * when its output queue exceeds TTHIWAT. The clock callback supplies the
+ * transmit-completion event that a hardware console would deliver.
  */
 consstart(tp)
 register struct tty *tp;
 {
+	if (tp->t_outq.c_cc && (tp->t_state & BUSY) == 0) {
+		tp->t_state |= BUSY;
+		timeout(consxint, (caddr_t)tp, 1);
+	}
+}
+
+/* Drain completed output; honor V7 delay characters and wake blocked writers. */
+consxint(tp)
+register struct tty *tp;
+{
 	register int c;
 
+	tp->t_state &= ~BUSY;
+	if (tp->t_state & TTSTOP)
+		return;
 	while ((c = getc(&tp->t_outq)) >= 0) {
 		if ((c & 0200) && (tp->t_flags & RAW) == 0) {
 			/* delay character — schedule restart */

@@ -44,11 +44,17 @@ synchronize the source copy.
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
 python3 mame/build_rom.py
 python3 mame/build.py "$MAME_UNIX" -j 8
-python3 mame/install_boot.py tests/build/native-cc/hd.img \
-  tests/build/z8001unix/boot-hd.img
+python3 mame/install_boot.py tests/build/userland-native/hd.img \
+  tests/build/z8001unix/full-userland.img --console-profile
 ```
 
-The last command uses the native compiler disk built by the bootstrap procedure.
+The last command uses the complete native userland disk from
+[the native rebuild procedure](native-rebuild.md#full-native-userland).
+It includes the normal V7 commands, manuals, libraries and native compiler.
+`--console-profile` installs `/.profile` to set Backspace as the shell erase key
+using the original V7 `stty` command. The compiler seed at
+`tests/build/native-cc/hd.img` is suitable for compiler regressions but lacks
+normal commands such as `ls`; it is not the interactive testing disk.
 It creates a **new copy**, adds `/boot`, `/unix` and `/fpe` through the V7 free
 block/inode lists, then installs sector zero's `/boot` block list. The source
 image is unchanged. The destination must not exist and the source must not
@@ -57,8 +63,8 @@ the tiny kernel regression root image does not have room for these files.
 To verify preservation of existing files and free-list accounting:
 
 ```sh
-python3 mame/check_disk.py tests/build/native-cc/hd.img \
-  tests/build/z8001unix/boot-hd.img
+python3 mame/check_disk.py tests/build/userland-native/hd.img \
+  tests/build/z8001unix/full-userland.img
 ```
 
 Input images must be offline, unmounted V7 filesystems. Trailing unwritten
@@ -72,22 +78,24 @@ files; it cross-builds bootstrap artifacts, not programs at guest runtime.
 
 ## Run
 
-For the 6,000-sector native compiler image (create the CHD once, then run it):
+For the 120,000-sector complete native userland image (create the CHD once, then run it):
 
 ```sh
-"$CHDMAN" createhd -i tests/build/z8001unix/boot-hd.img \
-  -o tests/build/z8001unix/diskboot.chd -chs 6000,1,1 -ss 512 -c none
-"$MAME_UNIX/z8001unix" z8001unix \
+"$CHDMAN" createhd -i tests/build/z8001unix/full-userland.img \
+  -o tests/build/z8001unix/full-userland.chd -chs 120000,1,1 -ss 512 -c none
+"$MAME_UNIX/z8001unix" z8001unix -window \
   -rompath tests/build/z8001unix/roms \
-  -hard tests/build/z8001unix/diskboot.chd
+  -hard tests/build/z8001unix/full-userland.chd
 ```
 
-The local `diskboot.chd` is already prepared from the disk-boot seed. Skip
+The local `full-userland.chd` is already prepared from the full native image. Skip
 `createhd` when reusing it; choose a new output filename for a fresh disk.
 
 For another disk, set the cylinder count to its byte size divided by 512;
 one head and one sector preserve LBA numbering. At the `: ` prompt press Return
-for `/unix`, or type `hd(0,0)/ounix` to select a backup kernel. The CHD is writable;
+for `/unix`, or type `hd(0,0)/unix` explicitly. A backup kernel can be selected
+as `hd(0,0)/ounix`. A bare `/unix` is not a valid device-qualified pathname.
+Backspace and Delete erase characters at the boot prompt. The CHD is writable;
 changes persist. Swap is separate and cleared on reset. `-ram 320k` exercises
 low-memory swapping (this MAME version uses a RAM slot option).
 
@@ -96,7 +104,7 @@ The standalone emulator can boot the identical firmware and raw disk:
 ```sh
 cd v7z8000/usr/sys/build
 ./test_driver -b ../../../../tests/build/z8001unix/roms/z8001unix/unix.rom \
-  -d ../../../../tests/build/z8001unix/boot-hd.img -T 66667 -c 500000000 \
+  -d ../../../../tests/build/z8001unix/full-userland.img -T 66667 -c 4000000000 \
   -i 'cc -i /usr/src/hello.c -o /tmp/hello\n/tmp/hello\n' \
   -x 'Hello from native C'
 ```
@@ -147,3 +155,10 @@ signature stopped the standalone emulator in firmware.
 `--save-disk path.img` exports the modified disk after a successful test and
 refuses overwrite. Use `--settle 60` for periodic Unix buffer flushing before
 MAME exits; this is a test convenience, not an orderly shutdown protocol.
+
+The full native disk passed `ls /bin`, `pwd`, a shell pipeline and native
+compile/link/execute in MAME after installing the disk bootstrap. Logs are in
+`tests/build/z8001unix/full-userland-default/`. Use `ls /bin` for the installed
+command list; [userland coverage](../toolchain/userland.md) records functionality
+and platform-specific limitations. Installed commands are not all independently
+validated in MAME.

@@ -51,6 +51,12 @@ the host console. Alternate disciplines and modem commands return `ENOTTY`.
 The existing exclusive-open and hangup state flags do not implement physical
 modem behavior or enforce exclusive console opens.
 
+The emulated console schedules transmit completion on the next clock tick
+and drains the queued bytes then. This preserves V7's sleep/wakeup ordering:
+`ttwrite` sets `ASLEEP` after calling `ttstart` when the queue exceeds `TTHIWAT`.
+Draining synchronously from `ttstart` would wake the writer before it slept,
+leaving long output such as `ls /bin` blocked. The shared V7 TTY code is unchanged.
+
 Run `test-tty` for settings and interactive mode regressions; see Step 21 in
 [implementation-steps.md](../history/implementation-steps.md).
 

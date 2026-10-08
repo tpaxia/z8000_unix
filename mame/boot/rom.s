@@ -16,6 +16,7 @@ djnz r3,map
 ld r14,#0x8300
 ld r15,#0xfd00
 ld r0,#0
+ld r1,#0
 ld r2,#0x8300
 ld r3,#0xfe00
 ld r12,#0x8000
@@ -24,7 +25,7 @@ call @rr12
 ld r2,#0x8300
 ld r3,#0xfe00
 ld r0,@rr2
-cp r0,#0x5a38
+cp r0,#0x5a39
 jr nz,error
 inc r3,#2
 jp @rr2
@@ -34,15 +35,16 @@ outb #0xf0,rl0
 halt
 jr error
 
-! Fixed firmware service at 0:0100: R0=LBA (16 bit), RR2=destination.
+! Fixed firmware service at 0:0100: RR0=LBA (28 bit), RR2=destination.
 ! Clobbers R0,R1,R4,R5; advances destination by 512. Masked interrupts.
 .org 0x100
-outb #0x1f3,rl0
-outb #0x1f4,rh0
-ldb rl1,#0
-outb #0x1f5,rl1
-ldb rl1,#0xe0
-outb #0x1f6,rl1
+outb #0x1f3,rl1
+outb #0x1f4,rh1
+outb #0x1f5,rl0
+ldb rl4,rh0
+and r4,#15
+or r4,#0xe0
+outb #0x1f6,rl4
 ldb rl1,#1
 outb #0x1f2,rl1
 ldb rl1,#0x20

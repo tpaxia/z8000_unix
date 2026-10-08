@@ -64,16 +64,19 @@ primary-bootstrap update. These remain ordinary filesystem files. The installer
 currently creates a new disk copy and refuses existing boot filenames; it is
 not yet a native `installboot` utility for updating `/boot` on an installed disk.
 
-The bootstrap supports root unit zero, filesystem offset zero, and 16-bit LBAs
-(up to 32 MiB). `/boot` is limited to 111 sectors and text+data+BSS below `e000`;
-it currently uses 6,708 bytes text, 1,076 data and 4,506 BSS. Temporary bank 3
+The bootstrap supports root unit zero, filesystem offset zero, and the controller's
+28-bit LBAs. `/boot` is limited to 63 sectors and text+data+BSS below `e000`;
+it currently uses 6,772 bytes text, 1,076 data and 4,506 BSS. Temporary bank 3
 requires at least 256 KiB during boot and becomes ordinary allocatable memory
 after the handoff. The original standalone filesystem reader handles indirect
 blocks; the host installer supports boot files through single indirection and
 a root directory through ten direct blocks. Disk errors stop boot; invalid
 kernel headers return to the pathname prompt. Firmware prints `E` on a disk
 error or missing primary signature; the primary prints `B` for a bad sector
-count or `/boot` header.
+count or `/boot` header. Sector zero uses signature `0x5a39` and a list of
+32-bit block numbers. Images using the earlier `0x5a38`/16-bit list require
+reinstalling sector zero together with the new ROM; they are rejected rather
+than interpreted as the new format.
 
 Historical sources: [V7 boot(8)](../../v7unix/usr/man/man8/boot.8),
 [primary PDP-11 bootstrap](../../v7unix/usr/mdec/hpuboot.s),

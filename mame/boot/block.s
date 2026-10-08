@@ -1,13 +1,13 @@
 ! Sector-zero primary loader. Installer fills the /boot sector list at 0x100.
 .segm
 .text
-.word 0x5a38
+.word 0x5a39
 ld r8,#0x8300
 ld r9,#0xff00
 ld r10,@rr8
 cp r10,#1
 jr ult,bad
-cp r10,#111
+cp r10,#63
 jr ugt,bad
 inc r9,#2
 ld r2,#0x8300
@@ -15,8 +15,8 @@ ld r3,#0
 ld r12,#0x8000
 ld r13,#0x100
 next:
-ld r0,@rr8
-inc r9,#2
+ldl rr0,@rr8
+inc r9,#4
 call @rr12
 djnz r10,next
 ! Strip the 16-byte 0407 header; BSS is cleared by /boot's startup.

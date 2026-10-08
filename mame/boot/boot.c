@@ -17,9 +17,9 @@ devread(io) struct iob *io; {
  unsigned n, s, *p;
  long bn;
  bn = io->i_bn;
- if (bn < 0 || bn > 65535L || io->i_cc != 512) _stop("Bad disk request");
- outb(0x1f3,(int)bn); outb(0x1f4,(int)(bn>>8)); outb(0x1f5,0);
- outb(0x1f6,0xe0); outb(0x1f2,1); outb(0x1f7,0x20);
+ if (bn < 0 || bn > 0xfffffffL || io->i_cc != 512) _stop("Bad disk request");
+ outb(0x1f3,(int)bn); outb(0x1f4,(int)(bn>>8)); outb(0x1f5,(int)(bn>>16));
+ outb(0x1f6,0xe0|(int)(bn>>24)); outb(0x1f2,1); outb(0x1f7,0x20);
  n=65535;
  do {
   s=inb(0x1f7);
@@ -56,7 +56,10 @@ main()
    int c;
    c=getchar();
    if(c=='\r'||c=='\n') break;
-   if(c==8||c==127) { if(n) n--; continue; }
+   if(c==8||c==127) {
+    if(n) { n--; putchar(8); putchar(' '); putchar(8); }
+    continue;
+   }
    if(n<79) { kernel[n++]=c; putchar(c); }
   }
   putchar('\n'); kernel[n]=0;

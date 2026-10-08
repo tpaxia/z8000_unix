@@ -9,9 +9,10 @@ ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('mame',type=Path)
 p.add_argument('--chdman',type=Path,required=True)
-p.add_argument('--disk',type=Path,default=ROOT/'tests/build/z8001unix/boot-hd.img')
+p.add_argument('--disk',type=Path,default=ROOT/'tests/build/z8001unix/full-userland.img')
 p.add_argument('--rompath',type=Path,default=ROOT/'tests/build/z8001unix/roms')
 p.add_argument('--input',default='cc -i /usr/src/hello.c -o /tmp/hello\n/tmp/hello\n')
+p.add_argument('--boot',default='\n',help='input at the standalone loader prompt')
 p.add_argument('--expect',default='Hello from native C')
 p.add_argument('--save-disk',type=Path,help='export the modified guest disk after success')
 p.add_argument('--settle',type=int,default=0,help='guest seconds to wait after expected output')
@@ -28,9 +29,10 @@ with tempfile.TemporaryDirectory(prefix='disk-',dir=a.output) as tmp:
     subprocess.run([str(a.chdman.resolve()),'createhd','-i',str(a.disk.resolve()),'-o',str(disk.resolve()),
                     '-chs',f'{n//512},1,1','-ss','512','-c','none'],check=True,stdout=subprocess.DEVNULL)
     env=dict(os.environ,Z8001UNIX_LOG=str((a.output/'console.log').resolve()),
-             Z8001UNIX_INPUT=a.input,Z8001UNIX_EXPECT=a.expect.replace('\r',''),
+             Z8001UNIX_INPUT=a.input,Z8001UNIX_BOOT=a.boot,
+             Z8001UNIX_EXPECT=a.expect.replace('\r',''),
              Z8001UNIX_SETTLE=str(a.settle))
-    command=[str(a.mame.resolve()),'z8001unix','-rompath',str(a.rompath.resolve()),
+    command=[str(a.mame.resolve()),'z8001unix','-window','-rompath',str(a.rompath.resolve()),
              '-hard',str(disk.resolve()),'-ram',a.ram.lower(),'-video','none','-sound','none','-nothrottle',
              '-skip_gameinfo','-seconds_to_run',str(a.seconds),'-autoboot_delay','0',
              '-autoboot_script',str(ROOT/'mame/smoke.lua'),'-inipath',str(Path(tmp).resolve()),
