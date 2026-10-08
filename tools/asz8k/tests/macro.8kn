@@ -1,0 +1,14 @@
+__text .sect
+pair .macro
+ .word ?1,?2
+ .endm
+ pair 1234h,5678h
+ .if 1
+ .repeat 3
+ .byte 42h
+ .endr
+ .else
+ .error
+ .endif
+ .align 1
+ .end

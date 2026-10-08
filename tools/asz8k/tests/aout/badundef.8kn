@@ -1,0 +1,3 @@
+__text .sect
+ .word missing
+ .end

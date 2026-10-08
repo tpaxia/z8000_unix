@@ -1,0 +1,27 @@
+ .text
+ .globl _probe,_helper,_extdata,_getabs,_abs
+_probe:
+ call _helper
+ add r0,datum
+ add r0,_extdata
+ ld saved,r0
+ ld r0,saved
+ ret
+_getabs:
+ ld r0,#_abs
+ ret
+ .data
+datum: .word 7
+other: .word 8
+third: .word 9
+ .globl _pd,_pd2,_pd3,_pb,_pt,_wide,_small
+_pd: .word datum
+_pd2: .word other
+_pd3: .word third
+_pb: .word saved
+_pt: .word _probe
+_wide: .long _abs
+_small: .byte _abs
+ .even
+ .bss
+saved: .zerow 1

@@ -1,0 +1,12 @@
+__text .sect
+ .global target
+ ld r2,@rr4
+ ld r2,target
+ ld r2,|target
+ lda rr2,target
+ jp target
+ .long target
+ .word target
+ iret
+target: .word 1234h
+ .end

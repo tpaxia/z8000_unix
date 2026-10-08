@@ -1,0 +1,4 @@
+__text .sect
+ .align 4
+ .word 1
+ .end

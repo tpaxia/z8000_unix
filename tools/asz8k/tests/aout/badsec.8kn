@@ -1,0 +1,3 @@
+other .sect
+ .word 1
+ .end

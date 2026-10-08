@@ -1,0 +1,5 @@
+__text .sect
+ fld f0,f1
+ fadd f0,f1
+ fldil f0,rr2
+ .end

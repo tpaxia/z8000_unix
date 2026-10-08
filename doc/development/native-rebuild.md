@@ -126,6 +126,40 @@ Replacing the installed yacc makes parser dependencies newer, so native make
 may regenerate and rebuild those packages during installation. The install
 step has a larger emulator cycle budget than individual package steps.
 
+## Experimental Zilog assembler
+
+On `work/native-asz8k`, after completing the native environment and full native
+userland above:
+
+```sh
+python3 tools/asz8k/native.py --setup
+```
+
+This creates a separate trial disk under `tests/build/asz8k`. Host Python stages
+sources and monitors execution; native Unix `make`, PCC, az8 and ldz8 build the
+assembler. Its guest build directory is `/usr/src/asz8k`, where `make` builds
+`asz8k` and `./asz8k -s -l seg.8ks` exercises segmented assembly.
+The trial checks Unidot output against recorded original-assembler results.
+`./asz8k -a -o probe.b probe.8kn` writes a NONSEG a.out object directly; native
+link/run checks compare both executable modes with az8, including partial
+linking. PCC still invokes az8 in the installed compiler pipeline.
+Logs, objects, executable sizes and per-process memory profiles remain beside
+the disk. Running without options resumes. `--refresh` restages sources and
+retains objects only when their source and headers match; `--setup` discards the
+trial disk and rebuilds everything.
+
+To independently reproduce the oracle with the CPM8000 checkout and its built
+hosted Z8001 emulator:
+
+```sh
+python3 tools/asz8k/oracle.py ~/Projects/CPM8000
+```
+
+See [the experimental assembler assessment](../toolchain/asz8k.md) for format
+limitations and remaining kernel-build integration.
+The [common host/native s.out migration plan](../toolchain/asz8k.md#planned-common-host-and-native-format)
+is future work; the commands above still exercise Unidot and NONSEG a.out.
+
 ## Complete cross-built userland
 
 After bootstrap has built the emulated kernel and driver:

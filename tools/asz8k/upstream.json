@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/tpaxia/CPM8000",
+  "revision": "2d4ac7da46e2e3741fc2832a28b8cce0fb7b9f1d",
+  "directory": "src/asm8k",
+  "sha256": {
+    "aparse.c": "f43b8feefce7914a9056c97e73bbdeca17197ca6c6ca79e14d7630bfd7fe613e",
+    "aoutput.c": "bae8e86867083aafb8db987c19eba7d046a05149aea115bd8561c92158f68afa",
+    "asz8kglo.c": "5dcbf1052dbfcff72ef6a94f3cce8a68cd313846fdc7e6e4c4e85ad4bc441e33",
+    "aascom.c": "60de3632a5bd8c6a97f3fde8e8ed6e72042958eae00d09ceaf1d48c176d22d1d",
+    "axref.c": "5708e7bee64d1810b96b57888b557e1ffddd17a40f25eae3c525365111f4b1bd",
+    "asz8k.h": "76ba0af2503755202af4ae8b41cdfdd8cde6f27ba54377fbf8f0ec98645f3a7e",
+    "ainput.c": "d9bb7571baa329d6efdeda1d6d3cfb12fd37d610278433cbdf465834a2fe4188",
+    "asz8kgrm.c": "1b4765a134fa5fe6c76bb360e8c34735d3adec491f37b849d11e39525459e0e8",
+    "amisc.c": "208ed299d6441d658bbbae9f443f5fa1747eecc0064a5db1b34deaaf5ab32bdd",
+    "obj.h": "6564278fc2bb0e0ae8295c422c5b688a54d2aea471eaf3b7214085b76fa53034",
+    "acom.h": "dd8e2effe4306101b8bfd71b4bf25added84a048afe9f0d7f66ef8944bf771d6",
+    "atoken.c": "c95ee2aa68a9149696d5779a8046f9cdad4ec896a6f0e2610e15be63e08e9a37",
+    "aglocom.c": "950d3f255683d578f68867b368e2487b6815bf2de6d657b22bd7cd19461d2333",
+    "asz8k.pd": "a7ddbab7abe683174eeeff67ad7a671f4cff82a20c9663cc68887f0109ee881e",
+    "asz8k.c": "8a0225abafbd0ff776bdb778c860faf10cebe5b082d1b018ea278ee6c0d8bf75",
+    "avm.c": "93b6f36036558c485c0151dcf32863cac3ebcbd95d6a5f31c74266b928b66678",
+    "alook.c": "e159c005301f7a8544499e0a1b03afac0988ed7793ada2c4e92b2881f79f6b0f",
+    "adirec.c": "28a163269ef17383d5677271b8891a663ad4cba25210041c635679d8ad402a7f",
+    "ainit.c": "6ab1facc623f2af3edc525ac9e9740855f3e9d5b0007fd18819a887a6a2bc8af"
+  }
+}
