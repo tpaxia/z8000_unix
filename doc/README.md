@@ -32,6 +32,7 @@ an explicit working directory is given.
 
 - [Common porting guide](platforms/porting-guide.md)
 - [Implemented emulated machine](platforms/emulated.md)
+- [Z8001-unix in MAME](platforms/z8001-unix.md)
 - [MMU design background and proposals](platforms/mmu-design.md)
 - [M40 feasibility notes](platforms/m40.md)
 
@@ -39,6 +40,7 @@ an explicit working directory is given.
 
 - [Bootstrap](development/bootstrap.md)
 - [Build and run](development/build-and-run.md)
+- [Build and run in MAME](development/mame.md)
 - [Native rebuild](development/native-rebuild.md)
 - [Testing and emulator diagnostics](development/testing.md)
 - [V7 compatibility](development/v7-compatibility.md)

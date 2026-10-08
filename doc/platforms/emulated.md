@@ -2,6 +2,11 @@
 
 The project uses a Z8000 software emulator (`z8000_emu/`) for development and testing. The emulator supports both the Z8001 (segmented) and Z8002 (non-segmented) CPU variants and is linked as a C++ library into test drivers.
 
+[Z8001-unix in MAME](z8001-unix.md) implements the same kernel-facing board
+interface. `test_driver -b ROM` boots its ROM loader instead of directly loading
+the kernel and FPU images. `-T 66667` selects approximately 60 Hz at 4 MHz;
+the default remains the accelerated 5,000-cycle test clock.
+
 ## Custom Front End
 
 Rather than using the emulator as a standalone tool, the project links it as a library and implements a custom front end (`emu/test_driver.cpp`). It lives outside `v7z8000/` because it is host C++ modelling the machine, not Unix source — keeping it separate means everything under `v7z8000/` stays a diff against the V7 baseline.

@@ -104,16 +104,16 @@ combined layout. Both use 16-bit pointers and NONSEG execution. Each space has
 bytes, and executable text must have even length. Data, BSS, heap, arguments,
 and stack share the data space. The exec loader reserves a mapped stack of at least 4 KiB, enlarged when
 startup arguments plus 256 bytes require more. Heap and stack pages must not
-overlap; the stack does not grow automatically.
+overlap; stack growth follows the conservative fault/warning policy below.
 
 For process slot `i`, the logical/data segment is `S=i+1`. A split process uses
 backing segment `S+NPROC` for instructions. `u.u_sep` records the layout;
 `sureg()` selects the instruction bank and sets `useg`/`iseg` for kernel copies.
 The emulator routes instruction fetches and PC-relative program accesses
 through this selection, while data and stack accesses retain their original
-mapping. The kernel stays combined. Fork copies the mapped text, data and stack sections;
-exec can change between layouts. Text is neither shared nor write-protected.
-This mapping is implemented in the emulated machine; FPGA hardware still needs
+mapping. The kernel also uses split I/D, as described below. Fork shares read-only
+split text and copies private data/stack; exec can change between layouts.
+This mapping is implemented in both software machines; FPGA hardware still needs
 an equivalent instruction/data bus mapping.
 
 `copyiin`/`copyiout` and `fuibyte`/`suibyte` access instruction backing memory.

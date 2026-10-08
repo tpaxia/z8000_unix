@@ -1,6 +1,6 @@
 # Current Status
 
-Status as of 2026-10-07.
+Status as of 2026-10-08.
 See the [documentation index](README.md) for procedures and subsystem references.
 
 ## Implemented and tested
@@ -9,6 +9,12 @@ The emulated Z8001 machine boots V7 to a Bourne shell. Kernel and user C use
 16-bit NONSEG pointers; 0407 combined-space and 0411 split-I/D executables work.
 The kernel also uses split I/D. Floating arithmetic uses the separate Zilog
 software EPU engine in segment 127.
+
+The [Z8001-unix MAME machine](platforms/z8001-unix.md) boots the same kernel
+and FPU code from disk through a small ROM, sector-zero bootstrap and V7 `/boot`. Selected acceptance tests cover
+shell pipelines, split I/D, floating point, memory faults/stack growth, shared
+text, low-memory swapping and native C compilation. Both environments can boot
+the same ROM and bootable disk; their filesystem and user executable formats are unchanged.
 
 Kernel coverage includes fork/exec/wait, pipes, signals and user preemption,
 V7 filesystem and TTY services, ordinary buffer-cache operation, raw I/O,
@@ -39,7 +45,7 @@ See [native development](toolchain/native-development.md) for scope and
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   A complete native kernel/boot/system rebuild has not been established.
-- Only the emulated machine has a kernel configuration. Physical machine ports
+- The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports
   need their own boot, interrupt, device and memory implementations.
 - Fault restart accepts a conservative instruction whitelist. Memory sections
   need contiguous physical extents; arbitrary instruction restart and scattered

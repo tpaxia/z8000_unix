@@ -1,0 +1,58 @@
+.text
+.globl _main,_edata,_end,_inb,_outb,_inw,_copyseg,_enter,__rtt
+call init
+__rtt:
+halt
+jr __rtt
+init:
+lda r2,_edata
+lda r3,_end
+ldk r0,#0
+clear:
+cp r2,r3
+jr uge,ready
+ldb @r2,rl0
+inc r2,#1
+jr clear
+ready:
+call _main
+ret
+_inb:
+ld r1,2(sp)
+inb rl0,@r1
+and r0,#255
+ret
+_inw:
+ld r1,2(sp)
+in r0,@r1
+ret
+_outb:
+ld r1,2(sp)
+ld r0,4(sp)
+outb rl0,@r1
+ret
+! copyseg(seg, offset, local buffer, length); only IR instructions in SEG mode.
+_copyseg:
+push @sp,r4
+push @sp,r5
+push @sp,r6
+ld r4,8(sp)
+ld r5,10(sp)
+ld r2,#0x8300
+ld r3,12(sp)
+ld r6,14(sp)
+ldctl r9,fcw
+ld r0,#0xc000
+ldctl fcw,r0
+ldirb @r4,@r2,r6
+ldctl fcw,r9
+pop r6,@sp
+pop r5,@sp
+pop r4,@sp
+ret
+_enter:
+ld r2,#0x8000
+ld r3,#0x200
+ld r0,#0xc000
+ldctl fcw,r0
+jp @r2

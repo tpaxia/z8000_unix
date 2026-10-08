@@ -698,11 +698,13 @@ int main(int argc, char* argv[]) {
     bool mem_trace = false;
     // The emulator counts cycles in 64 bits, so a run is not limited to 2^31.
     uint64_t max_cycles = 50000000;  // increased for shell startup overhead
+    unsigned cycles_per_tick = 5000; // accelerated regression default
 
     // Defaults are the boot test: the small root image, the pipeline typed
     // at the shell, and an exact transcript. -d, -i and -x run something
     // else under the same kernel, e.g. the C library test.
     const char *disk_image = "hd.img";
+    const char *boot_rom = nullptr;
     const char *save_image = nullptr, *profile_file = nullptr;
     const char *console_input = "echo hello | cat\nexit\n";
     const char *expect = nullptr;
@@ -719,8 +721,16 @@ int main(int argc, char* argv[]) {
     char swap_fail_kind = 0;
     unsigned swap_fail_nth = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:D:E:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:D:E:b:T:")) != -1) {
         switch (opt) {
+            case 'T': {
+                char *end;
+                unsigned long value = strtoul(optarg, &end, 10);
+                if (*end || !*optarg || value < 100 || value > 1000000) {
+                    fprintf(stderr, "-T requires clock period from 100 to 1000000 CPU cycles\n"); return 1;
+                }
+                cycles_per_tick = value; break;
+            }
             case 'D': {
                 char *end;
                 swap_delay = strtoull(optarg, &end, 10);
@@ -765,6 +775,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
             case 't': trace = true; break;
+            case 'b': boot_rom = optarg; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
             case 'c': max_cycles = strtoull(optarg, nullptr, 10); break;
@@ -785,7 +796,7 @@ int main(int argc, char* argv[]) {
             case 'M': measure_marker = optarg; break;
             default:
                 fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
-                        "[-d hd-image] [-i console-input] [-x expected-text] "
+                        "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
                         "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
@@ -822,10 +833,14 @@ int main(int argc, char* argv[]) {
 
     printf("Loading binaries:\n");
 
-    if (ram_kib < 192) {
-        fprintf(stderr, "insufficient memory: ROM/kernel banks require 192 KiB\n");
+    if (ram_kib < (boot_rom ? 256U : 192U)) {
+        fprintf(stderr, "insufficient memory: direct boot requires 192 KiB; disk bootstrap requires 256 KiB\n");
         return 1;
     }
+    if (boot_rom) {
+        // The same small ROM used by MAME boots the disk; no kernel is preloaded.
+        if (!load_file(memory, boot_rom, 0)) return 1;
+    } else {
     // Load ROM at segment 0 (physical address 0x000000)
     if (!load_file(memory, "rom.bin", 0x000000))
         return 1;
@@ -841,6 +856,7 @@ int main(int argc, char* argv[]) {
         return 1;
     if (!load_file(memory, "fpe.bin", 0x7f0000))
         return 1;
+    }
 
     // Load disk images
     if (!io.load_disk("root.img"))
@@ -884,13 +900,14 @@ int main(int argc, char* argv[]) {
 
     // Run CPU in chunks, delivering periodic NVI clock ticks
     // and delayed console input for testing read()
-    const int CYCLES_PER_TICK = 5000;
+    const unsigned CYCLES_PER_TICK = cycles_per_tick;
     uint64_t tick_count = 0, merged_ticks = 0;
     uint64_t start_ticks = 0, start_merged = 0, start_accepted = 0;
     bool measuring = false, measure_done = false, start_pending = false;
     int input_idx = 0;
 
     bool input_started = false;
+    bool boot_input_sent = false;
     int idle_after_input = 0;
     bool waiting_for_output = has_later_input;
     int ticks_after_marker = 0;
@@ -933,6 +950,11 @@ int main(int argc, char* argv[]) {
         if (cpu.clock_pending()) merged_ticks++;
         cpu.pulse_input_line(z8002_device::NVI_LINE);
         tick_count++;
+        // Select /unix at the standalone loader prompt in ROM-boot tests.
+        if (boot_rom && !boot_input_sent && io.console_output().find(": ") != std::string::npos) {
+            io.queue_console_char('\n');
+            boot_input_sent = true;
+        }
         // Deliver console input after shell prompt "# " appears
         if (console_input[input_idx]) {
             if (!input_started && io.console_output().find("# ") != std::string::npos) {

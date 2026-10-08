@@ -93,6 +93,10 @@ See [kernel configuration and adding a machine](v7z8000/usr/sys/conf/README.md).
 Only the current emulated machine is implemented; the M20 is not yet a kernel
 configuration.
 
+The same configuration also runs in the [Z8001-unix MAME machine](doc/platforms/z8001-unix.md),
+using the same kernel and FPU code loaded from disk by a V7 standalone bootstrap. See the
+[MAME build and run procedure](doc/development/mame.md).
+
 ### Emulator
 
 The Z8000 software emulator is used as a library with a custom front end (`emu/test_driver.cpp`, kept outside the V7 tree since it is host code, not Unix source) that can simulate I/O and load code segments and data from files at arbitrary physical addresses without needing bootstrap code. This simplifies development considerably — the full kernel trap round-trip can be tested without a real boot ROM or hardware.
