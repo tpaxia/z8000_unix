@@ -113,6 +113,7 @@
 #define	SADP2	0001		/* defined in pass 2 */
 #define	SAMUD	0002		/* multiply defined */
 #define	SAGLO	0004		/* global */
+#define SACOM 0010              /* PCC common declaration */
 /*
  * Symbol types (in sy_typ).
  */
@@ -121,6 +122,7 @@
 #define	STSEC	2		/* section */
 #define	STLAB	3		/* label or equ */
 #define	STVAR	4		/* variable (redefinable) */
+#define STCOM 5                 /* undefined external with storage size */
 /*
  * Token types and values returned from the lexical scanner.
  */
@@ -167,10 +169,23 @@
 /*
  * Type definitions.
  */
+#ifdef ASZ_HOST
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdint.h>
+#define exprval int32_t
+#define uns unsigned short
+#define vmadr unsigned short
+#else
 #define	exprval	long		/* expression value */
 #define	reg	register	/* abbreviation for good tabbing */
 #define	uns	unsigned	/* abbreviation for good tabbing */
 #define	vmadr	unsigned	/* virtual memory address */
+#endif
+#ifndef reg
+#define reg register
+#endif
 /*
  * Pseudo-variables.
  */
@@ -205,11 +220,18 @@ struct	input {			/* input stack frame */
 	int	in_cnt;			/* number of characters left */
 	int	in_fd;			/* file descriptor */
 	uns	in_seq;			/* line number */
+#ifdef ASZ_HOST
+	char	*in_align;	/* align macro argument pointers in the buffer */
+#endif
 	char	in_buf[1<<BLKLOG];	/* buffer area (variable size & use */
 };
 struct	octab {			/* opcode table entry */
 	struct	octab	*oc_lnk;	/* link to next entry in hash chain */
+#ifdef ASZ_HOST
+	uintptr_t oc_val;		/* instruction format pointer or directive */
+#else
 	uns	oc_val;			/* value of opcode */
+#endif
 	char	oc_typ;			/* type of opcode */
 	char	oc_arg;			/* highest formal number for macro */
 	char	oc_str[SYMSIZ];		/* opcode mnemonic string */
@@ -257,7 +279,11 @@ struct	vmbuf {			/* virtual memory buffer */
 };
 struct	xref {			/* cross reference entry */
 	vmadr	xr_lnk;			/* circular link to next entry */
+#ifdef ASZ_HOST
+	int16_t xr_pl;			/* target-width page and line flags */
+#else
 	int	xr_pl;			/* page and line number */
+#endif
 };
 /*
  * Global variable declarations.
@@ -283,6 +309,7 @@ uns		deflev;		/* macro definition nesting level */
 char		eflg;		/* expression error flag */
 extern	char	oflag;		/* Flag to Make Labled output file */
 extern	char	segflg;		/* Flag to Make Segmented output file */
+extern int pccflg, pccpass;
 uns		errct;		/* error count */
 char		escchr;		/* escape character */
 int		extoff;		/* offset of source extension in program name */
@@ -376,6 +403,7 @@ uns		vmwct;		/* number of vm disk writes */
  * Function declarations.
  */
 struct	sytab	*assign();
+struct format *pccbranch();
 uns		hash();
 struct	octab	*oclook();
 struct	input	*pushin();
@@ -383,5 +411,7 @@ char		*rfetch();
 char		*rindex();
 vmadr		sylook();
 vmadr		symerge();
-vmadr		valloc();
+vmadr		vmalloc();
 char		*wfetch();
+
+char *palloc();

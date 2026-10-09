@@ -82,12 +82,12 @@ char	*strp;
 		do {
 			scanc();
 		} while(white(ch));
-		if(ch!=';' && ch!='\n') {
+		if(ch!=';' && ch!='\n' && !(pccflg && ch=='!')) {
 			unscanc();
 			return(toktyp = TKSPC);
 		}
 	}
-	if(ch == ';') {  /* comment */
+	if(ch == ';' || (pccflg && ch=='!')) {  /* comment */
 		do {
 			scanc();
 		} while(ch != '\n');
@@ -112,6 +112,10 @@ char	*strp;
 		} while('0'<=ch&&ch<='9' || 'a'<=ch&&ch<='z');
 		unscanc();
 		*strp = '\0';
+		if (pccflg && tokstr[0]=='0' && tokstr[1]=='x') {
+			radix = 16; strp = tokstr+2;
+			goto number;
+		}
 		c = *--strp;
 		if('0'<=c && c<='9') radix = 10;
 		else {
@@ -139,7 +143,10 @@ char	*strp;
 			}
 			*strp = '\0';
 		}
-		tokval = 0;  strp = tokstr;
+		strp = tokstr;
+		if (pccflg && radix==10 && tokstr[0]=='0' && tokstr[1]) radix = 8;
+number:
+		tokval = 0;
 		while(c = *strp++) {
 			if('0'<=c && c<='9') c -= '0';
 			else c += 10-'a';
@@ -232,7 +239,7 @@ xscanc() {
 
 top:
 	if(ch == '\0') {
-		getline();
+		asline();
 		ch = *scanpt++;
 		goto top;
 	}

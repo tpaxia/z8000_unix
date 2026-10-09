@@ -1,0 +1,3 @@
+__text .sect
+entry: ret
+ .end entry

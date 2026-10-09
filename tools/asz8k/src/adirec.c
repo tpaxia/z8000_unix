@@ -5,6 +5,7 @@
 #include "acom.h"
 #include "obj.h"
 extern int aflag;
+extern int zflag;
 
 /*
  * Version 3.4, 8/27/82.  Changed this routine to dircom, and moved
@@ -111,6 +112,10 @@ char	llsave;
 
 	case ADEND:	/* .end */
 		if(toktyp == TKSPC) {  /* read transfer address */
+			if (zflag) {
+				fprintf(ERROR,"s.out: transfer address is unsupported\n");
+				exit(1);
+			}
 			if (aflag) {
 				fprintf(ERROR,"a.out: transfer address is unsupported\n");
 				exit(1);

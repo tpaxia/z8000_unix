@@ -45,12 +45,22 @@ See [native development](toolchain/native-development.md) for scope and
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   A complete native kernel/boot/system rebuild has not been established.
+  On `work/native-asz8k`, the experimental assembler writes SEG/NONSEG s.out
+  objects, with independent host/native assembler byte comparisons. The shared
+  opt-in linker supports initial segment placement, relocations, partial links
+  and archives; kernel exec accepts both NONSEG s.out layouts. The experimental
+  C pipeline invokes asz8k directly on PCC output and has rebuilt startup/libc,
+  asz8k, ldz8 and the cc driver in s.out inside V7, with runtime checks.
+  Shared host/native [object utilities and a nlist adapter](toolchain/object-utilities.md)
+  support both port formats in an isolated trial. Kernel/boot images and
+  standard-image deployment remain pending. See
+  [the linker reference](toolchain/ldz8.md) and [assembler assessment](toolchain/asz8k.md).
 - The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports
   need their own boot, interrupt, device and memory implementations.
 - Fault restart accepts a conservative instruction whitelist. Memory sections
   need contiguous physical extents; arbitrary instruction restart and scattered
   allocation are not implemented.
-- Full SEG executables, physical/kernel memory-device access, an active
+- SEG user execution, physical/kernel memory-device access, an active
   multiplexor and panic-specific buffer flushing are not implemented.
 - Single-stepping requires hardware support; the current machine returns EIO
   for ptrace request 9. Software stepping is deliberately outside the plan.

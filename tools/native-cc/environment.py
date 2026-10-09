@@ -82,7 +82,7 @@ def setup(preserve=False, reset_compiler=False):
         output = output.rsplit('/',1)[-1]
         objects = [name.rsplit('.',1)[0]+'.b' for name in sources]
         rules = ['CC=/bin/cc', 'CFLAGS=-O -Dunix=1 ' + flags, 'all: ' + output]
-        headers = {'az8':'mical.h inst.h ../b.out.h', 'ldz8':'b.out.h',
+        headers = {'az8':'mical.h inst.h ../b.out.h', 'ldz8':'b.out.h soutfmt.h ldz8.c',
                    'front':'manifest macdefs mac2defs mfile1 mfile2 common',
                    'back':'manifest macdefs mac2defs mfile1 mfile2 common'}.get(group,'')
         for name,path in sources.items():
@@ -107,7 +107,10 @@ def setup(preserve=False, reset_compiler=False):
     extra['usr/src/b.out.h'] = PCC/'b.out.h'
     makegroup('az8', {n+'.c':PCC/'az8'/(n+'.c') for n in 'error init ins ioz8 ps rel sdi sym scan'.split()}, '/bin/az8')
     extra['usr/src/ldz8/b.out.h'] = PCC/'b.out.h'
-    makegroup('ldz8', {'ldz8.c': PCC/'ldz8.c'}, '/bin/ldz8')
+    extra['usr/src/ldz8/ldz8.c'] = PCC/'ldz8.c'
+    extra['usr/src/ldz8/soutfmt.h'] = ROOT/'tools/asz8k/src/soutfmt.h'
+    makegroup('ldz8', {n+'.c': ROOT/'tools/ldz8'/(n+'.c') for n in ['dispatch','ldso']}
+              | {'soutfmt.c': ROOT/'tools/asz8k/src/soutfmt.c'}, '/bin/ldz8')
     for path in (CMD/'cpp').iterdir():
         if path.is_file(): extra['usr/src/cpp/'+path.name] = path
     step('cpp-parser', '/usr/src/cpp', ['/bin/yacc cpy.y'])

@@ -38,9 +38,10 @@ static	char	ident[] = "@(#)a.ascom.c	3.6";
 extern	char	segflg;
 extern	char	oflag;
 extern int aflag;
+extern int zflag;
 
 char putfile[15];
-char optfile[15];
+char optfile[128];
 
 main(argc,argv) int argc; char *argv[]; {
 
@@ -50,8 +51,10 @@ int	index;
 
 	init(argc,argv);
 	dopass();
+	if (pccflg) pccrelax();
 	interlude();
 	pass2 = 1;
+	if (pccflg) pccreset();
 	dopass();
 	oflush();  objtyp = OBOND;  oflush();
 	if(lflag) {
@@ -68,6 +71,7 @@ int	index;
 	}
 	/* Unix port: retain the native Unidot object; no CP/M xcon chaining. */
 	if (aflag) aofinish();
+	if (zflag) sofinish();
 	if (fclose(OBJECT) == EOF) exit(1);
 	if (lflag && fclose(LIST) == EOF) exit(1);
 	exit(0);
@@ -79,6 +83,7 @@ int	index;
 assem1() {
 
 	laboc();
+	if (pccflg && pccstmt()) return;
 	if(*opcstr) {  /* we have an opcode field */
 		opcode = oclook(opcstr);
 		switch(opcode->oc_typ) {
@@ -88,7 +93,7 @@ assem1() {
 			break;
 
 		case OTINS:	/* machine instruction */
-			instr(opcode->oc_val);
+			instr((char *)opcode->oc_val);
 			break;
 
 		case OTDIR:	/* assembler directive */
@@ -120,8 +125,17 @@ struct	sytab	*syp;
 
 	sprintf(llloc,"%04x",(uns)(val&0xffff));
 	if(label == 0) return(0);  /* no label */
+	if (pccflg) pccsymbol(label);
 	xref(label,XRDEF);
 	syp = wfetch(label);
+	if (pccflg && !pass2) {
+		if (syp->sy_typ != STVAR && (syp->sy_atr&SADP2)) {
+			syp->sy_atr |= SAMUD; return(syp);
+		}
+		syp->sy_typ = typ; syp->sy_val = val; syp->sy_rel = rel;
+		syp->sy_atr |= SADP2;
+		return(syp);
+	}
 	if(syp->sy_typ!=STVAR&&(pass2?syp->sy_atr&SADP2:syp->sy_typ!=STUND)) {
 		err('M');  syp->sy_atr |= SAMUD;
 		return(0);
@@ -166,26 +180,26 @@ int	argno;
 			scanc();
 			if(ch == escchr) {  /* escaped character */
 				scanc();
-				*wfetch(valloc(1)) = ch;
+				*wfetch(vmalloc(1)) = ch;
 			} else if(ch == argchr) {  /* macro parameter */
 				scanc();
 				if(ch == mctchr)  /* macro expansion ct */
-					*wfetch(valloc(1)) = 0200;
+					*wfetch(vmalloc(1)) = 0200;
 				else if(ch == argchr)  /* extra args */
-					*wfetch(valloc(1)) = 0201;
+					*wfetch(vmalloc(1)) = 0201;
 				else if('0'<=ch && ch<='9') {
 					argno = ch-'0';
 					if(argno > curdef->oc_arg)
 						curdef->oc_arg = argno;
-					*wfetch(valloc(1)) = argno+0202;
+					*wfetch(vmalloc(1)) = argno+0202;
 				} else err('A');
 			} else {  /* normal character */
-				*wfetch(valloc(1)) = ch;
+				*wfetch(vmalloc(1)) = ch;
 			}
 		} while(ch != '\n');
 		unscanc();  token();
 	} else {  /* finish off the definition */
-		*wfetch(valloc(1)) = '\0';
+		*wfetch(vmalloc(1)) = '\0';
 	}
 	skipeol();
 }
@@ -214,7 +228,8 @@ dopass() {
 	curaln = minaln;
 	curext = 32;
 	reading = secct = 1;
-	label = sylook("__text");  newsec();	/* set the default section */
+	if (pccflg) pccsect("__text");
+	else { label = sylook("__text"); newsec(); }
 	while(reading) {  /* process statements one at a time */
 		if(deflev > 0) {  /* defining a macro */
 			def1();
@@ -242,6 +257,7 @@ emitb(value,reloc) uns value, reloc; {
 
 	if(pass2) {
 		if (aflag) aobyte(value,reloc);
+		else if (zflag) sobyte(value,reloc);
 		else {
 		/*
 		 * Check whether relocation is needed.
@@ -331,6 +347,7 @@ uns	rel;
 char	type;
 
 	if (aflag) { aobegin(); return; }
+	if (zflag) { sobegin(); return; }
 	objtyp = OBOST;  oflush();
 	for(rel=RBSEC ; rel<secct ; rel++) {  /* output sections blocks */
 		if(objtyp!=OBSEC || relbot-objtop<SYMSIZ+7) {
@@ -525,7 +542,7 @@ oflush() {
 
 char	*op;
 
-	if(objtyp && !aflag) {
+	if(objtyp && !aflag && !zflag) {
 		fputc(objtyp,OBJECT);
 		fputc(OBJSIZ-(relbot-objtop),OBJECT);
 		for(op=objbuf ; op<objtop ; op++) fputc(*op,OBJECT);
@@ -603,11 +620,11 @@ char	rch;
 		scanpt = sline;  /* reset scan to beginning of line */
 		do {  /* copy the line */
 			scanc();
-			*wfetch(valloc(1)) = ch;
+			*wfetch(vmalloc(1)) = ch;
 		} while(ch != '\n');
 		unscanc();  token();
 	} else {  /* finish off the repeat definition and start the repeat */
-		*wfetch(valloc(1)) = '\0';
+		*wfetch(vmalloc(1)) = '\0';
 		newfp = pushin();
 		newfp->in_typ = INRPT;
 		newfp->in_rpt = rptct;
@@ -641,6 +658,7 @@ setorg() {
 setsec(sec) uns sec; {
 
 	aocheck();
+	socheck();
 	sectab[cursec].se_aln = curaln;
 	sectab[cursec].se_ext = curext;
 	sectab[cursec].se_atr = curatr;

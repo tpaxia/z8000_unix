@@ -1,0 +1,10 @@
+__text .sect
+ .global helper,datum,saved
+helper:
+ ld r0,#9
+ ret
+__data .sect
+datum: .word 7
+__bss .sect
+saved: .block 2
+ .end

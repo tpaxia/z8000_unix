@@ -1,0 +1,5 @@
+__text .sect
+ ld r0,|target
+ .block 256
+target: .word 0
+ .end

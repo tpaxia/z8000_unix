@@ -1,0 +1,11 @@
+__text .sect
+ .global entry,external
+entry:
+ call external
+ ld r0,datum
+ ret
+__data .sect
+datum: .word entry,saved,external,saved-2
+__bss .sect
+saved: .block 4
+ .end

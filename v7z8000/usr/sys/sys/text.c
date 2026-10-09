@@ -18,9 +18,10 @@ struct text text[NTEXT];
 #define XPAGES(xp) (((xp)->x_size+31)/32)
 
 struct text *
-textget(ip, bytes)
+textget(ip, bytes, imageoff)
 struct inode *ip;
 unsigned bytes;
+long imageoff;
 {
 	register struct text *xp, *freep;
 	register struct file *fp;
@@ -61,7 +62,7 @@ unsigned bytes;
 	for (off = 0; off < bytes; off += n) {
 		n = bytes-off; if (n > sizeof(buf)) n = sizeof(buf);
 		u.u_base = buf; u.u_count = n;
-		u.u_offset = (long)off+sizeof(u.u_exdata);
+		u.u_offset = (long)off+imageoff;
 		u.u_segflg = 1;
 		readi(ip);
 		if (u.u_error || u.u_count) {

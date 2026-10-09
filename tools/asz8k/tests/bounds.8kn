@@ -1,0 +1,8 @@
+__text .sect
+ .long 80000000h,0ffffffffh,7fffffffh
+ .long 7fffffffh+1,0ffffffffh+1
+ .long ~0,1<<31,80000000h>>1
+ .word 0ffffh,10000h-1
+ .byte 0ffh
+ .align 1
+ .end

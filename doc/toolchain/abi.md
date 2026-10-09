@@ -5,7 +5,10 @@
 Kernel and user C use NONSEG 16-bit pointers. Port a.out executables support
 0407 combined code/data and 0411 separate instruction/data spaces; the latter
 provides distinct 64 KiB address spaces for code and data/BSS/heap/stack.
-Full SEG compilation/linking/loading is not implemented. Object relocations
+On `work/native-asz8k`, kernel exec also accepts NONSEG s.out e707/e711,
+with the same process ABI; see [the loader contract](../kernel/processes-and-exec.md#sout-loading).
+The experimental [s.out linker](ldz8.md) places initial SEG objects, but full
+SEG compilation/user loading and the kernel/boot pipeline remain unfinished. Object relocations
 and executable layouts are independent of the archive container format.
 
 See [split-I/D mappings](../kernel/memory-and-swapping.md#separate-instruction-and-data-spaces),
@@ -20,8 +23,10 @@ eight-byte `!<arch>\n` signature and 60-byte member headers. Native libraries
 use unindexed members with names of at most 14 characters. The archive
 container does not determine CPU addressing mode: object headers and
 relocations, followed by the linker and loader, determine that. Current
-executable support is NONSEG 0407 combined space and 0411 separate I/D;
-full segmented executables require further toolchain and loader work.
+executable support is NONSEG combined space and separate I/D; a.out remains
+the standard image pipeline. The assembler branch also has an opt-in
+[s.out C pipeline](native-development.md) using the same calling convention.
+Full segmented user executables require further ABI and loader work.
 
 ## PCC Calling Convention (Z8002)
 

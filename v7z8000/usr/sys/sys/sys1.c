@@ -11,6 +11,43 @@
 #include "../h/text.h"
 #include "../h/acct.h"
 
+/* Decode bytes explicitly: ZEUS headers contain unaligned 32-bit fields.
+ * Normalize the supported NONSEG layouts to the existing V7 exec state.
+ * Segmented user execution requires a separate process ABI/MMU extension.
+ */
+#define SOW(p) (((unsigned)((p)[0]&255)<<8)|((p)[1]&255))
+#define SOL(p) (((long)SOW(p)<<16)|SOW((p)+2))
+execsout(ip)
+struct inode *ip;
+{
+	char h[40];
+	unsigned t, d, b, attrs, syms, magic;
+	long image;
+	u.u_base = h; u.u_count = sizeof(h); u.u_offset = 0; u.u_segflg = 1;
+	readi(ip);
+	if (u.u_error) return(-1);
+	if (u.u_count) { u.u_error = ENOEXEC; return(-1); }
+	magic = SOW(h); t = SOW(h+28); d = SOW(h+30); b = SOW(h+32);
+	attrs = SOW(h+34); syms = SOW(h+12); image = (long)t+d;
+	if ((magic != 0xe707 && magic != 0xe711) ||
+	    SOW(h+10) != 16 || SOW(h+18) != 1 ||
+	    SOW(h+20) || SOW(h+22) || syms%14 ||
+	    h[24] || h[25] || h[26] || h[27] || SOL(h+36)) {
+		u.u_error = ENOEXEC; return(-1);
+	}
+	if ((attrs&~7) || (t && !(attrs&1)) || (d && !(attrs&2)) ||
+	    (b && !(attrs&4)) || SOL(h+2) != image || SOL(h+6) != (long)b ||
+	    SOW(h+14) || 40L+image+syms > ip->i_size) {
+		u.u_error = ENOEXEC; return(-1);
+	}
+	u.u_exdata.ux_mag = magic == 0xe711 ? 0411 : 0407;
+	u.u_exdata.ux_tsize = t; u.u_exdata.ux_dsize = d;
+	u.u_exdata.ux_bsize = b; u.u_exdata.ux_ssize = syms;
+	u.u_exdata.ux_entloc = SOW(h+16);
+	u.u_exdata.ux_trsize = u.u_exdata.ux_drsize = 0;
+	return(0);
+}
+
 /*
  * System calls: fork, exit, wait, exec.
  * read/write are now in sys2.c (via rdwr()).
@@ -221,7 +258,7 @@ exece()
 	int c, bno;
 	struct buf *bp;
 	struct execa *uap;
-	long datasize, filesize;
+	long datasize, filesize, imageoff;
 	int sep;
 	unsigned stacksize;
 	struct text *xp, *oldtext;
@@ -303,10 +340,17 @@ exece()
 	if (u.u_error)
 		goto bad;
 
+	imageoff = sizeof(u.u_exdata);
+	if ((unsigned)u.u_exdata.ux_mag == 0xe707 ||
+	    (unsigned)u.u_exdata.ux_mag == 0xe711) {
+		if (execsout(ip) < 0) goto bad;
+		imageoff = 40;
+	}
+
 	/* Validate the entire layout before replacing the old image. */
 	sep = u.u_exdata.ux_mag == 0411;
 	datasize = (long)u.u_exdata.ux_dsize + u.u_exdata.ux_bsize;
-	filesize = (long)sizeof(u.u_exdata) + u.u_exdata.ux_tsize + u.u_exdata.ux_dsize;
+	filesize = imageoff + u.u_exdata.ux_tsize + u.u_exdata.ux_dsize;
 	if (!sep)
 		datasize += u.u_exdata.ux_tsize;
 	stacksize = execsize(nc, na, ne, datasize);
@@ -321,7 +365,7 @@ exece()
 
 	xp = NULL;
 	u.u_procp->p_flag |= SLOCK;
-	if (sep && !(xp = textget(ip, u.u_exdata.ux_tsize))) goto bad;
+	if (sep && !(xp = textget(ip, u.u_exdata.ux_tsize, imageoff))) goto bad;
 	oldtext = u.u_procp->p_textp;
 	u.u_procp->p_textp = xp;
 	if (estabur((unsigned)(sep ? ((long)u.u_exdata.ux_tsize+63)>>6 : 0),
@@ -333,7 +377,7 @@ exece()
 		goto bad;
 	}
 	textput(oldtext);
-	u.u_offset = sizeof(u.u_exdata);
+	u.u_offset = imageoff;
 	if (sep) {
 		u.u_offset += u.u_exdata.ux_tsize;
 	} else {

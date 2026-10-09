@@ -9,6 +9,31 @@ contract and [native rebuild](../development/native-rebuild.md) for reproduction
 optimization. Both combined 0407 and split 0411 programs retain 16-bit pointers.
 The separate software EPU keeps its arithmetic engine out of each executable.
 
+On `work/native-asz8k`, the [s.out C trial](../development/native-rebuild.md#sout-native-c-pipeline)
+installs a PCC driver built with `SOUT`: it invokes `asz8k -zc` and `ldz8 -z`
+with s.out startup/libc. The same driver accepts `-z` when built without that
+default. Compiler passes and `oz8` retain their existing assembly syntax and
+calling convention. `.b` object filenames and the default executable name
+`a.out` are retained; their contents use the [s.out contract](asz8k.md).
+`-i` selects separate I/D. Nonzero legacy `-R` relocation bases are rejected.
+The standard bootstrap/userland images retain the legacy pipeline until their
+build rules and object-file consumers are migrated.
+
+The s.out trial passes 56 native build/test stages. All 146 startup/libc
+assembly inputs produce byte-identical host/native objects. Native make
+rebuilds every libc member from its C or assembly source; the 39-check libc
+test passes with both the seed and rebuilt library, and again after asz8k,
+ldz8 and cc rebuild themselves. The self-rebuilt tools also pass compiler
+controls, JR boundary checks and host/native SEG object/link comparisons.
+Sources on the completed disk match the checkout. The native compiler passes,
+cpp and oz8 used in this trial are the previously built legacy executables.
+
+| Self-rebuilt s.out tool | Code bytes | Data bytes | BSS bytes |
+|---|---:|---:|---:|
+| asz8k | 51,968 | 33,280 | 1,280 |
+| ldz8 | 38,144 | 5,120 | 17,664 |
+| cc driver | 17,152 | 1,792 | 3,328 |
+
 ## Archives
 
 Native ar, make and ldz8 share portable ASCII archives. See the
@@ -16,7 +41,8 @@ Native ar, make and ldz8 share portable ASCII archives. See the
 short names within V7's 14-character filename limit, even-byte member padding
 and unindexed libraries. GNU/BSD long-name and index extensions are outside
 that implementation. Archive framing does not determine CPU addressing mode;
-full segmented compilation/linking remains unsupported.
+the experimental [s.out linker](ldz8.md) can link initial SEG objects, while
+full segmented compilation and execution remain unfinished.
 
 ## Installed essential commands
 
@@ -46,6 +72,17 @@ commands and support libraries, including nm/strip and the encryption programs.
 These builds run inside Unix, including parser and scanner generation.
 The image also supplies the original formatting and language packages. Multiuser
 startup and several machine-dependent ports remain unfinished.
+
+## Object utilities on the assembler branch
+
+The [shared object utilities](object-utilities.md) read both port a.out and
+s.out. `nm` displays SEG addresses without truncation; `size` totals segment
+sections; `strip` removes symbols and relocation while preserving file mode.
+The libc `nlist` adapter keeps the V7 16-bit interface and rejects SEG addresses.
+The replacements are compiled inside V7 and tested against the host builds in
+an isolated disk. The standard libc and userland builds retain their original
+utilities until image migration. See
+[native utility reproduction](../development/native-rebuild.md#sout-object-utilities).
 
 ## Source preparation and limits
 

@@ -38,14 +38,16 @@ def build():
     for tool, sources in [
         ('az8', [PCC / 'az8' / (n + '.c') for n in
                  'error init ins ioz8 ps rel sdi sym scan'.split()]),
-        ('ldz8', [PCC / 'ldz8.c']),
+        ('ldz8', [ROOT / 'tools/ldz8/dispatch.c', ROOT / 'tools/ldz8/ldso.c',
+                  ROOT / 'tools/asz8k/src/soutfmt.c']),
     ]:
         directory = WORK / tool
         directory.mkdir(exist_ok=True)
         objects = []
         for source in sources:
             obj = directory / (source.stem + '.b')
-            compile_c(source, obj)
+            compile_c(source, obj, flags=('-I'+str(PCC),
+                '-I'+str(ROOT / 'tools/asz8k/src')))
             objects.append(obj)
         run([PCC / 'ldz8', '-i', '-x', ROOT / 'tools/libc/crt0.b', *objects,
              ROOT / 'tools/libv7.a', '-o', directory / tool])

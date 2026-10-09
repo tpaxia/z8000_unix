@@ -109,6 +109,24 @@ tracked break. This matters for original utilities such as sort, which mix
 explicit break changes with stdio allocations. Libc also supplies `mknod` (14)
 and `stime` (25); the latter loads the pointed-to time into R1:R2, high word first.
 
+### s.out loading
+
+On `work/native-asz8k`, exec also accepts ZEUS NONSEG e707 combined and e711
+separate-I/D executables, alongside the transitional 0407/0411 a.out layouts.
+It decodes the 24-byte descriptor and one 16-byte segment entry explicitly,
+then normalizes sizes and entry into the existing exec state. The image starts
+at byte 40. Shared inode-backed text reads from this image offset; swapping,
+protection, argument staging, credentials and CPU startup use the same policy
+as the existing layouts.
+
+Relocation must be stripped (`SF_STRIP` alone). The segment must be number zero
+without bound/offset/stack attributes, and header image/BSS totals must match
+section sizes. Reserved fields and the entry high word must be zero; symbols
+must occupy complete 14-byte records. Truncated images, unsupported formats,
+invalid entry/alignment and layouts that leave insufficient stack space fail
+before replacing the caller's image. SEG user execution is not implemented.
+The [linker reference](../toolchain/ldz8.md) defines producer layout and limits.
+
 ### Exec policy and CPU helpers
 
 `sys/sys1.c` retains shared image-loading policy and the original V7 set-ID

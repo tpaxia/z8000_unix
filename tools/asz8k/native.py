@@ -15,6 +15,8 @@ sys.path.insert(0, str(ROOT / 'tools/native-cc'))
 from build import image
 from selfhost import Filesystem
 from compare import compare
+from soutcheck import check as check_sout
+from host import check as check_host
 WORK = ROOT / 'tests/build/asz8k'
 SOURCE = ROOT / 'tools/asz8k'
 SYS = ROOT / 'v7z8000/usr/sys/build'
@@ -71,6 +73,17 @@ def setup(preserve=False):
     steps += [('link', '/bin/make')]
     steps += [(p.stem, './asz8k ' + ('-s ' if p.suffix == '.8ks' else '') + '-l ' + p.name) for p in sorted((SOURCE / 'tests').glob('*.8k*'))]
     steps.append(('fpe', './asz8k -l fpe.8kn'))
+    steps += [('xref-fpe', './asz8k -x -o fpex.obj fpe.8kn'),
+              ('xref-macro', './asz8k -x -o macrox.obj macro.8kn')]
+    steps += [('format-build', '/bin/cc -I. -i fmtcheck.c soutfmt.b -o fmtcheck'),
+              ('format-run', './fmtcheck'),
+              ('sout-seg', './asz8k -z -s soutseg.8ks'),
+              ('sout-non', './asz8k -z soutnon.8kn'),
+              ('sout-oracle', './asz8k -z -s seg.8ks'),
+              ('sout-bad-short', './asz8k -z -s badshort.8ks'),
+              ('sout-bad-entry', './asz8k -z badentry.8kn'),
+              ('sout-bad-formats', './asz8k -az soutnon.8kn'),
+              ('sout-bad-long', './asz8k -z probe.8kn')]
     steps += [('output', './asz8k -s -o custom.obj seg.8ks'),
               ('bad-mode', './asz8k seg.8ks'),
               ('bad-option', './asz8k -o'),
@@ -79,6 +92,7 @@ def setup(preserve=False):
         ('aout-fpe', './asz8k -a -o fpea.b fpe.8kn'),
         ('aout-probe', './asz8k -a -o probe.b probe.8kn'),
         ('aout-abs', './asz8k -a -o abs.b abs.8kn'),
+        ('aout-bounds', './asz8k -a -o bounds.b bounds.8kn'),
         ('reference-probe', '/bin/az8 -o refprobe.b probe.az8'),
         ('reference-abs', '/bin/az8 -o refabs.b abs.az8'),
         ('aout-check', '/bin/cc -O -c check.c'),
@@ -95,9 +109,10 @@ def setup(preserve=False):
               ('partial-run', './partial'),
               ('aout-bad-seg', './asz8k -a -s seg.8ks')]
     steps += [('aout-'+p.stem, './asz8k -a '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
+    steps += [('sout-'+p.stem, './asz8k -z '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
     for i, (name, command) in enumerate(steps):
         p = WORK / ('p%03d' % i)
-        p.write_text(('1' if name.startswith('aout-bad') or name in ('bad-mode', 'bad-option', 'overflow') else '0') + ' - ' + command + '\n')
+        p.write_text(('1' if name.startswith(('aout-bad', 'sout-bad')) or name in ('bad-mode', 'bad-option', 'overflow') else '0') + ' - ' + command + '\n')
         files['tmp/' + p.name] = p
     (WORK / 'steps.json').write_text(json.dumps(steps))
     (WORK / 'results.json').write_text('[]')
@@ -154,6 +169,11 @@ def main():
     compare((WORK / 'fpe.obj').read_bytes(), (WORK / 'fpea.b').read_bytes())
     assert fs.read('/usr/src/asz8k/partial') == fs.read('/usr/src/asz8k/split')
     print('PASS: native a.out linking/execution and az8 comparison, 0407/0411 and ld -r')
+    for name in ('seg.so', 'soutseg.so', 'soutnon.so'):
+        (WORK / name).write_bytes(fs.read('/usr/src/asz8k/' + name))
+    (WORK / 'nativefmt.bin').write_bytes(fs.read('/usr/src/asz8k/format.bin'))
+    check_sout(WORK)
+    check_host(fs)
     memory = {}
     for profile in WORK.glob('*.tsv'):
         with profile.open() as stream:

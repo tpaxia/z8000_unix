@@ -26,6 +26,8 @@ an explicit working directory is given.
 - [ABI, executable formats and archives](toolchain/abi.md)
 - [Native development tools](toolchain/native-development.md)
 - [Experimental Zilog assembler port](toolchain/asz8k.md)
+- [s.out linker](toolchain/ldz8.md)
+- [Object utilities and nlist](toolchain/object-utilities.md)
 - [V7 userland coverage and remaining ports](toolchain/userland.md)
 - [Structure-return ABI investigation and proposed repair](toolchain/structure-return-abi.md)
 

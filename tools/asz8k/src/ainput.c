@@ -123,7 +123,11 @@ pushin() {
 
 struct	input	*newfp;
 
+#ifdef ASZ_HOST
+	insp = (char *)(((uintptr_t)insp + sizeof(char *)-1) & ~(uintptr_t)(sizeof(char *)-1));
+#else
 	if((int)insp&01) insp++;  /* force integer alignment */
+#endif
 	newfp = insp;
 	insp = &newfp->in_buf[0];  iovck();
 	newfp->in_ofp = infp;

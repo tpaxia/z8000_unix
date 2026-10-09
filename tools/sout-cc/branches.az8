@@ -1,0 +1,17 @@
+	.text
+	.globl	_main
+_main:
+	jr	near
+. = .+254
+near:
+	jr	far
+. = .+256
+far:
+	ld	r0,#0
+	ret
+back:
+. = .+254
+	jr	back
+farback:
+. = .+256
+	jr	farback

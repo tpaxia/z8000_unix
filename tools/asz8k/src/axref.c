@@ -31,7 +31,12 @@ char		undef;
 		if(undef) fprintf(LIST,"        U");
 		else if(syp->sy_atr&SAMUD) fprintf(LIST,"        M");
 		else {
+#ifdef ASZ_HOST
+			/* V7 %X means long lowercase hex, unlike modern printf. */
+			fprintf(LIST,"%8lx",(unsigned long)(uint32_t)syp->sy_val);
+#else
 			fprintf(LIST,"%8X",(long)syp->sy_val);
+#endif
 			if(syp->sy_rel == RBABS) fputc(' ',LIST);
 			else if(syp->sy_rel >= RBEXT) fputc('X',LIST);
 			else fputc('\'',LIST);
@@ -142,13 +147,13 @@ int		pl;
 	syp = (struct sytab *)wfetch(sym);
 	if(syp->sy_xlk == 0) {  /* first xref entry for this symbol */
 		if((uns)virtop&01) virtop++;  /* force alignment */
-		nxp = (struct xref *)wfetch(nxr=valloc(sizeof(struct xref)));
+		nxp = (struct xref *)wfetch(nxr=vmalloc(sizeof(struct xref)));
 		nxp->xr_lnk = nxr;
 	} else {  /* add to existing circular list of xref entries */
 		oxp = (struct xref *)wfetch(syp->sy_xlk);
 		if(oxp->xr_pl == pl) return;  /* no duplicate xrefs */
 		if((uns)virtop&01) virtop++;  /* force alignment */
-		nxp = (struct xref *)wfetch(nxr=valloc(sizeof(struct xref)));
+		nxp = (struct xref *)wfetch(nxr=vmalloc(sizeof(struct xref)));
 		nxp->xr_lnk = oxp->xr_lnk;  oxp->xr_lnk = nxr;
 	}
 	nxp->xr_pl = pl;

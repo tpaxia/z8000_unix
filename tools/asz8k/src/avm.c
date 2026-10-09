@@ -59,12 +59,12 @@ rfetch(adr) vmadr adr; {
 }
 
 /*
- * valloc - Allocates a region of virtual memory of the specified size,
+ * vmalloc - Allocates a region of virtual memory of the specified size,
  * and returns the vm address of it.  The region is guaranteed to reside
  * entirely within a single block.
  */
 vmadr
-valloc(size) uns size; {
+vmalloc(size) uns size; {
 
 vmadr	base;
 long blklim, next;

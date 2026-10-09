@@ -29,10 +29,10 @@ static	char	ident[] = "@(#)a.misc.c	3.3";
  ************************************************************************/
 
 /*
- * getline - Reads the next line of source, and puts it into the global
+ * asline - Reads the next line of source, and puts it into the global
  * array sline and into the listing buffer lline.
  */
-getline() {
+asline() {
 
 reg	struct	input	*rinfp;
 reg	int	ch;
@@ -81,6 +81,19 @@ reg	char	*llp;
 char *
 palloc(size) uns size; {
 
+#ifdef ASZ_HOST
+char *p;
+
+	phytop = (char *)(((uintptr_t)phytop + sizeof(char *)-1) & ~(uintptr_t)(sizeof(char *)-1));
+	if (size > phylim - phytop) {
+		fprintf(ERROR,"Out of memory\n");
+		exit(1);
+	}
+	p = phytop;
+	phytop += size;
+	return p;
+#else
+
 static	char	*oldtop;
 
 	if ((long)(uns)phytop + size > 65535L) {
@@ -96,7 +109,19 @@ static	char	*oldtop;
 		phylim += 1024;
 	}
 	return(oldtop);
+#endif
 }
+
+#ifdef ASZ_HOST
+/* A stable arena preserves the contiguous format arrays used by instr().
+ * Host records contain wider pointers, so this is larger than the V7 arena. */
+pinit()
+{
+    static union { long align; char bytes[131072]; } arena;
+    phytop = arena.bytes;
+    phylim = arena.bytes + sizeof arena.bytes;
+}
+#endif
 
 /*
  * pgcheck - Checks to see if a new listing page is needed, and starts one

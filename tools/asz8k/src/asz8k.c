@@ -105,7 +105,12 @@ uns	seg;
 emitss(value, reloc) uns value, reloc; {
 
 uns	seg;
+extern int zflag;
 
+	if (zflag && pass2 && value > 255) {
+		fprintf(ERROR, "s.out: short segmented offset exceeds 255\n");
+		exit(1);
+	}
 	reloc &= RBMSK;
 	seg = reloc<=0x7f ? reloc : 0x7f;
 	value &= 0xff;
@@ -152,6 +157,7 @@ struct	sytab	*syp;
 	iilexeme.ps_val0 = tokval;
 	if(iilexeme.ps_sym == TKSYM) {  /* symbol */
 		iilexeme.ps_val0 = (exprval)sylook(tokstr);
+		if (pccflg) pccsymbol((vmadr)iilexeme.ps_val0);
 		syp = rfetch((vmadr)iilexeme.ps_val0);
 		if(syp->sy_typ == STKEY) {  /* keyword */
 			iilexeme.ps_sym = syp->sy_val>>8&0377;
@@ -217,6 +223,7 @@ int	displen,
 	label = *labstr?sylook(labstr):0;
 	assign(STLAB,curloc,cursec);
 	inops();  /* read the instruction operands */
+	if (pccflg) fmp = pccbranch(fmp);
 	while(!opmatch(fmp)) {  /* scan for matching format entry */
 		if(fmp->fm_flg&FMLAST) goto nomatch;
 		fmp++;
@@ -234,6 +241,9 @@ int	displen,
 		f = optab[i].op_flg;
 		r = optab[i].op_rel;
 		v = optab[i].op_val;
+		/* PCC names a low byte register r0-r7 in byte operand positions. */
+		if (pccflg && (fmp->fm_op[i]&OCMSK)==OCREG8 &&
+		    (optab[i].op_cls&(1L<<OCREG16))) v += 8;
 		switch(fmp->fm_op[i] & OAMSK) {
 
 		case OANIB1:	/* Pack value into nibble 1 */
@@ -473,7 +483,11 @@ opmatch(fmp) struct format *fmp; {
 int	i;
 
 	for(i=0 ; i<OPMAX ; i++) {
-		if(!(1L<<(fmp->fm_op[i]&OCMSK)&optab[i].op_cls)) return(0);
+		if(!(1L<<(fmp->fm_op[i]&OCMSK)&optab[i].op_cls)) {
+			if (!pccflg || (fmp->fm_op[i]&OCMSK)!=OCREG8 ||
+			    !(optab[i].op_cls&(1L<<OCREG16)) ||
+			    optab[i].op_val>=8) return(0);
+		}
 	}
 	return(1);
 }
@@ -486,20 +500,32 @@ predef() {
 struct	format	*fmp;
 struct	octab	*ocp;
 struct	sytab	*syp;
-int	i, val;
+int	i;
+#ifdef ASZ_HOST
+uintptr_t val;
+#else
+int val;
+#endif
 char		predef[30];
+	char installed[128];
 
 	/*
 	 * Open the predef file and read in the definitions.
 	 */
 	sprintf(predef,"%s.pd",prname);  /* use local predef file */
-	if(include(predef) == -1) {
+	sprintf(installed,"%s/asz8k.pd",PDDIR);
+	if(include(predef) == -1 &&
+	    (!pccflg || include(installed) == -1)) {
 		fprintf(ERROR,"No PREDEF file (%s)\n",predef);
 		exit(1);
 	}
 	while(token() == TKCON) {  /* read machine instructions */
+#ifdef ASZ_HOST
+		val = (uintptr_t)phytop;
+#else
 		if((uns)phytop&01) phytop++;  /* force alignment */
 		val = phytop;
+#endif
 		for(;;) {  /* read format table entries */
 			fmp = palloc(sizeof(struct format));
 			for(i=0 ; i<OPMAX ; i++) {  /* operand descriptors */
@@ -541,6 +567,7 @@ char		predef[30];
 		if(toktyp != TKEOL) badpre();
 	}
 	preget(TKEOF);
+	if (pccflg) pccinit();
 }
 
 /*

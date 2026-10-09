@@ -35,7 +35,9 @@ int	cmp;
 	/*
 	 * Add a new entry to the table.
 	 */
+#ifndef ASZ_HOST
 	if((uns)phytop&01) phytop++;  /* force integer alignment */
+#endif
 	r = (struct octab *)palloc(sizeof(struct octab));
 	symcpy(r->oc_str,s);
 	r->oc_typ = 0;
@@ -115,8 +117,12 @@ int	cmp;
 #ifdef	STATS
 	symct++;
 #endif
+#ifdef ASZ_HOST
+	virtop = (virtop + 3) & ~3; /* align the 32-bit symbol value */
+#else
 	if((uns)virtop&01) virtop++;  /* force integer alignment */
-	rp = (struct sytab *)wfetch(r=valloc(sizeof(struct sytab)));
+#endif
+	rp = (struct sytab *)wfetch(r=vmalloc(sizeof(struct sytab)));
 	symcpy(rp->sy_str,s);
 	rp->sy_typ = rp->sy_atr = rp->sy_xlk = rp->sy_val = 0;
 	rp->sy_lnk = q;

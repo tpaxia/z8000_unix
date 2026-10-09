@@ -36,6 +36,6 @@ struct	chent	chtab[] = {	/* table of single-character tokens */
 };
 int		extoff = 2;
 uns		minaln = 1;
-struct	operand	optab[OPMAX] = 0;
+struct	operand	optab[OPMAX] = { 0 };
 char		segflg = 0;
 char		oflag = 0;

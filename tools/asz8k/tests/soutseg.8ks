@@ -1,0 +1,15 @@
+__text .sect
+ .global entry,external
+entry:
+ ld r2,external
+ ld r2,|datum
+ ld r3,|external
+ .long datum
+ .word saved
+ ret
+__data .sect
+datum: .word entry
+ .long external+4
+__bss .sect
+saved: .block 4
+ .end

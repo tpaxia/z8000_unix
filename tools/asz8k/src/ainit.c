@@ -16,6 +16,7 @@ static	char	ident[] = "@(#)a.init.c	3.2";
 extern	char	segflg;
 extern	char	oflag;
 extern int aflag;
+extern int zflag;
 
 /*
  * badpre - Issues a fatal error for a bad PREDEF file.
@@ -53,14 +54,20 @@ static char errbuf[BUFSIZ];
 
 	/* Keep stdio off the break managed by palloc. */
 	setbuf(ERROR, errbuf);
+#ifndef ASZ_HOST
 	phytop = phylim = sbrk(0);  /* needed only for monitoring */
+#else
+	pinit();
+#endif
 	getdat();
 	prname = "asz8k";
-	while((ap = *++argv) && ap!=-1) {  /* read command line arguments */
+	while((ap = *++argv) != 0) {  /* read command line arguments */
 		if(*ap == '-') {  /* switches */
 			while(*++ap) switch(*ap) {
 
 			case 'a': aflag = 1; break;
+			case 'z': zflag = 1; break;
+			case 'c': pccflg = 1; break;
 
 			case 'l':
 				lflag = 1;
@@ -68,7 +75,7 @@ static char errbuf[BUFSIZ];
 
 			case 'o':
 				oflag = 1;
-				if (argv[1] == NULL || strlen(argv[1]) > 14)
+				if (argv[1] == NULL || strlen(argv[1]) >= 128)
 					usage();
 				strcpy(optfile,*++argv);
 				break;
@@ -99,6 +106,9 @@ static char errbuf[BUFSIZ];
 			srcfile = ap;
 		}
 	}
+	if (aflag && zflag) usage();
+	if (pccflg && (!zflag || segflg)) usage();
+	if (pccflg) uext = 1;
 	if (aflag && segflg) {
 		fprintf(ERROR,"a.out: segmented output is not implemented\n");
 		exit(1);
@@ -106,7 +116,7 @@ static char errbuf[BUFSIZ];
 	if(!srcfile) {printf("no srcfile\n"); usage();}
 	if((sp = rindex(srcfile,'/')) == 0) sp = srcfile; else sp++;
 	if(strlen(sp) > 14) usage();
-	strcpy(titl1,srcfile);
+	strncpy(titl1,srcfile,TITSIZ-1); titl1[TITSIZ-1] = 0;
 	strcpy(fname,sp);
 	if((ep = rindex(fname,'.')) == 0)
 		usage();
@@ -118,8 +128,8 @@ static char errbuf[BUFSIZ];
 		usage();
 	    }
 	}
-	else 			/* Prog name must end in "8kn". */
-	    if( strcmp (ep,"8kn") != 0) {
+	else 			/* PCC accepts its native .az8 assembly suffix. */
+	    if( strcmp (ep,"8kn") != 0 && !(pccflg && !strcmp(ep,"az8"))) {
 		printf("Nonsegmented source file must end with '.8kn'\n");
 		usage();
 	    }
@@ -127,7 +137,7 @@ static char errbuf[BUFSIZ];
 		fprintf(ERROR,"Cannot open %s\n",srcfile);
 		exit(1);
 	}
-	strcpy(ep,aflag ? "b" : "obj");  OBJECT = newfile(oflag ? optfile : fname,BinFile);
+	strcpy(ep,zflag ? "so" : aflag ? "b" : "obj");  OBJECT = newfile(oflag ? optfile : fname,BinFile);
 	strcpy(putfile,fname);
 	if(lflag) {
 		strcpy(ep,"lst");  LIST = newfile(fname,AscFile);
@@ -146,7 +156,7 @@ newfile(s,binary) char *s; char binary; {
 FILE	*fd;
 static char objbuf[BUFSIZ], lstbuf[BUFSIZ];
 
-	if((fd = fopen(s,aflag && binary ? "w+" : "w")) == NULL) {
+	if((fd = fopen(s,(aflag || zflag) && binary ? "w+" : "w")) == NULL) {
 		fprintf(ERROR,"Cannot create %s\n",s);
 		exit(1);
 	}
@@ -169,6 +179,6 @@ preget(typ) int typ; {
  */
 usage() {
 
-	fprintf(ERROR,"Usage:  asz8k [-o outfile] [-aluxs] file.8k{n|s}\n");
+	fprintf(ERROR,"Usage: asz8k [-o outfile] [-azcluxs] file.8k{n|s} (or -zc file.az8)\n");
 	exit(1);
 }

@@ -1,0 +1,39 @@
+__text .sect
+ .global entry,helper,datum,saved
+entry:
+ call helper
+ cp r0,#9
+ jr nz,failed
+ ld r0,datum
+ cp r0,#7
+ jr nz,failed
+ ld r0,saved
+ test r0
+ jr nz,failed
+ ld r0,#31
+ ld saved,r0
+ ld r0,saved
+ cp r0,#31
+ jr nz,failed
+ .global done
+ ld r0,@r15
+ cp r0,#2
+ jr nz,done
+ ; Signal readiness, then block with the executable's text still resident.
+ ld r1,#1
+ lda r2,datum
+ ld r3,#1
+ sc #4
+ ld r1,#0
+ lda r2,datum
+ ld r3,#1
+ sc #3
+ cp r0,#1
+ jr nz,failed
+done:
+ clr r1
+ sc #1
+failed:
+ ld r1,#1
+ sc #1
+ .end

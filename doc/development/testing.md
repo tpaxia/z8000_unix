@@ -20,6 +20,15 @@ convergence and sustained userland tests have separate, longer procedures in
 [native rebuild](native-rebuild.md). Compiler baselines are reviewed evidence,
 not something to accept automatically after a failure.
 
+On the assembler branch, s.out linker/loader changes also need the
+[native linking and execution trial](native-rebuild.md#sout-linking-and-execution),
+alongside the existing a.out exec, split-I/D and tracing suites.
+PCC syntax, common-symbol or compiler-driver changes also need the
+[native s.out C pipeline trial](native-rebuild.md#sout-native-c-pipeline).
+Object-format utility changes need the
+[native utility comparison trial](native-rebuild.md#sout-object-utilities),
+including SEG inspection and NONSEG execution after stripping.
+
 Rebuild every driver used by a test after harness changes. The native environment
 and full-userland runner use `v7z8000/usr/sys/build/test_driver`. The convergence
 runner can use its private `tests/build/selfhost/host/test_driver`; rebuilding

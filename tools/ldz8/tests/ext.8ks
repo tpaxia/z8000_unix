@@ -1,0 +1,5 @@
+__text .sect
+ .global external
+__data .sect
+external: .word 5
+ .end

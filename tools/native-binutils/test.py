@@ -90,9 +90,11 @@ tmp d--777 0 0
 $
 ''')
             run([ROOT / 'tools/v7mkfs', WORK / 'hd.img', WORK / 'proto'])
-            result = run([SYSBUILD / 'test_driver', '-c', '3000000000' if name == 'branches' else '900000000', '-d', WORK / 'hd.img',
+            # Include serial hex dumps of the dense fixture's image, symbols
+            # and relocation; completing the link alone is not the endpoint.
+            result = run([SYSBUILD / 'test_driver', '-c', '20000000000', '-d', WORK / 'hd.img',
                           '-i', 'runner ' + flag + '\\n', '-w', 'NATIVE TOOLS PASS',
-                          '-I', 'exit\\n', '-x', 'NATIVE TOOLS PASS'], cwd=SYSBUILD, timeout=60)
+                          '-I', 'exit\\n', '-x', 'NATIVE TOOLS PASS'], cwd=SYSBUILD, timeout=180)
             (WORK / (name + '-' + mode + '.log')).write_bytes(result.stdout + result.stderr)
             assert b'NATIVE TOOLS PASS' in result.stdout
             if name == 'archive':

@@ -143,10 +143,28 @@ The trial checks Unidot output against recorded original-assembler results.
 `./asz8k -a -o probe.b probe.8kn` writes a NONSEG a.out object directly; native
 link/run checks compare both executable modes with az8, including partial
 linking. PCC still invokes az8 in the installed compiler pipeline.
+`./asz8k -z -s soutseg.8ks` and `./asz8k -z soutnon.8kn` write SEG and NONSEG
+s.out objects directly. The trial checks local/external segment, offset and
+short-address relocations and format limits. It then builds the complete host
+assembler from the same C sources and independently assembles the same inputs,
+comparing objects and listings byte for byte, including cross references and
+32-bit expression boundaries. Error cases run on both assemblers too.
 Logs, objects, executable sizes and per-process memory profiles remain beside
 the disk. Running without options resumes. `--refresh` restages sources and
 retains objects only when their source and headers match; `--setup` discards the
 trial disk and rebuilds everything.
+
+To rebuild the host assembler or repeat its comparison against a completed
+native trial:
+
+```sh
+make -C tools/asz8k
+python3 tools/asz8k/host.py
+```
+
+The host executable and results are under `tests/build/asz8k-host`. The comparison
+requires a completed native trial with matching sources; refresh that trial
+after source changes.
 
 To independently reproduce the oracle with the CPM8000 checkout and its built
 hosted Z8001 emulator:
@@ -158,7 +176,90 @@ python3 tools/asz8k/oracle.py ~/Projects/CPM8000
 See [the experimental assembler assessment](../toolchain/asz8k.md) for format
 limitations and remaining kernel-build integration.
 The [common host/native s.out migration plan](../toolchain/asz8k.md#planned-common-host-and-native-format)
-is future work; the commands above still exercise Unidot and NONSEG a.out.
+is in progress. The assembler trial covers object emission; linker and loader
+checks use the separate procedure below. Replacing the installed compiler
+pipeline remains pending.
+
+## s.out linking and execution
+
+After the native environment and assembler trial are available:
+
+```sh
+make -C v7z8000/usr/sys/build
+make -C tools/ldz8
+python3 tools/ldz8/test.py
+```
+
+The host linker is `tests/build/ldz8-host/ldz8`. Use `-z` to select s.out;
+supported layouts and options are in [the linker reference](../toolchain/ldz8.md).
+The test stages the shared linker sources and real asz8k objects in
+`/usr/src/ldz8`, compiles and links the new linker with native V7 cc, and links
+the same fixtures on host and guest. Python prepares disks and checks bytes;
+guest cc/ldz8 and the kernel execute the native build, link and exec operations.
+Trial disks, logs, linked images and native linker sizes are in
+`tests/build/sout-link`. Both NONSEG layouts execute; concurrent exec and
+malformed-image probes exercise shared text and ENOEXEC before replacement.
+The concurrent test holds eight children behind pipes, verifies four shared
+text mappings, and repeats at 320 KiB with process/text swap traffic.
+Unchanged source objects can be reused from the previous trial disk.
+The existing `test-exec`, `test-split` and `test-ptrace` targets cover the
+retained a.out paths. Kernel/boot pipeline migration remains pending.
+
+## s.out native C pipeline
+
+After building the kernel, native environment and userland test runner:
+
+```sh
+python3 tools/sout-cc/build.py
+python3 tools/sout-cc/test.py
+python3 tools/sout-cc/edges.py
+```
+
+The first command assembles startup and all libc members directly with the
+host asz8k, then cross-builds the minimum updated cc/assembler/linker seeds.
+The second boots V7 with those seeds. Guest cc runs cpp, the two PCC passes,
+oz8, asz8k and ldz8. Guest make recompiles the unchanged V7 libc C sources,
+assembles the machine support routines, and archives them with native ar.
+The trial then rebuilds and installs asz8k, ldz8 and cc through that s.out
+pipeline and reruns the C/libc checks. Host Python stages the disk, drives the
+console and verifies results; it does not compile or assemble the native steps.
+
+Artifacts and per-step logs are in `tests/build/sout-cc`. The trial compares
+every native assembly object against the complete host object, including
+symbols and relocations. Legacy image comparisons account for section padding;
+compact byte loads can also change instruction sizes. Runtime checks cover
+optimized/unoptimized C, combined/split I/D, direct assembly input, common
+storage and partial links, and the 39-check libc test with startup/environment,
+stdio, allocation, floating arithmetic and file/syscall operations.
+The final command uses the self-rebuilt tools to check compiler controls,
+exact JR range boundaries, and byte-identical SEG assembly/linking on host and
+guest. An interrupted C trial can resume with `test.py --resume`; it verifies
+that staged sources and plans still match before reusing completed steps.
+
+## s.out object utilities
+
+After completing the s.out native C pipeline above:
+
+```sh
+make -C tools/sout-utils
+python3 tools/sout-utils/test.py
+```
+
+The host command builds the shared C utility sources. The test stages the
+self-rebuilt s.out compiler, assembler, linker and libc, then compiles `nm`,
+`size`, `strip` and the `nlist` adapter inside V7. Host Python prepares real
+assembler/linker fixtures, drives the guest and compares results. It does not
+compile the native replacements.
+
+The test disk and logs are under `tests/build/sout-utils`. It checks host/native
+output, identical stripped files, execution after stripping, both NONSEG
+layouts, SEG inspection, partial links, mixed archives, malformed inputs and
+the existing libc lookup ABI. See [object utilities](../toolchain/object-utilities.md)
+for supported formats and installation scope.
+If the native build passed but the check stage was interrupted, use
+`python3 tools/sout-utils/test.py --reuse-build`. It checks the saved C/header
+sources against the checkout before reusing the compiled utilities on a fresh
+test disk.
 
 ## Complete cross-built userland
 
