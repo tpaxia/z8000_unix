@@ -68,7 +68,7 @@ This migration breaks compatibility with earlier port binaries using the old
 execve, umask, chroot or caught-signal trampoline slots. Rebuild both libc
 archives, relink programs, and regenerate boot/test/native disks with the
 matching kernel. There are no legacy slot aliases: the old numbers conflict
-with the restored interfaces. Rebuild the native environment from the repository
+with the V7 syscall assignments. Rebuild the native environment from the repository
 root (with the cross-toolchain available):
 
 ```sh

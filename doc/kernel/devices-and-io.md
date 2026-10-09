@@ -74,13 +74,13 @@ Both parameter and special-character commits use interrupt masking.
 `test-v7-interfaces` tests the shared contract on the target ABI, including
 failure preservation and alternate callback routing through substitute test
 disciplines. `test-tty` exercises the real terminal syscall path and input modes.
-The same interface suite tests restored filesystem call sites, including
+The same interface suite tests filesystem call sites using the V7 interfaces, including
 lookup and creation beyond 64 KB directory offsets and disabled multiplexor
 syscall behavior. The real multiplexor remains unconfigured.
 
 ## Buffer cache and asynchronous disk requests
 
-`sys/bio.c` again uses V7's ordinary cache implementation, word-based `clrbuf`
+`sys/bio.c` uses V7's ordinary cache implementation, word-based `clrbuf`
 and `DISKMON` accounting. `io_info.nbuf` is initialized to NBUF; `nread`,
 `nreada` and `nwrite` count submitted operations, `ncache` counts `bread()`
 cache hits, and `bufcount[]` records the free-list position of reused buffers.
