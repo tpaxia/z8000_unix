@@ -56,8 +56,16 @@ standalone harness now uses the same s.out assembler/linker and seed library:
 python3 tools/native-cc/selfhost.py --setup
 ```
 
-Its migrated setup has been checked. The two-generation measurements above
-are historical; they have not been rerun with this migrated harness.
+The s.out harness has passed two-generation convergence with caller-owned
+aggregate returns. Every compiler object and executable matches between
+generations. The native front end uses 63,232 bytes of text; the back end uses
+44,032 bytes.
+
+Running without options resumes an interrupted trial. After a completed trial,
+`--refresh-back` restages current back-end sources and repeats both back-end
+generations and runtime probes while retaining the unchanged front end and
+optimizer. Rebuild the bootstrap tools first with `tools/native-cc/build.py`.
+Front-end, optimizer or runtime changes require a fresh `--setup` trial.
 
 ## Essential userland
 

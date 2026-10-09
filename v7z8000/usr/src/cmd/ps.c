@@ -11,15 +11,19 @@
 #include <sys/tty.h>
 #include <sys/dir.h>
 #include <sys/user.h>
+#include <sys/memmap.h>
 
 struct nlist nl[] = {
 	{ "_proc" },
 	{ "_swapdev" },
 	{ "_swplo" },
+	{ "_memory" },
 	{ "" },
 };
 
 struct	proc mproc;
+struct memspace maps[NPROC];
+int procslot;
 
 struct	user u;
 int	chkpid;
@@ -106,14 +110,20 @@ bbreak:
 		fprintf(stderr, "No namelist\n");
 		exit(1);
 	}
-	coref = "/dev/mem";
+	coref = "/dev/kmem";
 	if(kflg)
 		coref = "/usr/sys/core";
 	if ((mem = open(coref, 0)) < 0) {
 		fprintf(stderr, "No mem\n");
 		exit(1);
 	}
-	swmem = open(coref, 0);
+	swmem = open("/dev/mem", 0);
+	if(swmem < 0 || !nl[3].n_type || kflg) {
+		fprintf(stderr, "No physical memory/map (kernel dumps unsupported)\n");
+		exit(1);
+	}
+	lseek(mem, (long)nl[3].n_value, 0);
+	if(read(mem, (char *)maps, sizeof maps) != sizeof maps) exit(1);
 	/*
 	 * read mem to find swap dev.
 	 */
@@ -143,6 +153,7 @@ bbreak:
 		if ((uid != puid && aflg==0) ||
 		    (chkpid!=0 && chkpid!=mproc.p_pid))
 			continue;
+		procslot=i;
 		if(prcom(puid)) {
 			printf("\n");
 			retcode=0;
@@ -210,11 +221,16 @@ prcom(puid)
 	int lw=(lflg?35:80);
 	char **ap;
 
+	if(mproc.p_stat==SZOMB) {
+		u.u_ttyp=0;
+		goto report;
+	}
+	if(mproc.p_flag&SLOCK) return(0);
 	if (mproc.p_flag&SLOAD) {
-		addr = ctob((long)mproc.p_addr);
+		addr = (long)(unsigned)mproc.p_addr*MEM_FRAME;
 		file = swmem;
 	} else {
-		addr = (mproc.p_addr+swplo)<<9;
+		addr = ((long)(unsigned)mproc.p_addr+swplo)<<9;
 		file = swap;
 	}
 	lseek(file, addr, 0);
@@ -226,12 +242,20 @@ prcom(puid)
 	datsiz = ctob(u.u_dsize);
 	stksiz = ctob(u.u_ssize);
 	septxt = u.u_sep;
-	datmap.b1 = (septxt ? 0 : round(txtsiz,TXTRNDSIZ));
-	datmap.e1 = datmap.b1+datsiz;
-	datmap.f1 = ctob(USIZE)+addr;
-	datmap.b2 = stackbas(stksiz);
-	datmap.e2 = stacktop(stksiz);
-	datmap.f2 = ctob(USIZE)+(datmap.e1-datmap.b1)+addr;
+	/* The Z8000 has separate page extents, not a packed PDP-11 image. */
+	datmap.b1 = 0;
+	datmap.e1 = (long)maps[procslot].size[MEM_DATA]*MEM_FRAME;
+	datmap.b2 = 65536L-(long)maps[procslot].size[MEM_STACK]*MEM_FRAME;
+	datmap.e2 = 65536L;
+	if(mproc.p_flag&SLOAD) {
+		datmap.f1 = (long)maps[procslot].base[MEM_DATA]*MEM_FRAME;
+		datmap.f2 = (long)maps[procslot].base[MEM_STACK]*MEM_FRAME;
+	} else {
+		datmap.f1 = addr+ctob(USIZE);
+		datmap.f2 = datmap.f1+(long)(maps[procslot].size[MEM_DATA]+
+		    maps[procslot].size[MEM_TEXT])*MEM_FRAME;
+	}
+report:
 
 	tp = gettty();
 	if (tptr && strncmp(tptr, tp, 2))
@@ -274,13 +298,14 @@ prcom(puid)
 		printf(" swapper");
 		return(1);
 	}
-	addr += ctob((long)mproc.p_size) - 512;
+	/* execstk leaves 16 bytes of startup headroom above its strings. */
+	addr = datmap.f2+datmap.e2-datmap.b2-512-16;
 
 	/* look for sh special */
 	lseek(file, addr+512-sizeof(char **), 0);
 	if (read(file, (char *)&ap, sizeof(char *)) != sizeof(char *))
-		return(1);
-	if (ap) {
+		return(comm());
+	if (ap && within(ap, datmap.b2, datmap.e2)) {
 		char b[82];
 		char *bp = b;
 		while((cp=getptr(ap++)) && cp && (bp<b+lw) ) {
@@ -296,13 +321,14 @@ prcom(puid)
 			*bp++ = ' ';
 		}
 		*bp++ = 0;
+		if(!b[0]) return(comm());
 		printf(lflg?" %.30s":" %.60s", b);
 		return(1);
 	}
 
 	lseek(file, addr, 0);
 	if (read(file, abuf, sizeof(abuf)) != sizeof(abuf))
-		return(1);
+		return(comm());
 	for (ip = (int *)&abuf[512]-2; ip > (int *)abuf; ) {
 		if (*--ip == -1 || *ip==0) {
 			cp = (char *)(ip+1);
@@ -328,11 +354,20 @@ prcom(puid)
 			}
 			while (*--cp1==' ')
 				*cp1 = 0;
+			if(!*cp) return(comm());
 			printf(lflg?" %.30s":" %.60s", cp);
 			return(1);
 		}
 	}
-	return(1);
+	return(comm());
+}
+
+/* V7's stack-string heuristic can be defeated by alignment or overwritten
+ * arguments. The kernel command name is still available in the u-area. */
+comm()
+{
+ printf(" %.14s",u.u_comm);
+ return(1);
 }
 
 char *

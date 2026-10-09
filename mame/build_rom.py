@@ -65,9 +65,8 @@ kernel=bytearray((a.kernel_build/'handler.sout').read_bytes())
 hk=struct.unpack_from('>3H',kernel,28)
 vectors=(a.kernel_build/'kernel.bin').read_bytes()
 if struct.unpack_from('>H',kernel)[0]!=0xe711 or len(vectors)>512: raise SystemExit('invalid kernel layout')
-struct.pack_into('>H',kernel,12,0) # no symbol table in the installed kernel
 struct.pack_into('>I',kernel,14,0x1f0) # reset handoff entry convention
 kernel[40:552]=vectors.ljust(512,b'\0')
-(a.output/'unix').write_bytes(kernel[:40+hk[0]+hk[1]])
+(a.output/'unix').write_bytes(kernel) # retain global symbols for V7 inspection tools
 (a.output/'fpe.image').write_bytes((a.kernel_build/'fpe.bin').read_bytes())
 print(f'ROM {len(rom)}/2048 bytes (no kernel payload); s.out /boot text/data/bss {h}')

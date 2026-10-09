@@ -249,7 +249,7 @@
     "name": "dmesg",
     "output": "dmesg",
     "kind": "command",
-    "destination": null
+    "destination": "bin/dmesg"
   },
   {
     "name": "du",
@@ -333,7 +333,7 @@
     "name": "iostat",
     "output": "iostat",
     "kind": "command",
-    "destination": null
+    "destination": "bin/iostat"
   },
   {
     "name": "join",
@@ -477,13 +477,13 @@
     "name": "ps",
     "output": "ps",
     "kind": "command",
-    "destination": null
+    "destination": "bin/ps"
   },
   {
     "name": "pstat",
     "output": "pstat",
     "kind": "command",
-    "destination": null
+    "destination": "bin/pstat"
   },
   {
     "name": "ptx",

@@ -6,5 +6,6 @@ pstat: pstat.b
 pstat.b: /usr/src/cmd/pstat.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/pstat.c
 install: all
+	/bin/cp pstat /bin/pstat
 clean:
 	/bin/rm -f *.b pstat

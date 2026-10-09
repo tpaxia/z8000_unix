@@ -8,7 +8,7 @@ Complete [bootstrap](bootstrap.md) first. Run from the repository root:
 cmake --build v7z8000/usr/sys/build --target \
   test test-libc test-signal test-preempt test-tty test-split test-fpe \
   test-copy test-fault test-v7-interfaces test-bio test-abi test-memory \
-  test-physio test-core test-ptrace test-exec test-services test-object-formats
+  test-physio test-core test-ptrace test-exec test-services test-object-formats test-kernel-gaps test-inspection
 python3 PCC-z8000/z8000/test/ratchet/run.py
 python3 tools/export-headers.py --check
 ```
@@ -17,10 +17,16 @@ Use the suites relevant to a change: ABI/libc changes need libc, ABI and native
 compiler checks; memory/scheduler work needs memory, faults, signals, exec and
 tracing; drivers need boot, TTY or buffered/raw I/O as applicable. Native
 convergence and sustained userland tests have separate, longer procedures in
-[native rebuild](native-rebuild.md). Compiler baselines are reviewed evidence,
+[native rebuild](native-rebuild.md). `test-kernel-gaps` requires the native compiler seed from
+`python3 tools/native-cc/build.py`. It checks native combined/split aggregate
+returns with forced signal re-entry during the return copy, plus polled panic
+flushing. `test-memory`
+checks the expanded pure-load restart forms and rejects overwritten addresses.
+
+Compiler baselines are reviewed evidence,
 not something to accept automatically after a failure.
 
-On the assembler branch, s.out linker/loader changes also need the
+s.out linker/loader changes also need the
 [native linking and execution trial](native-rebuild.md#sout-linking-and-execution),
 alongside the s.out exec, split-I/D and tracing suites and obsolete-format
 rejection by `test-object-formats`.
@@ -53,7 +59,8 @@ only the default kernel build directory does not update that executable.
 | `-t`, `-r`, `-m` | instruction, register and memory traces |
 | `-w <marker> -I <text>` | after initial input, wait for output containing the marker plus 100 ticks, then type a second input (`\n` is decoded) |
 | `-n <ticks> -M <marker>` | measure exactly this many clock pulses after the marker (default `# `); keep running through idle HALTs |
-| `-o <image>` | save the final guest HD contents, including failed runs; the guest must call `sync()` to flush filesystem buffers |
+| `-o <image>` | save the final guest HD contents, including failed runs; normal runs must call `sync()`; the panic test uses the polled panic flush |
+| `-F k:<hex>` | inject one kernel write fault after the `-w` marker, to test panic outside user-copy fixups |
 | `-P <file.tsv>` | observe user stack pointers at instruction-space word reads and successful `brk` calls, grouped by executed program |
 
 The kernel build wraps these as `cmake --build build --target test`,
@@ -134,3 +141,10 @@ Use `-DCMAKE_BUILD_TYPE=Release` when configuring the kernel's host test driver
 for long native compiler regressions. An unoptimized host driver can exceed the
 wall-clock timeout while completing within the same guest cycle budget. This
 setting optimizes the host emulator, not the cross-compiled Unix kernel.
+
+`test-inspection` builds the four V7 inspection tools inside Unix, runs their
+reporting modes, and checks memory-device boundaries, reversible writes, user
+copy faults and non-root rejection. It also runs native `ps` with resident and
+swapped processes on a 512 KiB machine. It requires the native compiler seed.
+The native boot packer is compiled and run in the same trial; its output must
+retain the complete matching kernel symbol table while installing the vectors.

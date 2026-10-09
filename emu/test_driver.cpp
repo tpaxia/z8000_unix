@@ -64,7 +64,9 @@ public:
     void set_fault(ClockObservedCPU *cpu, char kind, unsigned offset) {
         m_cpu = cpu; m_fault_kind = kind; m_fault_offset = offset;
     }
-    void arm_fault() { m_fault_armed = true; }
+    void arm_fault() {
+        if (m_fault_kind != 'k' || !fault_count) m_fault_armed = true;
+    }
     unsigned fault_count = 0;
     unsigned absent_count = 0;
     unsigned unmapped_count = 0;
@@ -139,10 +141,16 @@ public:
     bool denied(uint32_t addr, unsigned size, bool writing) {
         if (!m_fault_armed || !m_cpu) return false;
         unsigned seg = (addr >> 16) & 0x7f, off = addr & 0xffff;
-        if (seg <= 1 || seg == 127 || off > m_fault_offset ||
+        if (seg == 127 || off > m_fault_offset ||
             off + size <= m_fault_offset) return false;
         unsigned fcw = m_cpu->get_fcw();
-        if (m_fault_kind == 'u') {
+        if (m_fault_kind == 'k') {
+            // One kernel write failure exercises panic outside user fixups.
+            // Disarm before panic itself uses the same kernel address.
+            if (seg != 1 || !(fcw & 0x4000) || !writing) return false;
+            m_fault_armed = false;
+        } else if (seg <= 1) return false;
+        else if (m_fault_kind == 'u') {
             if (fcw & 0x4000) return false;
         } else {
             if ((fcw & 0xc000) != 0xc000 || writing != (m_fault_kind == 'w'))
@@ -770,9 +778,9 @@ int main(int argc, char* argv[]) {
             case 'F': {
                 char extra;
                 if (sscanf(optarg, "%c:%x%c", &fault_kind, &fault_offset, &extra) != 2 ||
-                    (fault_kind != 'r' && fault_kind != 'w' && fault_kind != 'u') ||
+                    (fault_kind != 'r' && fault_kind != 'w' && fault_kind != 'u' && fault_kind != 'k') ||
                     fault_offset > 0xffff) {
-                    fprintf(stderr, "-F requires r:hex, w:hex or u:hex\n"); return 1;
+                    fprintf(stderr, "-F requires r:hex, w:hex, u:hex or k:hex\n"); return 1;
                 }
                 break;
             }
@@ -817,7 +825,7 @@ int main(int argc, char* argv[]) {
                         "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input|-j input-file] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
-                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
+                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u|k:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
                 return 1;
         }
     }
@@ -932,6 +940,9 @@ int main(int argc, char* argv[]) {
 
     while (cpu.get_cycles() < max_cycles) {
         cpu.run(CYCLES_PER_TICK);
+        // A panic halt cannot accept the periodic/device interrupts. Stop the
+        // harness so saved-disk inspection works even though cycles stand still.
+        if (cpu.is_halted() && !(cpu.get_fcw() & 0x1800)) break;
         io.poll_swap();
         if (fault_kind && io.console_output().find(wait_output) != std::string::npos)
             mmu.arm_fault();
@@ -1051,7 +1062,7 @@ int main(int argc, char* argv[]) {
     bool has_hello = hello_at != std::string::npos;
     bool has_prompt_after = has_hello && output.find("# ", hello_at) != std::string::npos;
     bool settled = cpu.is_halted();
-    bool has_panic = output.find("panic") != std::string::npos;
+    bool has_panic = output.find("panic: ") != std::string::npos;
     if (measure_ticks) {
         bool ok = measure_done && has_kernel_msg && has_prompt && !has_panic &&
                   (!expect || output.find(expect) != std::string::npos) &&

@@ -6,5 +6,6 @@ dmesg: dmesg.b
 dmesg.b: /usr/src/cmd/dmesg.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/dmesg.c
 install: all
+	/bin/cp dmesg /bin/dmesg
 clean:
 	/bin/rm -f *.b dmesg

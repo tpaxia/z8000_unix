@@ -58,7 +58,16 @@ def check(source,installed,build):
         if not old.u16(ino,0): continue
         assert bytes(ino)==bytes(new.inode(i)), ('changed inode',i)
         if old.u16(ino,0)&0o170000 in (0o100000,0o40000):
-            assert data(old,ino)==data(new,new.inode(i)), ('changed file',i)
+            original=data(old,ino)
+            current=data(new,new.inode(i))
+            if i==before.get('unix') and original!=current:
+                patched=bytearray(original)
+                assert original[14:18]==bytes(4) and not any(original[40:552])
+                patched[14:18]=current[14:18]
+                patched[40:552]=current[40:552]
+                assert patched==current, 'changed kernel beyond entry/vectors'
+            else:
+                assert original==current, ('changed file',i)
     for name,file in [('boot','boot'),('unix','unix'),('fpe','fpe.image')]:
         assert data(new,new.inode(after[name]))==(build/file).read_bytes(),name
     count=new.u16(new.disk,256)

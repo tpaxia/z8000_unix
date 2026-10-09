@@ -53,7 +53,9 @@ def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=Non
             files['usr/include/' + str(path.relative_to(includes))] = path
     files.update(extra_files or {})
     tree = {'tmp': {}, 'dev': {'console': 'c--644 0 0 0 0', 'tty': 'c--644 0 0 2 0',
-                              'null': 'c--666 0 0 4 2'}}
+                              'null': 'c--666 0 0 4 2',
+                              'mem': 'c--600 0 0 4 0', 'kmem': 'c--600 0 0 4 1',
+                              'swap': 'b--600 0 0 1 1'}}
     for target, source in files.items():
         parts = target.split('/')
         node = tree

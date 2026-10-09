@@ -6,8 +6,10 @@
 #include <sys/param.h>
 #include <sys/conf.h>
 #include <sys/tty.h>
+#include <a.out.h>
+#include <sys/memmap.h>
 
-char	*fcore	= "/dev/mem";
+char	*fcore	= "/dev/kmem";
 char	*fnlist	= "/unix";
 int	fc;
 
@@ -27,7 +29,7 @@ struct setup {
 #define	SNDH	4
 	"_ndh11", 0, 0,
 #define	SKL	5
-	"_kl11", 0, 0,
+	"_cons_tt", 0, 0,
 #define	SFIL	6
 	"_file", 0, 0,
 	0,
@@ -90,7 +92,7 @@ char **argv;
 	if (argc>1)
 		fnlist = argv[1];
 	nlist(fnlist, setup);
-	if (setup[SINODE].type == -1) {
+	if (setup[SINODE].type == 0) {
 		printf("no namelist\n");
 		exit(1);
 	}
@@ -136,7 +138,7 @@ doinode()
 		putf(ip->i_flag&ITEXT, 'T');
 		printf("%4d", ip->i_count&0377);
 		printf("%3d,%3d", major(ip->i_dev), minor(ip->i_dev));
-		printf("%6l", ip->i_number);
+		printf("%6u", ip->i_number);
 		printf("%7o", ip->i_mode);
 		printf("%4d", ip->i_nlink);
 		printf("%4d", ip->i_uid);
@@ -240,13 +242,13 @@ dotty()
 	register struct tty *tp;
 	register char *mesg;
 
-	printf("1 kl11\n");
+	printf("1 console\n");
 	lseek(fc, (long)setup[SKL].value, 0);
 	read(fc, (char *)dh11, sizeof(dh11[0]));
 	mesg = " # RAW CAN OUT   MODE   ADDR   DEL COL  STATE   PGRP\n";
 	printf(mesg);
 	ttyprt(0, &dh11[0]);
-	if (setup[SNDH].type == -1)
+	if (setup[SNDH].type == 0)
 		return;
 	lseek(fc, (long)setup[SNDH].value, 0);
 	read(fc, (char *)&ndh, sizeof(ndh));
@@ -294,8 +296,12 @@ dousr()
 	register struct user *up;
 	register i;
 
-	lseek(fc, ubase<<6, 0);
-	read(fc, (char *)&xu, sizeof(xu));
+	i=open("/dev/mem",0);
+	if(i<0 || lseek(i, ubase*MEM_FRAME, 0)<0 ||
+	    read(i, (char *)&xu, sizeof(xu))!=sizeof(xu)) {
+		printf("Cannot read physical u-area\n"); exit(1);
+	}
+	close(i);
 	up = &xu.rxu;
 	printf("rsav %.1o %.1o\n", up->u_rsav[0], up->u_rsav[1]);
 	printf("segflg, error %d, %d\n", up->u_segflg, up->u_error);

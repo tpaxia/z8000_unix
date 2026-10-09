@@ -171,8 +171,9 @@ unsigned *extra;
 	extra[0] = u.u_regs[13]; extra[1] = u.u_regs[14];
 }
 
-/* Z8001 completes the faulting instruction. Only replay stores with no
- * register/flag changes, or back out an implicit R15 decrement. Encodings:
+/* Z8001 completes the faulting instruction. Replay plain loads/stores only
+ * when all address operands survive, or back out an implicit R15 decrement.
+ * Encodings:
  * Z8000 CPU Technical Manual, CALL/CALR, LD, LDM and PUSH tables.
  * CLR/CLRB also only write memory and leave all flags/registers unchanged.
  * MMU first-word/status latches are bus-visible state, not CPU rollback.
@@ -180,11 +181,11 @@ unsigned *extra;
 stackfault(regs, f)
 unsigned *regs, *f;
 {
-	unsigned sp, op, hi, back, base;
-	int b;
+	unsigned sp, op, hi, back, base, dst, src, index;
+	int b, load;
 	if ((regs[14] & 0x8000) || !(f[0] & MF_VALID) ||
-	    (f[0] & (MF_FETCH|MF_PROT|MF_MIXED|MF_READ)) ||
-	    !(f[0] & MF_WRITE) || f[1] != u.u_procp-proc+1 ||
+	    (f[0] & (MF_FETCH|MF_PROT|MF_MIXED)) ||
+	    !(f[0] & (MF_WRITE|MF_READ)) || f[1] != u.u_procp-proc+1 ||
 	    f[4] != f[1])
 		return(0);
 	sp = get_usp();
@@ -210,7 +211,35 @@ unsigned *regs, *f;
 	op |= b;
 	hi = op >> 8;
 	back = 0;
-	if ((op & 0xf000) == 0xd000 ||
+	load = 0;
+	if (f[0]&MF_READ) {
+		/* Plain loads have no flag effects. Replay only if destination
+		 * registers cannot have destroyed a base/index or user SP.
+		 * No Z8003/4 early-abort assumptions: Z8001 completed the load.
+		 * LD/LDB/LDL IR, DA/X, BA and BX: CPU manual load tables. */
+		if (f[0]&MF_WRITE) return(0);
+		if (!(hi == 0x20 || hi == 0x21 || hi == 0x60 || hi == 0x61 ||
+		    hi == 0x30 || hi == 0x31 || hi == 0x70 || hi == 0x71 ||
+		    hi == 0x14 || hi == 0x54 || hi == 0x35 || hi == 0x75))
+			return(0);
+		dst = op&15;
+		if (hi == 0x20 || hi == 0x60 || hi == 0x30 || hi == 0x70)
+			dst &= 7; /* RH0..RH7/RL0..RL7 overlap word registers. */
+		else if (hi == 0x14 || hi == 0x54 || hi == 0x35 || hi == 0x75)
+			load = 1; /* A register pair is overwritten. */
+		if (load && (dst&1)) return(0);
+		if (dst == 15 || (load && dst >= 14)) return(0);
+		src = (op>>4)&15;
+		if (!src && hi != 0x60 && hi != 0x61 && hi != 0x54)
+			return(0); /* Only DA loads have no address register. */
+		if (src && (src == dst || (load && src == dst+1))) return(0);
+		if (hi == 0x70 || hi == 0x71 || hi == 0x75) {
+			if (f[5] > 65532 || (b = fuibyte(f[5]+2)) < 0)
+				return(0);
+			index = b&15;
+			if (index == dst || (load && index == dst+1)) return(0);
+		}
+	} else if ((op & 0xf000) == 0xd000 ||
 	    ((op & 0xbf0f) == 0x1f00))
 		back = 2;
 	else if ((op & 0x00f0) == 0x00f0 &&

@@ -17,7 +17,7 @@ def run(args, **kw):
     return r.stdout
 run(['make', '-C', tools, 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'cat', 'echo', 'v7mkfs'])
 headers = '#define malloc rmalloc\n#define mfree rmfree\n#define time maptime\n'
-headers += ''.join(f'#include "{kernel}/h/{h}.h"\n' for h in ['param', 'systm', 'map', 'proc', 'dir', 'user', 'text'])
+headers += ''.join(f'#include "{kernel}/h/{h}.h"\n' for h in ['param', 'systm', 'map', 'proc', 'dir', 'user', 'text', 'memmap'])
 headers += '#include "' + str(kernel / 'machine/mmu.h') + '"\n'
 headers += '#undef u\nstruct user u;\n'
 allocator = (kernel / 'sys/malloc.c').read_text()

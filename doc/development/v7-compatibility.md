@@ -32,7 +32,7 @@ in the original distribution.
 | `sys/iget.c` | Converts inode addresses to/from big-endian three-byte disk fields instead of PDP-11 byte order. |
 | `sys/main.c` | Configured global tables and boot devices; MMU initializes real memory and process storage. Process 0 runs the swapper. Console initialization opens/duplicates the initial terminal; boot uses the small console init. |
 | `sys/malloc.c` | First-fit allocation/free code is unchanged; its comment describes 2 KiB physical frames instead of 64-byte core-map units. |
-| `sys/prf.c` | Panic omits V7's `update()` call. A safe panic-specific flushing protocol remains unimplemented. |
+| `sys/prf.c` | Panic uses a bounded polled flush instead of V7's sleeping `update()`. The separate `sys/panic.c` writes coherent cache blocks, unlocked dirty inodes and unlocked superblocks, then halts with interrupts masked. |
 | `sys/rdwri.c` | Original read/write and `iomove()` policy. Differences are two explicit low-word offset casts, whitespace and comments; the casts are retained departures, not an established CPU requirement. |
 | `sys/subr.c` | Original byte-copy policy, with parentheses correcting V7's conditional-expression precedence in `passc()` and comments clarifying the three copy spaces. |
 | `sys/slp.c` | Adapts V7 scheduling, sleep/wakeup and swapper policy to separately allocated process sections. Only residents can run. Allocation/copy/swap use MMU services; extent reservations and dispatch/yield safeguards prevent races and starvation with fast emulated transfers. Fork retains direct-to-swap fallback and rolls back allocation failure. |
@@ -109,8 +109,9 @@ accounts for the separate data/stack layout. `nlist` decodes s.out through the
 shared object reader. Floating operations trap to the separately mapped Zilog
 software EPU, replacing PDP-11 hardware FPS or its emulator. This service uses
 the preserved Zilog arithmetic source, not a rewritten V7 floating library.
-The static-result structure-return ABI remains a limitation; its
-[proposed repair](../toolchain/structure-return-abi.md) is not implemented.
+Structure/union returns use a hidden pointer to caller-owned frame storage
+instead of the historical static result buffer; see the
+[aggregate-return ABI](../toolchain/structure-return-abi.md).
 
 ## Userland source comparison
 
@@ -134,7 +135,7 @@ not installed command availability. Current changed groups are:
 | `yacc/dextern` | Generator configuration for the target's memory budget. |
 | `dc/dc.c` | Terminates the original free list without writing beyond its array. |
 | `lint/lint.c` | Target alignment for long and floating types. |
-| `pstat.c` | Z8000 saved-user registers; runtime kernel-memory access is still missing. |
+| `ps.c`, `pstat.c`, `dmesg.c`, `iostat.c` | Kernel-data symbols use `/dev/kmem`; paged physical/swap process extents replace PDP-11 contiguous images. Pstat reads Z8000 registers/console/u-area frames. Iostat resolves counters individually and uses configured buffers and emulated disk labels. |
 
 The full native userland builds 161 command executables, seven games,
 12 libraries and 12 terminal tables. This includes support programs and programs
@@ -146,13 +147,15 @@ installed inventory, runtime coverage and remaining command ports.
 
 - Boot uses console init. Original init/getty/login build, but multiuser startup,
   accounts and terminal configuration are not integrated.
-- `/dev/mem` implements only minor-2 EOF/rathole behavior. Physical and kernel
-  memory minors reject open; ps/pstat/dmesg/iostat need this and layout work.
+- Memory-device translation uses the paged MMU instead of PDP-11 mapping
+  registers; inspection tools follow the current physical extent layout.
+  Live snapshots can race process changes; kernel-dump inspection is unported.
 - Original disabled-multiplexor stubs are selected. There is no active channel
   device or UNIBUS map implementation.
 - Ptrace single-stepping requires hardware support. Automatic growth has the
   restart restrictions described above.
-- Panic-specific filesystem flushing remains absent.
+- Panic flushing is best effort: busy or locked state is skipped, and controller
+  errors/timeouts can leave data unwritten.
 - PDP-11 assembler/compiler/Fortran backends and assembly commands require
   replacement or further porting; preserved sources are not target support.
 - Physical disks, tape, printers, serial terminals and site communications still

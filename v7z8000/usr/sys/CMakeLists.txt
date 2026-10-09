@@ -163,7 +163,7 @@ foreach(source IN LISTS KERNEL_ASM)
 endforeach()
 
 # Shared V7 services. Machine configuration never changes this list.
-foreach(name main acct bio physio malloc text alloc iget nami rdwri subr fio prf slp
+foreach(name main acct bio physio malloc text alloc iget nami rdwri subr fio prf panic slp
              sys1 sys2 sys3 sys4 pipe sig sysent clock prim)
     pcc_compile_c(sys ${name})
 endforeach()

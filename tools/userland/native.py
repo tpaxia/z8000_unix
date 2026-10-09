@@ -68,6 +68,8 @@ def setup(preserve=False, update_toolchain=False,sout=True):
     # with the helpers from the verified essential-command image.
     for name in ('runner','normal','check'):
         files['bin/'+name]=seed_dir/name
+    # Inspection tools must resolve symbols from the kernel running the trial.
+    files['unix']=packages.SYS/'handler.sout'
     # Extract the original source-only plot archives. No target objects enter
     # the build directories; this is source staging, like unpacking a tape.
     for name in ('plot','t300','t300s','t4014','t450','vt0'):

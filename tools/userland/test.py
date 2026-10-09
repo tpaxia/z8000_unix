@@ -20,8 +20,10 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
     report=(json.loads((WORK/'report.json').read_text())
             if report_override is None else report_override)
     files={};modes={}
+    # The emulator loads this same kernel; its global symbols name live data.
+    files['unix']=SYS/'handler.sout'
     # Native replacements are already supplied by build.image().
-    replaced={'cc','ld','init','arcv','ranlib','adb','ps','pstat','dmesg','iostat'}
+    replaced={'cc','ld','init','arcv','ranlib','adb'}
     for name,rec in report.items():
         if rec['status']!='built' or name.startswith('lib'):continue
         destination='bin/'+name

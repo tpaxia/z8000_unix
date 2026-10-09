@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Install /boot, /unix, /fpe and a boot block into a NEW copy of a V7 disk.
 
-The input must be an unmounted, big-endian Z8000 V7 filesystem. Existing boot
-files are refused: replace /unix normally from Unix; reinstall the primary
+The input must be an unmounted, big-endian Z8000 V7 filesystem. Existing boot files are refused; a matching development /unix is reused
+in place in the new copy. Other kernels are refused: replace /unix normally from Unix; reinstall the primary
 block after moving/replacing /boot. No existing inode or file is relocated.
 """
 import argparse
@@ -58,6 +58,34 @@ class Installer:
         size=self.u32(root,8)
         if size>10*512 or size%16: raise ValueError('unsupported root directory size')
         return root,size,[int.from_bytes(root[12+3*i:15+3*i],'big') for i in range((size+511)//512)]
+    def kernel(self,content):
+        """Reuse a matching development /unix without relocating its inode."""
+        root,size,blocks=self.root_blocks()
+        for pos in range(0,size,16):
+            ent=self.block(blocks[pos//512])[pos%512:pos%512+16]
+            number=self.u16(ent,0)
+            if not number or bytes(ent[2:16]).split(b'\0')[0]!=b'unix': continue
+            ino=self.inode(number);length=self.u32(ino,8)
+            if length!=len(content) or length>138*512:
+                raise ValueError('existing /unix does not match this kernel')
+            count=(length+511)//512
+            sectors=[int.from_bytes(ino[12+3*i:15+3*i],'big') for i in range(min(count,10))]
+            if count>10:
+                indirect=self.block(int.from_bytes(ino[42:45],'big'))
+                sectors += [self.u32(indirect,4*i) for i in range(count-10)]
+            old=b''.join(bytes(self.block(b)) for b in sectors)[:length]
+            patched=bytearray(old)
+            if old!=content:
+                if old[14:18]!=bytes(4) or any(old[40:552]):
+                    raise ValueError('existing /unix is not an unbooted matching kernel')
+                patched[14:18]=content[14:18];patched[40:552]=content[40:552]
+                if patched!=content:
+                    raise ValueError('existing /unix does not match this kernel')
+            for i,b in enumerate(sectors):
+                self.block(b)[:]=content[i*512:(i+1)*512].ljust(512,b'\0')
+            return
+        self.add('unix',content)
+
     def add(self,name,content):
         root,size,blocks=self.root_blocks()
         for pos in range(0,size,16):
@@ -95,7 +123,7 @@ def install(source,output,build,console_profile=False):
     if output.exists(): raise ValueError('refusing to overwrite output disk')
     fs=Installer(source)
     sectors=fs.add('boot',(build/'boot').read_bytes())
-    fs.add('unix',(build/'unix').read_bytes())
+    fs.kernel((build/'unix').read_bytes())
     fs.add('fpe',(build/'fpe.image').read_bytes())
     if console_profile:
         fs.add('.profile',b"/bin/stty erase '^H'\n")

@@ -66,7 +66,7 @@ main()
   if(!n) strcpy(kernel,"hd(0,0)/unix");
   fd=open(kernel,0);
   if(fd<0) continue;
-  if(read(fd,(char *)h,40)!=40 || h[0]!=0xe711 || h[5]!=16 || h[6] ||
+  if(read(fd,(char *)h,40)!=40 || h[0]!=0xe711 || h[5]!=16 ||
      h[9]!=1 || h[7] || h[8]!=0x1f0 || h[14]<512 ||
      h[15]>0xe000 || h[16]>0xe000-h[15] || h[12] || h[13] ||
      h[17]!=7 || h[18] || h[19] || h[3] || h[4]!=h[16] ||

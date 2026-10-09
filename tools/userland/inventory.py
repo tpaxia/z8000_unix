@@ -45,7 +45,6 @@ summary = {
     'terminal_tables_built':sorted(n for n,r in report.items() if r['status']=='built' and r.get('kind')=='terminal-table'),
     'not_installed':{
         'adb':'PDP-11 disassembler, register/core layout and breakpoint operations need a Z8000 port.',
-        'ps, pstat, dmesg, iostat':'Need memory-device access and kernel-layout review.',
         'init':'Built as /etc/init.v7; console init remains the active boot program.',
     },
     'unported':{n:r['reason'] for n,r in report.items() if r['status']=='unported'},

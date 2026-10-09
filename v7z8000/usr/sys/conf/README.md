@@ -59,6 +59,8 @@ staged alongside shared headers and tracked as build dependencies.
 early console output, clock enabling and VI dispatch. `devintr(vector)` is
 called by the common CPU entry code; the emulated configuration services disk
 and console on shared vector zero. Drivers contain their own I/O registers.
+`panicpoll()` services disk completions with interrupts masked, without sleeping
+or dispatching processes. CPU `panichalt()` halts with VI/NVI disabled.
 
 `machine/krt.s`, `trap.s` and `trap.c` implement the Z8000 trap and calling
 conventions, interrupt masking and user-memory access. `machine/cpu.c` holds
@@ -81,6 +83,7 @@ The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
 | `newmem(child)` / `freemem(process)` | Allocate/release u-area and mapped sections; allocation returns -1 after full rollback on exhaustion |
 | `estabur(nt, nd, ns, sep, xrw)` | Validate and allocate page-rounded sections; failure preserves the old layout and accounting |
 | `expand(total_clicks)` | Resize data with text, stack and u-area sizes fixed; return -1/ENOMEM on failure |
+| `membyte(offset, kernel, value, writing)` | Read/write one validated physical-RAM or kernel-data byte for memory devices; restore temporary maps before enabling interrupts |
 | `sureg()` | Select the current process's instruction/data mappings and user-access selectors |
 | `resume(p_addr, label)` | Switch u-area/kernel-stack mapping and restore the saved continuation atomically |
 | `copyuarea(child)` | Copy the current u-area, including the continuation saved before this call |
@@ -222,8 +225,9 @@ extents per process, all text entries and map termination/headroom. The bound is
 conservative; it avoids relying on only one allocator being active at a time.
 
 
-The emulated configuration selects `dev/mem.c` at character major 4. Only minor
-2 is supported: V7's EOF/rathole `/dev/null`. Reads leave the residual count
-unchanged; writes set it to zero. Unsupported memory minors fail open with
-ENXIO. Both the basic and native-image builders install character 4,2 with mode
-0666, as required by the original shell's background-command stdin handling.
+The emulated configuration selects `dev/mem.c` at character major 4. Minor 2
+is V7's EOF/rathole `/dev/null`: reads leave the residual count unchanged and
+writes set it to zero. Minors 0/1 provide root-only physical/kernel-data access
+through `membyte()`; other minors fail open with ENXIO. Native images install
+memory devices 4,0 and 4,1 with mode 0600, and 4,2 with mode 0666. See the
+[memory-device reference](../../../../doc/kernel/devices-and-io.md).

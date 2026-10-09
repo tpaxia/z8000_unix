@@ -79,10 +79,15 @@ long n;
 panic(s)
 char *s;
 {
+	spl7();
+	if (panicstr) {
+		printf("recursive panic: %s\n", s);
+		panichalt();
+	}
 	panicstr = s;
 	printf("panic: %s\n", s);
-	for(;;)
-		idle();
+	panicflush();
+	panichalt();
 }
 
 /*

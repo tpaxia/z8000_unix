@@ -17,7 +17,7 @@
  *   0xF2 = status (bit 0 = TX ready, bit 1 = RX ready)
  */
 
-extern int putchar();
+extern int consputc();
 extern int inb();
 extern int consstart();
 extern int consxint();
@@ -79,6 +79,7 @@ consrint()
 	tp = &cons_tty[0];
 	if (inb(0xF2) & 0x02) {
 		c = inb(0xF0);
+		tk_nin++;
 		ttyinput(c, tp);
 	}
 }
@@ -114,7 +115,8 @@ register struct tty *tp;
 			timeout(ttrstrt, (caddr_t)tp, c & 0177);
 			break;
 		}
-		putchar(c);
+		consputc(c);
+		tk_nout++;
 	}
 	if (tp->t_outq.c_cc == 0 || tp->t_outq.c_cc <= TTLOWAT) {
 		if (tp->t_state & ASLEEP) {

@@ -23,7 +23,8 @@ and the default output name `a.out` do not specify the file's format.
 See [split-I/D mappings](../kernel/memory-and-swapping.md#separate-instruction-and-data-spaces),
 [syscall convention](../kernel/traps-and-interrupts.md#syscall-calling-convention),
 and [startup/migration](../kernel/processes-and-exec.md#user-program-startup).
-The [structure-return proposal](structure-return-abi.md) is not an adopted ABI change.
+[Structure/union returns](structure-return-abi.md) use a hidden pointer to
+caller-owned frame storage. Affected callers and callees must be rebuilt together.
 
 ## Library Archives
 
@@ -42,7 +43,7 @@ Full segmented user executables require further ABI and loader work.
 | Stack pointer | R15 |
 | Frame pointer | R13 |
 | Return value | R0 (int/pointer), RR0 (long) |
-| Arguments | Pushed right-to-left onto R15 stack |
+| Arguments | Pushed right-to-left onto R15 stack; aggregate returns add a hidden first result pointer |
 | Callee-saved | R4-R7, R10-R12, R14 |
 | C symbol names | Leading underscore, eight characters in all (`main` → `_main`), as on the PDP-11. Runtime support routines (`lmul`, `ldiv`, `fadd`, ...) have no underscore |
 | Function prologue | `push @sp, r13; ld r13, sp; sub sp, #N` |
@@ -73,7 +74,7 @@ in the shared proc.h rather than a private sys1.c declaration; its padding keeps
 times over the intended proc fields. sys/reg.h distinguishes common trap-frame
 indices (R0–R12, RPS=14, PCSEG=15, PC=16) from the complete u_regs image
 (UREG_SP=15, UREG_FCW=16, UREG_SEG=17, UREG_PC=18, UREG_NREG=19). It supplies
-no fictitious trace bit. Full adb/ps/pstat runtime support still needs machine
+no fictitious trace bit. Full adb runtime support still needs machine
 adaptations and a kernel-memory device; pstat's user dump selects u_regs on Z8000.
 
 Core, ptrace and exec regression programs now include the installed public

@@ -26,14 +26,34 @@ cdevsw[0] = { consopen, consclose, consread, conswrite } — console
 cdevsw[1] = the same entry, spare
 cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
 cdevsw[3] = raw IDE disk, block-device unit minors 0/1
-cdevsw[4] = memory special file, only minor 2 (/dev/null)
+cdevsw[4] = memory: minors 0 physical, 1 kernel data, 2 /dev/null
 ```
 
 `dev/mem.c` retains V7's minor-2 EOF/rathole behavior: reads return zero
 bytes and writes consume the supplied count. The basic and native development
-images install `/dev/null` as character 4,2 with mode 0666. Other minors return
-ENXIO; physical/kernel-memory access is not implemented. The original shell uses
-this node for background commands' default stdin.
+images install `/dev/null` as character 4,2 with mode 0666. The original shell
+uses this node for background commands' default stdin.
+
+`/dev/mem` (4,0) reads/writes physical RAM by byte offset; `/dev/kmem` (4,1)
+reads/writes the kernel's 16-bit data space, including its current u-area. Both
+nodes have mode 0600 and the driver requires superuser privilege at open.
+Physical access stops at installed RAM; kernel offsets must be below 65536.
+Invalid offsets/minors return ENXIO and invalid user buffers return EFAULT.
+The machine supplies `membyte()`; the paged implementation uses the existing
+physical window and restores its mapping with interrupts masked.
+
+The installed `/unix` retains global s.out symbols. V7 `ps`, `pstat`, `dmesg`
+and `iostat` resolve those symbols and read `/dev/kmem`; process u-areas and
+stack extents come from `/dev/mem` or `/dev/swap`. The live views are best-effort
+snapshots, not atomic debugger captures. `ps k` kernel-dump inspection remains
+unsupported. `pstat -u` takes a physical 2 KiB frame number in octal.
+
+The console keeps V7's diagnostic `msgbuf`/`msgbufp` ring for `dmesg`. Normal
+TTY transmission bypasses that ring. TTY input/output counters accompany the
+existing disk and clock instrumentation. `iostat` resolves each counter
+separately and uses the configured buffer count; its HD/SW columns denote root
+and swap. Emulated disks have no calibrated transfer latency, so estimated
+transfer-time columns are zero.
 
 ## Terminal control
 
@@ -110,15 +130,32 @@ and verifies every byte after a fresh boot. As in V7, sync queues delayed writes
 the reboot test waits for completion and does not claim power-loss durability
 at the instant sync returns.
 
-### Panic-time flushing remains separate
+### Panic-time flushing
 
-The port still prints the panic and idles without calling `update()`. Source
-review shows that `update()` can call `getblk()`/`bwrite()` and sleep on a busy
-buffer or I/O. If the panicking path owns that buffer, completion of a flush
-cannot be guaranteed; device/cache corruption is another possible panic cause.
-Restoring V7's unconditional `update()` here would risk hiding the panic behind
-a deadlock. A future best-effort panic flush needs a separate bounded protocol
-that avoids owned buffers and does not depend on normal interrupt completion.
+`panic()` masks interrupts, preserves the first diagnostic, calls the separate
+`sys/panic.c` flush and halts without enabling interrupts. A recursive panic
+prints its diagnostic and halts immediately. It never calls V7 `update()`, whose
+buffer allocation and I/O waits can sleep on resources owned by the panicking
+path.
+
+The panic flush drains queued device operations through `panicpoll()`, writes
+available delayed-write buffers, serializes unlocked dirty inodes and writes
+unlocked writable superblocks. Its private block buffer avoids allocation or
+waiting for cache owners. Metadata reads use coherent cached blocks where
+available; a busy or erroneous cache block is skipped rather than reading an
+older disk copy. Successful inode writes refresh any cached copy so later
+inodes in that block retain earlier updates.
+
+Polling is bounded to 30,000 calls per completion wait. Timeout stops the flush
+without reusing an outstanding transfer's buffer; completed errors are reported.
+Locked/busy state is skipped because it may be partly modified. This is best
+effort, not a filesystem transaction or guaranteed crash consistency. The
+machine's `panicpoll()` must service completion without sleeping, enabling
+interrupts or dispatching processes; the emulated implementation polls ATA.
+
+`test-kernel-gaps` exercises queue draining, cache and metadata writes, locked
+objects, errors and timeouts. It also triggers a real kernel fault after writing
+an unclosed file, saves the halted disk and verifies that file's contents.
 
 ## Raw physical I/O
 

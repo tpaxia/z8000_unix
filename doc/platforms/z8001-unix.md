@@ -61,8 +61,11 @@ The primary sector list is the deliberate difference from the PDP-11 V7
 filesystem-searching boot block: moving or replacing `/boot` requires refreshing
 sector zero. Replacing `/unix` or `/fpe` does **not** require a ROM rebuild or
 primary-bootstrap update. These remain ordinary filesystem files. The installer
-in `mame/install_boot.py` creates a new disk copy and refuses existing boot
-filenames. The [native rebuild](../development/native-rebuild.md#native-kernel-and-disk-bootstrap)
+in `mame/install_boot.py` creates a new disk copy and refuses existing `/boot`
+and `/fpe` files. It can reuse a matching development `/unix` in place, updating
+only its entry point and reserved vectors; a different kernel is refused.
+`/unix` retains global symbols for the kernel inspection tools. The loader reads
+only text and data into memory. The [native rebuild](../development/native-rebuild.md#native-kernel-and-disk-bootstrap)
 provides `pack install block.bin /boot /dev/hd0`, which regenerates sector zero
 from the installed loader inode on the same filesystem.
 

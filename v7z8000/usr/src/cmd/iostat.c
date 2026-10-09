@@ -4,15 +4,12 @@ int	tflg;
 int	iflg;
 int	aflg;
 int	sflg;
-struct
-{
-	char	name[8];
-	int	type;
-	unsigned	value;
-} nl[] = {
-	"_dk_busy", 0, 0,
-	"_io_info", 0, 0,
-	"\0\0\0\0\0\0\0\0", 0, 0
+#include <stdio.h>
+#include <sys/param.h>
+#include <a.out.h>
+struct nlist nl[] = {
+ {"_dk_busy"}, {"_dk_time"}, {"_dk_numb"}, {"_dk_wds"},
+ {"_tk_nin"}, {"_tk_nout"}, {"_io_info"}, {""}
 };
 struct
 {
@@ -30,7 +27,7 @@ struct iostat {
 	long	nreada;
 	long	ncache;
 	long	nwrite;
-	long	bufcount[50];
+	long	bufcount[NBUF];
 } io_info, io_delta;
 double	etime;
 
@@ -46,7 +43,7 @@ char *argv[];
 	long t;
 
 	nlist("/unix", nl);
-	if(nl[0].type == -1) {
+	if(nl[0].n_type == 0) {
 		printf("dk_busy not found in /unix namelist\n");
 		exit(1);
 	}
@@ -78,7 +75,7 @@ char *argv[];
 	if(tflg)
 		printf("         TTY");
 	if (bflg==0)
-	printf("   RF                RK                RP                  PERCENT\n");
+	printf("   HD                SW                --                  PERCENT\n");
 	if(tflg)
 		printf("   tin  tout");
 	if (bflg==0)
@@ -86,8 +83,13 @@ char *argv[];
 	}
 
 loop:
-	lseek(mf, (long)nl[0].value, 0);
-	read(mf, (char *)&s, sizeof s);
+	lseek(mf, (long)nl[0].n_value, 0);
+	if(read(mf, (char *)&s.busy, sizeof s.busy)!=sizeof s.busy) exit(1);
+	getstat(1,s.etime,sizeof s.etime);
+	getstat(2,s.numb,sizeof s.numb);
+	getstat(3,s.wds,sizeof s.wds);
+	getstat(4,&s.tin,sizeof s.tin);
+	getstat(5,&s.tout,sizeof s.tout);
 	for(i=0; i<40; i++) {
 		t = s.etime[i];
 		s.etime[i] -= s1.etime[i];
@@ -141,9 +143,9 @@ contin:
 
 /* usec per word for the various disks */
 double	xf[] = {
-	16.0,	/* RF */
-	11.1,	/* RK03/05 */
-	2.48,	/* RP06 */
+	0.0,	/* No calibrated hardware transfer time for emulated HD. */
+	0.0,	/* Swap disk. */
+	0.0,	/* Unused. */
 };
 
 stats(dn)
@@ -238,34 +240,42 @@ double t;
 	for (i=0; i<32; i++)
 		if (i&01)
 			sum += s.etime[i];
-	printf("%6.2f RF active\n", sum/t);
+	printf("%6.2f HD active\n", sum/t);
 	sum = 0;
 	for (i=0; i<32; i++)
 		if (i&02)
 			sum += s.etime[i];
-	printf("%6.2f RK active\n", sum/t);
+	printf("%6.2f SW active\n", sum/t);
 	sum = 0;
 	for (i=0; i<32; i++)
 		if (i&04)
 			sum += s.etime[i];
-	printf("%6.2f RP active\n", sum/t);
+	printf("%6.2f unused disk active\n", sum/t);
 }
 
 biostats()
 {
 register i;
 
-	lseek(mf,(long)nl[1].value, 0);
+	lseek(mf,(long)nl[6].n_value, 0);
 	read(mf, (char *)&io_info, sizeof(io_info));
 	printf("%D\t%D\t%D\t%D\n",
 	 io_info.nread-io_delta.nread, io_info.nreada-io_delta.nreada,
 	 io_info.ncache-io_delta.ncache, io_info.nwrite-io_delta.nwrite);
 
-	for(i=0; i<30; ) {
+	for(i=0; i<NBUF && i<30; ) {
 		printf("%D\t",(long)io_info.bufcount[i]-io_delta.bufcount[i]);
 		i++;
 		if (i % 10 == 0)
 			printf("\n");
 	}
 	io_delta = io_info;
+}
+
+/* Link order does not guarantee adjacency of the kernel's common symbols. */
+getstat(index, data, size)
+char *data;
+{
+ if(!nl[index].n_type || lseek(mf,(long)nl[index].n_value,0)<0 ||
+     read(mf,data,size)!=size) {printf("Cannot read kernel counters\n");exit(1);}
 }

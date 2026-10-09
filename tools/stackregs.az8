@@ -67,3 +67,131 @@ _clrgrow:
 	ld sp,r4
 	pop r4,@sp
 	ret
+! Pure loads can be replayed if their destination does not destroy an address.
+	.globl _loadgrow
+_loadgrow:
+	push @sp,r4
+	ld r4,sp
+	ld r0,4(sp)
+	sub sp,#8192
+	cp r0,#0
+	jr ne,.Lload1
+	ld r0,@sp
+	jr .Lloaddone
+.Lload1:
+	cp r0,#1
+	jr ne,.Lload2
+	ldb rl0,@sp
+	jr .Lloaddone
+.Lload2:
+	cp r0,#2
+	jr ne,.Lload3
+	ldl rr0,@sp
+	jr .Lloaddone
+.Lload3:
+	cp r0,#3
+	jr ne,.Lload4
+	ld r0,0(sp)
+	jr .Lloaddone
+.Lload4:
+	cp r0,#4
+	jr ne,.Lload5
+	ldb rl0,1(sp)
+	jr .Lloaddone
+.Lload5:
+	cp r0,#5
+	jr ne,.Lload6
+	ldl rr0,0(sp)
+	jr .Lloaddone
+.Lload6:
+	ld sp,#0xc000
+	cp r0,#6
+	jr ne,.Lload7
+	ld r0,0xc000
+	jr .Lloaddone
+.Lload7:
+	cp r0,#7
+	jr ne,.Lload8
+	ldb rl0,0xc001
+	jr .Lloaddone
+.Lload8:
+	ldl rr0,0xc000
+.Lloaddone:
+	ld r0,@sp
+	ld sp,r4
+	pop r4,@sp
+	ret
+	.globl _aliasgrow
+_aliasgrow:
+	ld r0,2(sp)
+	sub sp,#8192
+	ld r1,sp
+	cp r0,#0
+	jr ne,.Lalias1
+	ld r1,@r1
+	jr .Laliasbad
+.Lalias1:
+	cp r0,#1
+	jr ne,.Lalias2
+	ldb rh1,@r1
+	jr .Laliasbad
+.Lalias2:
+	cp r0,#2
+	jr ne,.Lalias3
+	ldl rr0,@r1
+	jr .Laliasbad
+.Lalias3:
+	cp r0,#3
+	jr ne,.Lalias4
+	clr r1
+	ld r1,sp(r1)
+	jr .Laliasbad
+.Lalias4:
+	cp r0,#4
+	jr ne,.Lalias5
+	ld r15,@r1
+	jr .Laliasbad
+.Lalias5:
+	ldl rr14,@r1
+.Laliasbad:
+	ld r1,#99
+	sc #1
+	.globl _baseload
+_baseload:
+	push @sp,r4
+	ld r4,sp
+	ld r0,4(sp)
+	sub sp,#8192
+	clr r1
+	cp r0,#0
+	jr ne,.Lbase1
+	ld r0,sp(#0)
+	jr .Lbasedone
+.Lbase1:
+	cp r0,#1
+	jr ne,.Lbase2
+	ldb rl0,sp(#1)
+	jr .Lbasedone
+.Lbase2:
+	cp r0,#2
+	jr ne,.Lbase3
+	ldl rr0,sp(#0)
+	jr .Lbasedone
+.Lbase3:
+	cp r0,#3
+	jr ne,.Lbase4
+	ld r0,sp(r1)
+	jr .Lbasedone
+.Lbase4:
+	cp r0,#4
+	jr ne,.Lbase5
+	ldb rl0,sp(r1)
+	jr .Lbasedone
+.Lbase5:
+	clr r2
+	ldl rr0,sp(r2)
+.Lbasedone:
+	ld r0,@sp
+	ld sp,r4
+	pop r4,@sp
+	ret

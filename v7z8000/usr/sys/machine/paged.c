@@ -10,6 +10,7 @@
 #include "../h/conf.h"
 #include "../h/text.h"
 #include "mmu.h"
+#include "../h/memmap.h"
 
 /*
  * Machine-dependent code for Z8000 kernel.
@@ -63,11 +64,7 @@ int iseg;
 
 int physmem;
 static int corelimit;
-struct memspace {
-	unsigned base[3];
-	unsigned size[3];
-};
-static struct memspace memory[NPROC];
+struct memspace memory[NPROC];
 
 frame_alloc()
 {
@@ -770,4 +767,21 @@ int *value;
 		xp->x_daddr = 0;
 	}
 	return(0);
+}
+
+/* Memory-device access uses the physical copy window, never a user mapping.
+ * Kernel offsets address NONSEG data space, including the current u-area.
+ */
+membyte(offset, kernel, value, writing)
+long offset;
+char *value;
+{
+ if(offset < 0 || (kernel ? offset >= 65536L :
+     offset >= (long)physmem*2048L)) return(-1);
+ if(kernel) {
+  if(writing) bcopy(value, (caddr_t)(unsigned)offset, 1);
+  else bcopy((caddr_t)(unsigned)offset, value, 1);
+ } else physcopy((unsigned)(offset/2048L), (unsigned)(offset%2048L),
+     value, 1, writing);
+ return(0);
 }

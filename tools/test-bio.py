@@ -12,13 +12,13 @@ def run(args,**kw):
     if r.returncode: sys.stdout.buffer.write(r.stdout+r.stderr);r.check_returncode()
     return r.stdout
 run(['make','-C',tools,'libv7.a','libc/crt0.b','sh','init','v7mkfs'])
-headers='#define time kernel_time\n'+''.join(f'#include "{kernel}/h/{h}.h"\n' for h in ['param','systm','dir','user','buf','conf','proc','seg'])
+headers='#define time kernel_time\n'+''.join(f'#include "{kernel}/h/{h}.h"\n' for h in ['param','systm','dir','user','buf','conf','proc','seg','memmap'])
 headers+='#undef time\n#undef u\nextern struct user u;\nextern char buffers[NBUF][BSIZE];\n'
 def body(p): return '\n'.join(l for l in p.read_text().splitlines() if not l.startswith('#include'))+'\n'
 main=(kernel/'sys/main.c').read_text()
 binit=main[main.index('binit()\n{'):main.index('struct buf buf[NBUF];')]
 paged=(kernel/'machine/paged.c').read_text()
-mapping=paged[paged.index('/* Physical frames'):paged.index('static struct memspace memory[NPROC];')+len('static struct memspace memory[NPROC];')]
+mapping=paged[paged.index('/* Physical frames'):paged.index('struct memspace memory[NPROC];')+len('struct memspace memory[NPROC];')]
 mapping+=paged[paged.index('/* Validate every covered'):paged.index('/* Grow from the actual')]
 mapping+=paged[paged.index('/* Opaque B_PHYS descriptor:'):paged.index('/* V7 core layout:')]
 (work/'cache.c').write_text(headers+mapping+body(kernel/'sys/bio.c')+body(kernel/'sys/physio.c')+body(kernel/'dev/hd.c')+binit+(tools/'biotest.c').read_text())

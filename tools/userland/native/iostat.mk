@@ -6,5 +6,6 @@ iostat: iostat.b
 iostat.b: /usr/src/cmd/iostat.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/iostat.c
 install: all
+	/bin/cp iostat /bin/iostat
 clean:
 	/bin/rm -f *.b iostat

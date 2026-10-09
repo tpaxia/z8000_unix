@@ -214,3 +214,19 @@ add_custom_target(test-object-formats
     COMMENT "Accepting s.out and rejecting obsolete executable formats"
     VERBATIM
 )
+
+add_custom_target(test-kernel-gaps
+    COMMAND python3 "${TOOLS_DIR}/test-kernel-gaps.py" "${B}"
+    DEPENDS kernel test_driver
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Testing panic disk flushing and native aggregate-return re-entry"
+    VERBATIM
+)
+
+add_custom_target(test-inspection
+    COMMAND python3 "${TOOLS_DIR}/test-inspection.py" "${B}"
+    DEPENDS kernel test_driver
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Building and testing V7 kernel inspection tools inside Unix"
+    VERBATIM
+)

@@ -104,6 +104,23 @@ char **argv;
 	pid = fork();
 	if (!pid) { rmwgrow(); _exit(99); }
 	check("unsafe RMW rejected", pid > 0 && wait(&status) == pid && (status & 0177) == SIGSEGV);
+	for (i=0; i<9; i++) {
+		pid = fork();
+		if (!pid) _exit(loadgrow(i));
+		check("load stack growth", pid > 0 && wait(&status) == pid && status == 0);
+		if (status) printf("pages: load case %d status %x\n", i, status);
+	}
+	for (i=0; i<6; i++) {
+		pid = fork();
+		if (!pid) { aliasgrow(i); _exit(99); }
+		check("load destroying address rejected", pid > 0 && wait(&status) == pid && (status & 0177) == SIGSEGV);
+	}
+	for (i=0; i<6; i++) {
+		pid = fork();
+		if (!pid) _exit(baseload(i));
+		check("base/index load growth", pid > 0 && wait(&status) == pid && status == 0);
+		if (status) printf("pages: base case %d status %x\n", i, status);
+	}
 	printf("pages: %s\n", failed ? "FAILED" : "passed");
 	return(failed);
 }

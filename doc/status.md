@@ -16,12 +16,20 @@ shell pipelines, split I/D, floating point, memory faults/stack growth, shared
 text, low-memory swapping and native C compilation. Both environments can boot
 the same ROM and bootable disk; their filesystem and user executable formats are unchanged.
 
+Kernel inspection uses root-only physical/kernel memory devices and native
+V7 ps, pstat, dmesg and iostat, with paged process-image adaptations.
+
 Kernel coverage includes fork/exec/wait, pipes, signals and user preemption,
 V7 filesystem and TTY services, ordinary buffer-cache operation, raw I/O,
 resource maps and RAM sizing, shared read-only text, conservative stack growth,
 whole-process swapping with a separate V7 swapper, core dumps, ptrace requests
 0–8, exec credentials, accounting, profiling and privileged residency locking.
 Exec arguments use V7 swap-backed staging; swap is required even at boot.
+
+Aggregate returns use caller-owned frame storage; affected callers/callees must
+be rebuilt together. Native combined/split tests cover signal re-entry. Panic
+flush tests cover saved-disk contents and controller failures. Stack growth also
+replays plain loads whose destinations preserve all address registers.
 
 The native two-pass compiler and optimizer have passed two-generation
 convergence. Native make, ar, yacc, compiler support tools and libc have been
@@ -40,13 +48,12 @@ See [native development](toolchain/native-development.md) for scope and
   and their account/startup configuration are not integrated.
 - PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
   remain unported. Some original games are distributed without sources.
-  Adb needs its Z8000 machine layer; ps/pstat/dmesg/iostat need memory-device
-  access and kernel-layout review. Device/site-dependent programs are built
+  Adb needs its Z8000 machine layer; kernel-dump inspection remains unported. Device/site-dependent programs are built
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
   and install inside Unix; the resulting disk boots and runs native C compilation.
-  On `work/native-asz8k`, s.out is now the sole object/executable
+  s.out is now the sole object/executable
   format. The shared host/native assembler and linker build the kernel,
   standalone bootloader, bootstrap tools and default native development image.
   ROM, trap, software EPU and disk-sector artifacts are raw images linked from
@@ -68,8 +75,9 @@ See [native development](toolchain/native-development.md) for scope and
 - Fault restart accepts a conservative instruction whitelist. Memory sections
   need contiguous physical extents; arbitrary instruction restart and scattered
   allocation are not implemented.
-- SEG user execution, physical/kernel memory-device access, an active
-  multiplexor and panic-specific buffer flushing are not implemented.
+- SEG user execution and an active multiplexor are not implemented. Panic uses bounded polled buffer/metadata
+  flushing; locked/busy state is skipped and errors/timeouts can leave writes
+  incomplete.
 - Single-stepping requires hardware support; the current machine returns EIO
   for ptrace request 9. Software stepping is deliberately outside the plan.
 

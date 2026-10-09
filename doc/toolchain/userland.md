@@ -65,12 +65,17 @@ with learn's C `start()`. Libc supplies mount, umount and dup2 interfaces.
 Compiler fixes cover returned-structure member access and arguments, union
 initialization, V7 pointer/integer bitwise assignment, unsigned integer
 typedefs, long compound operations and private frame-label names. These fixes
-preserve the affected command sources. Structure returns still use the
-[existing static-result ABI](structure-return-abi.md).
+preserve the affected command sources. Structure returns use
+[caller-owned result storage](structure-return-abi.md); affected callers and
+callees require a matching rebuild.
 
 The kernel has 64 in-core inode entries and 64 open-file entries so the original
 spell pipeline can run. Process capacity remains 16. These are configuration
 sizes; the V7 file and inode algorithms are unchanged.
+
+Kernel inspection tools `ps`, `pstat`, `dmesg` and `iostat` build and install
+natively. Their memory-device and live-kernel contracts are described in
+[devices and I/O](../kernel/devices-and-io.md). `ps k` remains unported.
 
 ## Remaining machine work
 
@@ -80,7 +85,7 @@ sizes; the V7 file and inode algorithms are unchanged.
 | f77 | Original backend emits PDP-11 code and depends on the Ritchie compiler's second pass. It needs a Z8000 backend and runtime integration. The F77/I77 runtime libraries build and have C-driven runtime checks. |
 | chess | Move generation and control contain PDP-11 assembly and need porting. |
 | adb | C sources link, but its disassembler, register/core layout and breakpoint operations are PDP-11-specific. It is not installed. |
-| ps, pstat, dmesg, iostat | C sources link. Memory-device access and kernel-layout review remain; these programs are not installed. |
+
 | init/getty/login | Original init is installed as `/etc/init.v7`; boot still uses console init. Multiuser startup and account/device configuration remain. |
 | UUCP, tape/printer tools and device plotting | Built, but physical-device and site configuration have not been exercised. |
 

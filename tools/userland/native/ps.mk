@@ -6,5 +6,6 @@ ps: ps.b
 ps.b: /usr/src/cmd/ps.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/ps.c
 install: all
+	/bin/cp ps /bin/ps
 clean:
 	/bin/rm -f *.b ps

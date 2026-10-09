@@ -16,7 +16,7 @@
  *   Major 1: console alias (spare)
  *   Major 2: TTY (alias to console)
  *   Major 3: Raw IDE disk (same minors as block major 1)
- *   Major 4: Memory special file (only minor 2, /dev/null)
+ *   Major 4: Memory: /dev/mem, /dev/kmem and /dev/null
  */
 
 /* RAM disk driver */
@@ -78,13 +78,34 @@ devintr(vector)
 	consrint();
 }
 
+/* No interrupt enable, scheduler entry or console processing during panic. */
+panicpoll()
+{
+	hdintr();
+}
+
 clkstart()
 {
 	spl0();
 }
 
-/* Used for early kernel output as well as the console TTY driver. */
+char *msgbufp = msgbuf;
+
+/* V7 kl.c message ring; machine-specific output remains below. */
 putchar(c)
 {
-	outb(0x00F0, c);
+	int s;
+	if(c != 0 && c != '\r' && c != 0177) {
+		s=spl7();
+		*msgbufp++=c;
+		if(msgbufp >= &msgbuf[MSGBUFS]) msgbufp=msgbuf;
+		splx(s);
+	}
+	consputc(c);
+}
+
+/* TTY transmission bypasses the kernel diagnostic ring, as in V7 kl.c. */
+consputc(c)
+{
+ outb(0x00F0, c);
 }

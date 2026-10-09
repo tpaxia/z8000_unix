@@ -69,9 +69,9 @@ kernel(src,trap,dst) char *src,*trap,*dst;
     for(n=0;n<512;n++)buf[n]=0;
     n=fread(buf,1,512,t); c=getc(t);
     if(n==0||c!=EOF||ferror(t))fail("trap size"); finish(t);
-    putword(head+12,0); putquad(head+14,0x1f0L);
+    putquad(head+14,0x1f0L);
     g=output(dst); fwrite(head,1,40,g); fwrite(buf,1,512,g);
-    copy(f,g,text+data-512); finish(f); finish(g);
+    copy(f,g,text+data-512+word(head+12)); finish(f); finish(g);
 }
 sector(fd,n) int fd; long n;
 { if(lseek(fd,n*512L,0)<0||read(fd,buf,512)!=512)fail("read disk sector"); }

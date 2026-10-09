@@ -53,6 +53,10 @@ Preserve the saved-context, syscall, signal and exec contracts in
 127 and aliases of the current kernel stack. Account for those mappings when
 choosing memory layout.
 
+Supply non-sleeping `panicpoll()` for device completion with interrupts masked,
+and a CPU `panichalt()` that keeps them disabled; see
+[panic flushing](../kernel/devices-and-io.md#panic-time-flushing).
+
 ## MMU and memory
 
 The existing kernel expects NONSEG C, a fixed u-area/system-stack window at
@@ -81,8 +85,9 @@ buffer-cache and filesystem policy. Drivers must satisfy completion, error and
 residual-count contracts; raw I/O uses MMU validation and pinning.
 
 See [devices and I/O](../kernel/devices-and-io.md). Install matching device nodes
-in the filesystem prototype/image builder, including `/dev/console`, `/dev/tty`
-and `/dev/null`. Character/block major numbers are configuration choices.
+in the filesystem prototype/image builder, including `/dev/console`, `/dev/tty`,
+`/dev/null`, and root-only `/dev/mem`, `/dev/kmem` and `/dev/swap`. Supply
+`membyte()` for physical RAM/kernel-data access; see the memory-device contract. Character/block major numbers are configuration choices.
 Supply usable swap before the first exec: original V7 argument staging reserves
 ten blocks even at boot. Root and swap must refer to the intended devices.
 

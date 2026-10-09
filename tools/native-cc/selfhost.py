@@ -111,6 +111,41 @@ def setup():
         (HERE / report).unlink(missing_ok=True)
 
 
+def refresh_back():
+    """Reuse a completed front-end trial while rebuilding both back ends."""
+    records = json.loads((HERE/'results.json').read_text())
+    if len(records) != len(plans()):
+        raise SystemExit('Finish the current trial before refreshing its back end')
+    fs = Filesystem(HERE/'hd.img')
+    files = {}; modes = {}
+    def walk(number, path):
+        offset = ((number+15)//8)*512 + ((number+15)%8)*64
+        permissions = int.from_bytes(fs.disk[offset:offset+2], 'big')
+        if permissions & 0o170000 == 0o040000:
+            data = fs.data(number)
+            for i in range(0,len(data),16):
+                child = int.from_bytes(data[i:i+2], 'big')
+                name = data[i+2:i+16].split(b'\0')[0].decode()
+                if child and name not in ('.','..'):
+                    walk(child, path+'/'+name if path else name)
+        elif permissions & 0o170000 == 0o100000:
+            destination = HERE/'refresh-tree'/path
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            destination.write_bytes(fs.data(number))
+            files[path]=destination; modes[path]=permissions & 0o777
+    walk(2,'')
+    for name in ('manifest','macdefs','mac2defs','mfile1','mfile2','common'):
+        files['usr/src/pcc/'+name]=PASSES/name
+    for name in SOURCES['back']:
+        files['usr/src/pcc/'+name+'.c']=PASSES/(name+'.c')
+    image(files,HERE/'hd.img',blocks=24000,modes=modes)
+    retry={f's{stage}-{name}' for stage in (1,2) for name in SOURCES['back']}
+    retry.update(f's{stage}-link-back' for stage in (1,2))
+    retry.update(f's{stage}-test-{name}' for stage in (1,2) for name in CASES)
+    (HERE/'results.json').write_text(json.dumps([r for r in records if r['step'] not in retry],indent=2)+'\n')
+    (HERE/'convergence.json').unlink(missing_ok=True)
+
+
 def summarize():
     binaries = {'/lib/front': PASSES / 'target-front/front',
                 '/lib/back': PASSES / 'target-back/back', '/lib/oz8': WORK / 'oz8',
@@ -160,6 +195,8 @@ def summarize():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--setup', action='store_true', help='create a fresh trial disk and reset results')
+    parser.add_argument('--refresh-back', action='store_true',
+                        help='refresh back-end sources and rerun both generations after a completed trial')
     parser.add_argument('--limit', type=int, help='maximum additional build steps')
     parser.add_argument('--summary', action='store_true', help='summarize completed steps without running more')
     args = parser.parse_args()
@@ -168,11 +205,14 @@ def main():
         return
     if args.setup:
         setup()
+    if args.refresh_back:
+        refresh_back()
     records = json.loads((HERE / 'results.json').read_text())
     driver = HERE / 'host/test_driver'
     if not driver.exists():
         driver = SYS / 'test_driver'
-    pending = list(enumerate(plans()))[len(records):]
+    completed = {record['step'] for record in records}
+    pending = [(i, step) for i, step in enumerate(plans()) if step[0] not in completed]
     if args.limit is not None:
         pending = pending[:args.limit]
     for index, (name, directory, _) in pending:

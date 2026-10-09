@@ -252,6 +252,13 @@ _idle:
 _waitloc:
 	ret
 
+! Panic never admits interrupts or resumes process execution.
+	.globl _panichalt
+_panichalt:
+	di vi,nvi
+	halt
+	jr _panichalt
+
 ! =============================================================================
 ! save(label) -- Save context, return 0
 ! int save(label_t label);

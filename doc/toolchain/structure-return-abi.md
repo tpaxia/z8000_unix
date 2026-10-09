@@ -1,13 +1,37 @@
-# Structure-return ABI: PCC, the Z8000 port, and ZEUS
+# Structure-return ABI
 
-Status: proposed ABI change; not implemented. See [current ABI](abi.md).
+Current Z8000 PCC uses caller-owned aggregate-return storage. See [current ABI](abi.md).
 
-Date: 2026-10-05
+## Calling convention
 
-## Finding
+A structure/union caller reserves a word-aligned temporary in its frame, pushes
+ordinary arguments right-to-left, then pushes the temporary's address as a hidden
+first argument. The callee finds that address at `4(r13)` and its ordinary
+arguments at `6(r13)` onward. It copies the result there and returns the address
+in R0. Argument cleanup includes the hidden pointer. Scalar calls are unchanged.
 
-The original Motorola 68000 PCC backend, our Z8000 PCC port, and the inspected
-ZEUS 3.21 compiler use statically allocated aggregate-return storage. A function
+Each live result has distinct frame storage, so another invocation, including
+a signal handler, cannot overwrite it. `gencall()` allocates through PCC's
+`freetemp()`; `bfcode()` shifts aggregate-function parameters and `efcode()`
+copies into the supplied destination. The hidden-pointer push preserves R8
+with `ex r8,@sp`, including indirect callees held in that register.
+Temporary allocation returns `OFFSZ` and uses long arithmetic for bit offsets;
+a native 16-bit `int` cannot represent offsets beyond 4 KiB.
+
+This changes the aggregate-return ABI. Rebuild affected callers and callees,
+including libraries, with matching compiler passes. s.out does not encode the
+calling-convention revision and cannot detect mixed old/new objects. Historical
+ZEUS aggregate callees require explicit adapters; their convention is different.
+
+## Historical comparison
+
+The following observations describe the compiler implementations inspected on
+2026-10-05, before the current Z8000 aggregate-return change.
+
+### Static result storage
+
+The inspected Motorola 68000 PCC backend, earlier Z8000 backend, and
+ZEUS 3.21 compiler used statically allocated aggregate-return storage. A function
 returning a structure or union copies its result into a labelled buffer and
 returns that buffer's address. Invocations of the same function share the
 buffer.
@@ -18,18 +42,16 @@ finishes consuming the result. Ordinary recursive calls do not by themselves
 establish this failure; they require separate tests for result lifetimes and
 expression evaluation.
 
-The limitation was inherited by our port. The recent aggregate-copy repairs
-fixed Z8000 instruction generation and copy lengths, but did not change the
-static-buffer calling convention.
+The port previously inherited this limitation. Its current caller-owned
+storage replaces the static-buffer convention.
 
 ## PCC source evidence
 
 In `PCC-z8000/68000/c68/code.c`, `efcode()` allocates a labelled `.bss` area,
-copies the aggregate into it, and returns its address in D0. In
-`PCC-z8000/z8000/cz8/code.c`, `efcode()` performs the corresponding operation
-using R0 for the returned address. The inspected working compiler repository
-was `/Users/paxia/Projects/PCC`, revision `ff47624`; the Unix project's separate
-compiler checkout should be checked when integrating any ABI change.
+copies the aggregate into it, and returns its address in D0. The earlier Z8000 backend performed the corresponding operation using R0
+for the returned address. The separate working compiler repository inspected
+at that time was `/Users/paxia/Projects/PCC`, revision `ff47624`. Current source
+in the Unix project's PCC submodule implements the convention above.
 
 Ritchie's November 1978 [Recent Changes to C](https://cm-bell-labs.github.io/who/dmr/cchanges.pdf)
 already describes structure-return corruption under interrupt re-entry in the
@@ -107,7 +129,7 @@ A complete segmented argument/register convention was not reconstructed.
 
 ### Other observed conventions
 
-| Item | ZEUS nonsegmented evidence | Our Z8000 PCC port |
+| Item | ZEUS nonsegmented evidence | Z8000 PCC before this ABI change |
 | --- | --- | --- |
 | Word/pointer result | R2 | R0 |
 | Leading word arguments | Register arguments R7, R6, etc. in inspected compiler-executable functions | Stack arguments |
@@ -120,48 +142,33 @@ machine code. Exhaustive argument allocation, stack overflow arguments,
 variadic calls, floating arguments, and segmented conventions remain to be
 verified with generated-code probes.
 
-## Proposed repair for our PCC port
-
-Use a hidden pointer to caller-owned aggregate-return storage:
-
-1. The caller reserves an aligned structure/union-sized temporary in its frame.
-2. It pushes ordinary arguments right-to-left, then the result pointer as a
-   hidden first argument.
-3. After the callee saves R13, the hidden pointer is at `4(r13)` and ordinary
-   arguments begin at `6(r13)`.
-4. The callee copies the returned aggregate to that destination and returns
-   its address in R0.
-5. The caller removes all arguments, including the hidden pointer. Its result
-   temporary remains valid for the surrounding expression.
-
-Implementation points are `genscall()`/`gencall()` in `local2.c`, parameter
-allocation in `bfcode()`, and aggregate return copying in `efcode()` in `code.c`.
-Direct and indirect calls must agree. Stack accounting and temporary lifetimes
-must also cover nested calls and aggregate arguments.
-
-Initially use a distinct temporary for each simultaneously live result.
-Passing the final assignment destination directly, or forwarding an incoming
-return buffer to another function, can be later optimizations after aliasing and
-evaluation-order checks.
-
-This is an **aggregate-return ABI change**. Affected callers and callees,
-including relevant V7 library functions and hand-written assembly, must be
-rebuilt or adapted together. Scalar-returning functions retain their convention.
-
 ## Cost and verification
 
-The conservative implementation adds a two-byte hidden argument, argument
-setup/cleanup instructions, and stack storage for live aggregate results. It
-retains the callee's aggregate copy. Safe destination forwarding can later
-remove redundant copies. Cycle costs have not been benchmarked.
+Calls add a two-byte hidden argument, pointer setup/cleanup instructions, and
+frame storage for live aggregate results. The callee still copies the aggregate.
+Destination forwarding remains a possible optimization; it is not implemented.
 
-Before integration, test small and large structures, unions, recursion,
-multiple aggregate calls in an expression, aggregate arguments, indirect calls,
-register pressure, and deliberate re-entry during the return copy. Run the
-existing compiler suites and rebuild affected V7 components. Native V7 signal
-behavior needs verification in addition to emulator tests.
+The compiler regression covers small and large structures, unions, recursion,
+multiple live results, nested aggregate arguments and indirect calls. A 5 KiB
+return probe checks every word after direct and indirect calls, including native
+compilation and execution. Native
+`aggregate-signal.c` re-enters the same aggregate-returning function from signal
+handlers while its caller checks every returned word, in combined and split I/D.
+The test compiles it inside Unix, then uses native sed to split its 512-byte
+return copy into two halves with a self-signal hook between them. Nested hooks
+are suppressed. This forces re-entry during the copy, rather than relying on
+alarm timing; it does not alter production compiler output. In this probe the prior static-buffer
+compiler produced 8,192 corrupted words across 66 signal re-entries; the current
+compiler produced zero in both layouts.
 
-The recommended timing is before broad userland rebuilding, so the ABI changes
-once while its users can be rebuilt consistently. ZEUS compatibility, if needed,
-would require explicit adapters or retention of its old aggregate-return ABI;
-its historical convention is not re-entrant either.
+```sh
+python3 PCC-z8000/z8000/test/regress/run.py --strict
+python3 PCC-z8000/z8000/test/regress/run.py --strict --compact
+python3 tools/native-cc/build.py
+python3 tools/test-kernel-gaps.py
+python3 tools/native-cc/selfhost.py --setup
+```
+
+The native test requires the kernel/test driver and shared object utilities to
+be built; see [testing](../development/testing.md). The self-host runner rebuilds
+two compiler generations and compares every object and executable.
