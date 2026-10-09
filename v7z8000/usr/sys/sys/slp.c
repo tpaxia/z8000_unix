@@ -186,6 +186,9 @@ sched()
 	register struct proc *rp, *p;
 	register outage, inage;
 	int maxsize, blocked;
+	time_t turn;
+
+	turn = time-1;
 
 	/*
 	 * find user to swap in;
@@ -198,6 +201,24 @@ loop:
 	if (corework())
 		goto loop;
 	spl6();
+	/* Ordinary sleep wakeups must not cancel the whole resident interval. */
+	if (time == turn) {
+		runin++;
+		sleep((caddr_t)&runin, PSWP);
+		goto loop;
+	}
+	/* A sleeper can wake proc 0 immediately after a fast swap-in.
+	 * Until the loaded image gets its first turn, another background
+	 * transfer would let alarm sleepers keep proc 0 ahead of user work.
+	 * Explicit allocation requests above still have to be serviced.
+	 */
+	for (rp = &proc[1]; rp < &proc[NPROC]; rp++)
+		if (rp->p_stat==SRUN &&
+		    (rp->p_flag&(SLOAD|SREADY))==(SLOAD|SREADY)) {
+			runin++;
+			sleep((caddr_t)&runin, PSWP);
+			goto loop;
+		}
 	outage = -20000;
 	blocked = 0;
 	for (rp = &proc[0]; rp < &proc[NPROC]; rp++)
@@ -238,6 +259,7 @@ loop:
 		 * user work a turn before the next background swap-in pass.
 		 */
 		spl6();
+		turn = time;
 		runin++;
 		sleep((caddr_t)&runin, PSWP);
 		goto loop;

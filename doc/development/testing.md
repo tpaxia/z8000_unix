@@ -15,8 +15,11 @@ python3 tools/export-headers.py --check
 
 Use the suites relevant to a change: ABI/libc changes need libc, ABI and native
 compiler checks; memory/scheduler work needs memory, faults, signals, exec and
-tracing; drivers need boot, TTY or buffered/raw I/O as applicable. Native
-convergence and sustained userland tests have separate, longer procedures in
+tracing; drivers need boot, TTY or buffered/raw I/O as applicable.
+Runtime startup and sustained-load checks are described in
+[multiuser startup](multiuser.md#compilation-and-memory-pressure-checks), including
+the 512 KiB combined load trial for context restoration and swapper progress.
+Native convergence and sustained userland tests have separate, longer procedures in
 [native rebuild](native-rebuild.md). `test-kernel-gaps` requires the native compiler seed from
 `python3 tools/native-cc/build.py`. It checks native combined/split aggregate
 returns with forced signal re-entry during the return copy, plus polled panic

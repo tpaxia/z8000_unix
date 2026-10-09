@@ -31,6 +31,12 @@ physical = (frame << 11) | pg_off
 
 The u-area occupies virtual 0xF000-0xFFFF (4KB = pages 30-31 of segment 1). The kernel stack grows down from 0xFFFE within these pages. `resume()` writes UPAGE to remap these two pages to the target process's physical frames, swapping the entire u-area + kernel stack with a single I/O port write.
 
+The machine `save()` label retains the caller's registers, frame pointer,
+return address and stack pointer immediately after CALL returns. The saved SP
+still points at the `save()` argument: PCC's caller removes that word after
+both the initial return and `resume()`. Advancing the saved SP past the argument
+would perform that cleanup twice and expose live kernel locals to later calls.
+
 Process 0's u-area is at frame 62 (identity-mapped). Other processes allocate
 u-areas and user banks from the resource map starting at physical frame 96.
 
@@ -305,13 +311,15 @@ does not wait on a text lock whose owner may need a reservation from process 0;
 locked incoming images use a timed runin retry instead of waiting indefinitely
 for another runout arrival. Raw I/O and explicit process locks exclude victims.
 
-Two progress safeguards accommodate immediate-completion controllers and the
-emulator's accelerated clock. SREADY protects a new resident image until swtch
-first dispatches it, and sched sleeps on runin after successful swap-in so
-resident user work and tracing handoffs can progress. The clock or ordinary
-sleep/free events wake it. These are explicit additions to original V7, whose
-swap loop assumes useful execution opportunities during physical disk waits.
-Without them the contention tests exposed repeated eviction without progress.
+Progress safeguards accommodate immediate-completion controllers and CPU-bound
+PIO transfers. SREADY protects a new resident image until swtch first dispatches
+it. Before another background swap-in, sched waits for newly resident runnable
+images to receive that turn and for the clock second to change after the last
+successful swap-in. Ordinary sleep/free events can wake runin, but do not cancel
+these checks. Explicit extent reservations are still serviced first, so a waiting
+allocator can obtain memory. This lets resident user work and tracing handoffs
+progress despite frequent alarm wakeups. These are additions to original V7,
+whose swap loop gets execution opportunities during physical disk waits.
 
 This remains whole-process swapping, not demand paging. Contiguous-section
 fragmentation and temporary resize reservations can cause ENOMEM; exhausted

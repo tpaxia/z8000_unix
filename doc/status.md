@@ -49,7 +49,9 @@ See [native development](toolchain/native-development.md) for scope and
 Runtime disks use unchanged V7 init/getty/login, update and cron, with account
 and startup files for the emulated machine. Native login tests cover password
 changes, setuid su, credentials, terminal ownership, getty respawn and session
-accounting. Build fixtures retain console init. See
+accounting. The combined load trial passes at 512 KiB and 8 MiB: four private
+48,000-byte memory holders, native split/combined builds, pipes, daemons,
+logout/relogin and persistence after reboot. Build fixtures retain console init. See
 [multiuser startup](development/multiuser.md).
 
 ## Limitations

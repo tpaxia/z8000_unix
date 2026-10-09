@@ -79,3 +79,33 @@ password changes and relogin, setuid su, terminal closure/ownership/process
 groups, utmp/wtmp, and one instance of each daemon. It also checks SIGHUP
 shutdown and the single-user/multiuser restart sequence. It uses a test account only
 in disposable test images; that account is not installed in the runtime disk.
+
+## Compilation and memory-pressure checks
+
+The load test compiles its probes inside Unix, then runs four processes holding
+48,000 bytes each alongside native split/combined C builds, a shell pipeline,
+cron and update. It checks memory contents, credentials, logout/relogin, session
+accounting and filesystem/executable persistence after a fresh kernel boot.
+Console commands wait for shell prompts to avoid overflowing TTY input under load.
+
+```sh
+python3 tools/test-multiuser-load.py --ram 8192
+python3 tools/test-multiuser-load.py
+```
+
+Both the 8 MiB baseline and 512 KiB pressure run pass. The pressure run confirms
+nonresident processes and swap reads/writes; all four holders verify their
+private contents after the builds. Their readiness is signalled through a pipe
+before the next fork, and they wake every 30 seconds while waiting for release.
+The compiler runs inside Unix; Python supplies console input and checks saved
+filesystem contents. Live V7 `ps` command strings can become stale while images
+are being swapped, so daemon checks compare PID, UID and init parentage during
+pressure with the quiet post-load listing.
+
+The kernel's context-save and swapper progress requirements are documented in
+[memory and swapping](../kernel/memory-and-swapping.md). The load test exercises
+both alarm-driven kernel unwinding and execution opportunities between transfers.
+
+Logs, process listings and saved disks are under
+`tests/build/multiuser-load/ram-<KiB>/`. The optional `--prepared <disk>` reuses a
+disk containing the natively compiled probes to repeat the runtime phase.

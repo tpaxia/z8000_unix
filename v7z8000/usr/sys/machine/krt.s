@@ -324,9 +324,12 @@ _save:
 	! Save return address (pushed by calr)
 	ld	r0, 2(r13)		! r0 = return address
 	ld	18(r1), r0		! label[9] = return address
-	! Save caller's SP: r13 + 6 (skip pushed r13 + ret addr + argument)
+	! Resume after CALL, before the caller removes save()'s argument.
+	! Skip pushed R13 and the return address; leave the argument on stack.
+	! Skipping it here would make the caller's cleanup pop it twice and
+	! let subsequent calls overwrite the caller's live local variables.
 	ld	r0, r13
-	add	r0, #6
+	add	r0, #4
 	ld	20(r1), r0		! label[10] = caller's SP
 	clr	r0			! return 0
 	ld	sp, r13
