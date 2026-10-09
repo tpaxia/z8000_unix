@@ -110,7 +110,14 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--setup',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--setup',action='store_true')
+    parser.add_argument('--native',action='store_true',help='test the existing native-built userland disk')
+    args=parser.parse_args()
+    global WORK
+    if args.native:
+        if args.setup:parser.error('stage the native disk with native.py --refresh')
+        WORK=ROOT/'tests/build/userland-native-sout'
     if args.setup:setup()
     with (WORK/'smoke.log').open('wb') as log:
         r=subprocess.run(list(map(str,[SYS/'test_driver','-c','60000000000','-d',WORK/'hd.img','-o',WORK/'next.img',

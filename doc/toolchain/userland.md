@@ -10,10 +10,9 @@ in use. The separate essential-userland workload builds 45 unchanged commands
 inside Unix.
 
 Run the [full native rebuild](../development/native-rebuild.md#full-native-userland)
-to produce `tests/build/userland-native-sout/hd.img`. The current full smoke
-sequence stops at the archive/native
-compilation/runtime-probe section, also with the unmodified script; standalone
-checks of those steps pass after a fresh boot. The numeric-port suite passes.
+to produce `tests/build/userland-native-sout/hd.img`. The full runtime smoke
+suite passes, including factor/primes and the syscall permissions probe.
+The dedicated numeric-port suite also passes.
 `summary.json` records output hashes and segment sizes;
 the guest makefiles list sources and native generation steps. The native
 rebuild procedure records stage and output counts and the runtime proof.

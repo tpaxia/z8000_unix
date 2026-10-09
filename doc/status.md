@@ -60,11 +60,6 @@ logout/relogin and persistence after reboot. Build fixtures retain console init.
   remain unported. Some original games are distributed without sources.
   Device/site-dependent programs are built
   but not all have been exercised.
-- The current full userland smoke sequence stops in its archive/native
-  compilation/runtime-probe section. The unmodified smoke script reproduces it
-  at both accelerated and normal clock rates; those steps pass individually
-  after a fresh boot. The factor/primes tests pass separately. See
-  [native rebuild](development/native-rebuild.md#full-native-userland).
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
   and install inside Unix; the resulting disk boots and runs native C compilation.
@@ -103,7 +98,6 @@ logout/relogin and persistence after reboot. Build fixtures retain console init.
 
 ## Next work
 
-1. Resolve the full userland smoke sequence failure.
-2. Complete the remaining machine-dependent userland ports and device/site
+1. Complete the remaining machine-dependent userland ports and device/site
    integration described in the userland inventory.
-3. Bring up physical machines through the documented configuration interfaces.
+2. Bring up physical machines through the documented configuration interfaces.

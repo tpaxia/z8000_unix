@@ -25,7 +25,9 @@ main()
  fd=open("/dev/null",2);
  if(fd<0 || read(fd,&byte,1)!=0 || write(fd,"abc",3)!=3 ||
     read(fd,&byte,1)!=0 || close(fd)<0) return(20);
- if(mknod("/tmp/nomem",0020600,4<<8)<0) return(21);
+ /* Memory minors 0, 1 and 2 are implemented; minor 3 must be rejected. */
+ unlink("/tmp/nomem");
+ if(mknod("/tmp/nomem",0020600,(4<<8)|3)<0) return(21);
  if(open("/tmp/nomem",0)!=-1 || errno!=ENXIO) return(22);
  if(unlink("/tmp/nomem")<0) return(23);
  base=sbrk(0);

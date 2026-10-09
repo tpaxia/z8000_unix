@@ -107,11 +107,18 @@ terminal tables. The full plan has 197 build/install stages and validates
 195 built and installed outputs. The runtime smoke suite exercises the combined
 image; `smoke.log` records its result and memory-access counters.
 
-The current full smoke sequence stops in the archive/native compilation/runtime
-probe section after `nm obj.b`. The unmodified script reproduces the failure at
-both clock rates, while ar, compilation and the runtime probe pass individually
-after a fresh boot. This remains unresolved; do not count the full smoke run as
-passing. Factor/primes have the separate successful checks below.
+The full smoke suite passes, including factor/primes, archive and native
+compilation probes, syscall permissions, libraries, spelling and filesystem
+checks, with zero absent/unmapped accesses, protection faults or stack warnings.
+The permissions probe checks unsupported memory minor 3; minors 0 and 1 are
+the implemented root-only physical and kernel memory devices.
+
+To restage current test inputs and rerun the suite on an existing native disk:
+
+```sh
+python3 tools/userland/native.py --refresh --limit 0
+python3 tools/userland/test.py --native
+```
 
 The seed uses the preceding native environment and essential commands. The
 host runner stages sources and data, saves the disk between packages and
