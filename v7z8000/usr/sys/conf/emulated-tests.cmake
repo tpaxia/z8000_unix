@@ -230,3 +230,12 @@ add_custom_target(test-inspection
     COMMENT "Building and testing V7 kernel inspection tools inside Unix"
     VERBATIM
 )
+
+add_custom_target(test-adb
+    COMMAND python3 "${TOOLS_DIR}/test-adb.py" "${B}"
+    COMMAND python3 "${TOOLS_DIR}/test-adb-runtime.py" "${B}"
+    COMMAND python3 "${TOOLS_DIR}/test-adb-decoder.py" --native --build "${B}"
+    DEPENDS kernel test_driver
+    USES_TERMINAL
+    COMMENT "Building native adb/savecore and testing tracing and kernel disk dumps"
+)

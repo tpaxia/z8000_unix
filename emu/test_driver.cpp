@@ -72,6 +72,7 @@ public:
     unsigned unmapped_count = 0;
     unsigned protection_count = 0, warning_count = 0, shared_text_peak = 0;
     unsigned ram_frames() const { return m_ram_frames; }
+    unsigned upage() const { return m_pages[1][30]; }
 
     // First-word fetch is externally visible as bus status 1101 (manual 2.3.4).
     // These latches contain bus evidence, never a hidden CPU register snapshot.
@@ -429,9 +430,12 @@ public:
     u16 read_word(u16 addr, int mode) override {
         addr &= 0xFFFE;
         u16 val = 0xDEAD;
+        if (mode == 0 && addr == MM_UPAGE) return m_mmu->upage();
         if (mode == 0 && addr >= MM_FAULT && addr <= MM_PC)
             return m_mmu->fault_register(addr);
         if (mode == 0 && addr == MM_SWAPSIZE) return m_swap.size()/512;
+        if (mode == 0 && addr == MM_DISKSIZE)
+            return m_hd.size()/512 > 65535 ? 65535 : m_hd.size()/512;
         if (mode == 0 && addr == 0x00BA)
             val = m_mmu->ram_frames();
         if (mode == 0 && addr == 0x01F0 && m_ata_active && !m_ata_writing) {

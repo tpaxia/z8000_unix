@@ -7,26 +7,7 @@
 
 
 
-/*	Layout of a.out file (fsym):
- *
- *	header of 8 words	magic number 405, 407, 410, 411
- *				text size	)
- *				data size	) in bytes but even
- *				bss size	)
- *				symbol table size
- *				entry point
- *				{unused}
- *				flag set if no relocation
- *
- *
- *	header:		0
- *	text:		16
- *	data:		16+textsize
- *	relocation:	16+textsize+datasize
- *	symbol table:	16+2*(textsize+datasize) or 16+textsize+datasize
- *
- */
-
+/* Executables and symbols use s.out; process cores use the public u-area. */
 
 #include <sys/param.h>
 #include <sys/dir.h>
@@ -63,34 +44,27 @@
 #define	SYMSIZ	100
 #define MAXSIG	20
 
-#define USERPS	2*(512-1)
-#define USERPC	2*(512-2)
-#define BPT	03
-#define FD	0200
-#define	SETTRC	0
-#define	RDUSER	2
-#define	RIUSER	1
-#define	WDUSER	5
-#define WIUSER	4
-#define	RUREGS	3
-#define	WUREGS	6
-#define	CONTIN	7
-#define	SINGLE	9
-#define	EXIT	8
-
-#define FROFF	(&(0->fpsr))
-#define FRLEN	25
-#define FRMAX	6
-
-#define	ps	-1
-#define	pc	-2
-#define	sp	-6
-#define	r5	-9
-#define	r4	-10
-#define	r3	-11
-#define	r2	-12
-#define	r1	-5
-#define	r0	-3
+#define USERREG ((int)(((struct user *)0)->u_regs))
+#define BPT 0x7fff
+#define SETTRC 0
+#define RDUSER 2
+#define RIUSER 1
+#define WDUSER 5
+#define WIUSER 4
+#define RUREGS 3
+#define WUREGS 6
+#define CONTIN 7
+#define SINGLE 9
+#define EXIT 8
+#define NREG 19
+#define CORESIZE (USIZE*32)
+/* Index zero is the parser's 'no register' sentinel. */
+#define ps (UREG_FCW+1)
+#define pc (UREG_PC+1)
+#define sp (UREG_SP+1)
+#define r5 14 /* Z8000 C frame pointer is R13 */
+#define r4 5
+#define REGADDR(r) (USERREG+2*((r)-1))
 
 #define MAXOFF	255
 #define MAXPOS	80
@@ -118,6 +92,7 @@ union {
 
 /* result type declarations */
 L_INT		inkdot();
+long lseek();
 SYMPTR		lookupsym();
 SYMPTR		symget();
 POS		get();

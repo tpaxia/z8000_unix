@@ -310,4 +310,5 @@ CHAR		c;
 
 		return(eqstr(s1,s3));
 	FI
+	return(FALSE);
 }

@@ -1,4 +1,4 @@
-all: libm libmp libln libplot libt300 libt300s libt4014 libt450 libvt0 libdbm libF77 libI77 lex ac accton ar at atrun basename cal calendar cat cb checkeq chgrp chmod chown clri cmp col comm cp cron crypt cu date dcheck dd deroff df diff diff3 diffh dmesg du dump dumpdir echo ed fgrep file find getty graph grep icheck init iostat join kill ln login look ls mail makekey mesg mkdir mkfs mknod mount mv ncheck newgrp nice nm od osh passwd pr prof ps pstat ptx pwd quot random restor rev rm rmdir sa size sleep sort sp spline split strip stty su sum sync tabs tail tc tee test time tk touch tr tsort tty umount uniq units update vpr wall wc who write yes arithmetic backgammon fish fortune hangman quiz wump make yacc bc egrep expr sed tar dc prep m4 ratfor learn eqn neqn tbl structure beautify spell spellin spellout enroll xget xsend lcount learntee vplot mkey inv hunt refer deliv awk tp adb lint2 lint1 nroff troff tab300-12 tab300 tab300s-12 tab300s tab37 tab450-12-8 tab450-12 tab450 tab832 taba1 tablp tabtn300 uucp uux uuxqt uucico uulog uuclean t300 t300s tek t450 sh
+all: libm libmp libln libplot libt300 libt300s libt4014 libt450 libvt0 libdbm libF77 libI77 lex ac accton ar at atrun basename cal calendar cat cb checkeq chgrp chmod chown clri cmp col comm cp cron crypt cu date dcheck dd deroff df diff diff3 diffh dmesg du dump dumpdir echo ed fgrep file find getty graph grep icheck init iostat join kill ln login look ls mail makekey mesg mkdir mkfs mknod mount mv ncheck newgrp nice nm od osh passwd pr prof ps pstat ptx pwd quot random restor rev rm rmdir sa size sleep sort sp spline split strip stty su sum sync tabs tail tc tee test time tk touch tr tsort tty umount uniq units update vpr wall wc who write yes arithmetic backgammon fish fortune hangman quiz wump make yacc bc egrep expr sed tar dc prep m4 ratfor learn eqn neqn tbl structure beautify spell spellin spellout enroll xget xsend lcount learntee vplot mkey inv hunt refer deliv awk tp adb savecore lint2 lint1 nroff troff tab300-12 tab300 tab300s-12 tab300s tab37 tab450-12-8 tab450-12 tab450 tab832 taba1 tablp tabtn300 uucp uux uuxqt uucico uulog uuclean t300 t300s tek t450 sh
 FORCE:
 libm:  FORCE
 	cd libm && /bin/make all
@@ -550,6 +550,7 @@ install: all
 	cd awk && /bin/make install
 	cd tp && /bin/make install
 	cd adb && /bin/make install
+	cd savecore && /bin/make install
 	cd lint2 && /bin/make install
 	cd lint1 && /bin/make install
 	cd nroff && /bin/make install
@@ -745,6 +746,7 @@ clean:
 	cd awk && /bin/make clean
 	cd tp && /bin/make clean
 	cd adb && /bin/make clean
+	cd savecore && /bin/make clean
 	cd lint2 && /bin/make clean
 	cd lint1 && /bin/make clean
 	cd nroff && /bin/make clean
@@ -772,3 +774,6 @@ clean:
 	cd tek && /bin/make clean
 	cd t450 && /bin/make clean
 	cd sh && /bin/make clean
+
+savecore: FORCE
+	cd savecore && /bin/make all

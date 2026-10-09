@@ -68,19 +68,22 @@ runpcs(runmode, execsig)
 #endif
 		stty(0,&usrtty);
 		ptrace(runmode,pid,userpc,execsig);
+		if(errno)error("cannot continue process");
 		bpwait(); chkerr(); readregs();
 
 		/*look for bkpt*/
 		IF signo==0 ANDF (bkpt=scanbkpt(endhdr[pc]-2))
 		THEN /*stopped at bkpt*/
 		     userpc=endhdr[pc]=bkpt->loc;
-		     IF bkpt->flag==BKPTEXEC
-			ORF ((bkpt->flag=BKPTEXEC, command(bkpt->comm,':')) ANDF --bkpt->count)
-		     THEN execbkpt(bkpt); execsig=0; loopcnt++;
-			  userpc=1;
-		     ELSE bkpt->count=bkpt->initcnt;
-			  rc=1;
-		     FI
+             /* Without hardware step, consume the breakpoint. Restoring
+              * its word and PC lets :c execute it normally, without stepping. */
+             ptrace(WIUSER,pid,bkpt->loc,bkpt->ins);
+             if(errno)error("cannot restore breakpoint instruction");
+             ptrace(WUREGS,pid,REGADDR(pc),bkpt->loc);
+             if(errno)error("cannot reset breakpoint PC");
+             bkpt->flag=0;rc=1;
+             command(bkpt->comm,':');
+
 		ELSE rc=0; execsig=signo; userpc=1;
 		FI
 	OD
@@ -118,20 +121,6 @@ setup()
 	FI
 }
 
-execbkpt(bkptr)
-BKPTR	bkptr;
-{	INT		bkptloc;
-#ifdef DEBUG
-	printf("exbkpt: %d\n",bkptr->count);
-#endif
-	bkptloc = bkptr->loc;
-	ptrace(WIUSER,pid,bkptloc,bkptr->ins);
-	stty(0,&usrtty);
-	ptrace(SINGLE,pid,bkptloc,0);
-	bpwait(); chkerr();
-	ptrace(WIUSER,pid,bkptloc,BPT);
-	bkptr->flag=BKPTSET;
-}
 
 
 doexec()
@@ -238,16 +227,15 @@ bpwait()
 
 readregs()
 {
-	/*get REG values from pcs*/
-	REG i;
-	FOR i=0; i<9; i++
-	DO endhdr[reglist[i].roffs] =
-		    ptrace(RUREGS, pid, 2*(512+reglist[i].roffs), 0);
-	OD
-
-	/* REALing poINT		*/
-	FOR i=FROFF; i<FRLEN+FROFF; i++
-	DO corhdr[i] = ptrace(RUREGS,pid,i,0); OD
+ int i;
+ POS *state;
+ for(i=1;i<=NREG;i++) {
+  endhdr[i]=ptrace(RUREGS,pid,REGADDR(i),0);
+  if(errno)error("cannot read Z8000 registers");
+ }
+ state=(POS *)((struct user *)corhdr)->u_fpe;
+ for(i=0;i<40;i++) {
+  state[i]=ptrace(RUREGS,pid,(int)((struct user *)0)->u_fpe+2*i,0);
+  if(errno)error("cannot read software EPU registers");
+ }
 }
-
-

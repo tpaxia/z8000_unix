@@ -19,12 +19,13 @@ BKPTR		bkpthead;
 
 CHAR		*lp;
 CHAR		lastc;
-POS		corhdr[512];
+POS		corhdr[CORESIZE];
 POS		*endhdr;
 
 INT		signo;
 L_INT		dot;
 INT		pid;
+INT kernelcore;
 L_INT		cntval;
 L_INT		loopcnt;
 
@@ -40,6 +41,7 @@ subpcs(modif)
 	REG BKPTR	bkptr;
 	STRING		comptr;
 	execsig=0; loopcnt=cntval;
+	if(kernelcore)error("cannot run a kernel dump");
 
 	switch(modif) {
 
@@ -52,6 +54,7 @@ subpcs(modif)
 
 	    /* set breakpoint */
 	    case 'b': case 'B':
+		if(cntval!=1)error("breakpoints are one-shot; count must be 1");
 		IF (bkptr=scanbkpt(shorten(dot)))
 		THEN bkptr->flag=0;
 		FI
@@ -95,11 +98,7 @@ subpcs(modif)
 
 	    /* single step */
 	    case 's': case 'S':
-		runmode=SINGLE;
-		IF pid
-		THEN execsig=getsig(signo);
-		ELSE setup(); loopcnt--;
-		FI
+		error("single-step requires hardware support");
 		break;
 
 	    /* continue with optional signal */

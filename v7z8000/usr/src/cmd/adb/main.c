@@ -75,6 +75,7 @@ fault(a)
 
 /* set up files and initial address mappings */
 INT argcount;
+INT kernelcore;
 
 main(argc, argv)
 REG STRING	*argv;
@@ -85,7 +86,9 @@ REG INT		argc;
 	gtty(0,&adbtty);
 	gtty(0,&usrtty);
 	WHILE argc>1
-	DO	IF eqstr("-w",argv[1])
+	DO	IF eqstr("-k",argv[1])
+		THEN kernelcore=1;argc--;argv++;
+		ELIF eqstr("-w",argv[1])
 		THEN	wtflag=2; argc--; argv++;
 		ELSE	break;
 		FI

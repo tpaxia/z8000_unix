@@ -34,5 +34,6 @@ setup.b: /usr/src/cmd/adb/setup.c
 sym.b: /usr/src/cmd/adb/sym.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/adb/sym.c
 install: all
+	/bin/cp adb /bin/adb
 clean:
 	/bin/rm -f *.b adb

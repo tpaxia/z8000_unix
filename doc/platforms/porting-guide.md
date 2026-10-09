@@ -54,7 +54,8 @@ Preserve the saved-context, syscall, signal and exec contracts in
 choosing memory layout.
 
 Supply non-sleeping `panicpoll()` for device completion with interrupts masked,
-and a CPU `panichalt()` that keeps them disabled; see
+a CPU `panichalt()` that keeps them disabled, and machine `dumpinit()`/`panicdump()`
+hooks (no-op hooks are permitted on machines without disk dumping); see
 [panic flushing](../kernel/devices-and-io.md#panic-time-flushing).
 
 ## MMU and memory
@@ -88,6 +89,9 @@ See [devices and I/O](../kernel/devices-and-io.md). Install matching device node
 in the filesystem prototype/image builder, including `/dev/console`, `/dev/tty`,
 `/dev/null`, and root-only `/dev/mem`, `/dev/kmem` and `/dev/swap`. Supply
 `membyte()` for physical RAM/kernel-data access; see the memory-device contract. Character/block major numbers are configuration choices.
+The emulated dump writer additionally uses bounded polled `hddump()` transfers
+and MMU `dumpcopy()` for 512-byte physical reads. Keep that mechanism in the
+machine/driver layer, with a reserved destination outside filesystem and swap.
 Supply usable swap before the first exec: original V7 argument staging reserves
 ten blocks even at boot. Root and swap must refer to the intended devices.
 

@@ -19,6 +19,9 @@ the same ROM and bootable disk; their filesystem and user executable formats are
 Kernel inspection uses root-only physical/kernel memory devices and native
 V7 ps, pstat, dmesg and iostat, with paged process-image adaptations. `ps k`
 inspects saved physical RAM and swap images using the matching kernel namelist.
+Native adb supports Z8000 process tracing/core inspection and mapped kernel
+RAM inspection. The kernel writes RAM and swap to a reserved disk tail on panic;
+native savecore recovers the files after reboot. See [crash recovery](development/crash-dumps.md).
 
 Kernel coverage includes fork/exec/wait, pipes, signals and user preemption,
 V7 filesystem and TTY services, ordinary buffer-cache operation, raw I/O,
@@ -49,8 +52,7 @@ See [native development](toolchain/native-development.md) for scope and
   and their account/startup configuration are not integrated.
 - PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
   remain unported. Some original games are distributed without sources.
-  Adb needs its Z8000 machine layer. Kernel crash-dump writing to disk is not
-  implemented; the emulator can capture RAM and swap for inspection. Device/site-dependent programs are built
+  Device/site-dependent programs are built
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
@@ -80,6 +82,11 @@ See [native development](toolchain/native-development.md) for scope and
 - SEG user execution and an active multiplexor are not implemented. Panic uses bounded polled buffer/metadata
   flushing; locked/busy state is skipped and errors/timeouts can leave writes
   incomplete.
+- Adb breakpoints are one-shot. Its decoder covers the base CPU instruction
+  families in NONSEG/SEG and CPU-defined EPA templates; implementation-specific
+  EPU operations retain raw fields. SEG executable loading remains unsupported. Kernel panic dumps
+  save integer registers and the stack mapping; kernel floating registers and
+  unwinding through frameless assembly remain unsupported. See [adb](toolchain/adb.md).
 - Single-stepping requires hardware support; the current machine returns EIO
   for ptrace request 9. Software stepping is deliberately outside the plan.
 

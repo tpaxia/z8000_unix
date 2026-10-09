@@ -61,6 +61,13 @@ called by the common CPU entry code; the emulated configuration services disk
 and console on shared vector zero. Drivers contain their own I/O registers.
 `panicpoll()` services disk completions with interrupts masked, without sleeping
 or dispatching processes. CPU `panichalt()` halts with VI/NVI disabled.
+Machine `dumpinit()` discovers a reserved destination after root mount;
+`panicdump()` saves a crash image after panic flushing (no-op hooks are permitted).
+The emulated implementation is `machine/dump.c`, using MMU
+`dumpcopy(long physical_offset, char *sector)` (0/-1) and driver
+`hddump(dev, block, sector, writing)` (1 success, 0 error, -1 timeout).
+Both operate on 512-byte sectors without sleeping or enabling interrupts;
+see the [dump contract](../../../../doc/kernel/devices-and-io.md#kernel-written-crash-dumps).
 
 `machine/krt.s`, `trap.s` and `trap.c` implement the Z8000 trap and calling
 conventions, interrupt masking and user-memory access. `machine/cpu.c` holds

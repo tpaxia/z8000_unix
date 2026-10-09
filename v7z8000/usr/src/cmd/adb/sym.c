@@ -6,6 +6,8 @@
  */
 
 #include "defs.h"
+#include "object.h"
+extern struct object adbobj;
 
 
 MSG		BADFIL;
@@ -110,55 +112,32 @@ INT	type;
 		IF symsav
 		THEN	offset=leng(symsav-symvec);
 			symcnt=symnum-offset;
-			longseek(fsym, symbas+offset*SYMTABSIZ);
-			read(fsym,&symbol,SYMTABSIZ);
+			getsout(offset);
 		FI
 	FI
 	return(shorten(diff));
 }
 
+getsout(index)
+long index;
+{
+ struct osymbol entry;
+ int i;
+ if(!objsym(&adbobj,(int)index,&entry)) {errflg=BADFIL;return(FALSE);}
+ for(i=0;i<8;i++)symbol.symc[i]=entry.name[i];
+ symbol.symf=entry.type;symbol.symv=entry.value;
+ return(TRUE);
+}
 nextsym()
 {
-	IF (--symcnt)<0
-	THEN	return(FALSE);
-	ELSE	return(longseek(fsym, symbas+(symnum-symcnt)*SYMTABSIZ)!=0 ANDF
-			read(fsym,&symbol,SYMTABSIZ)==SYMTABSIZ);
-	FI
+ if(--symcnt<0)return(FALSE);
+ return(getsout(symnum-symcnt));
 }
-
-
-
-/* sequential search through file */
 symset()
+{symcnt=symnum;}
+SYMPTR symget()
 {
-	symcnt = symnum;
-	symnxt = symbuf;
-	IF symrqd
-	THEN	longseek(fsym, symbas);
-		symread(); symrqd=FALSE;
-	ELSE	longseek(fsym, symbas+sizeof symbuf);
-	FI
-}
-
-SYMPTR	symget()
-{
-	REG INT	rc;
-	IF symnxt >= symend
-	THEN	rc=symread(); symrqd=TRUE;
-	ELSE	rc=TRUE;
-	FI
-	IF --symcnt>0 ANDF rc==0 THEN errflg=BADFIL; FI
-	return( (symcnt>=0 && rc) ? symnxt++ : 0);
-}
-
-symread()
-{
-	INT		symlen;
-
-	IF (symlen=read(fsym,symbuf,sizeof symbuf))>=SYMTABSIZ
-	THEN	symnxt = symbuf;
-		symend = &symbuf[symlen/SYMTABSIZ];
-		return(TRUE);
-	ELSE	return(FALSE);
-	FI
+ if(symcnt<=0)return(0);
+ if(!getsout(symnum-symcnt)) {symcnt=0;return(0);}
+ symcnt--;return(&symbol);
 }

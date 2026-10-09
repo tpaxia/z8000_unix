@@ -2,6 +2,7 @@
 #define MM_UPAGE 0x00b0
 #define MM_SWAPSIZE 0x00b2
 #define MM_WPAGE 0x00b4
+#define MM_DISKSIZE 0x00b6
 #define MM_IMAP 0x00b8
 #define MM_RAMSIZE 0x00ba
 #define MM_PAGESEL 0x00bc

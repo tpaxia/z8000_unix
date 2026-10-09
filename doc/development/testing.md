@@ -155,3 +155,17 @@ missing/truncated input failures. To repeat only that trial after building the
 inspection tools, run `python3 tools/test-ps-dump.py`.
 It also injects a real kernel fault, captures the panic-halted machine and
 checks its process report after another boot.
+
+The native adb and kernel-written disk-dump regression is `test-adb`; run
+`test-inspection` first to prepare its native ps fixture. See
+[crash recovery tests](crash-dumps.md#regression) and the [adb contract](../toolchain/adb.md).
+
+`test-adb` also runs manual-derived decoder vectors through the adb built inside
+Unix. Each instruction is followed by a NOP to check instruction boundaries,
+including segmented short/long addresses and EPU extensions. Host adapter tests
+run the same decoder source through all 65,536 first words in both modes with
+bounded word reads. For a decoder-only rerun with the native adb already built:
+
+```sh
+python3 tools/test-adb-decoder.py --native
+```

@@ -136,7 +136,7 @@ printf(fmat,a1)
 			s=x; break;
 		    case 'f':
 		    case 'F':
-			vptr += 7;
+			vptr += sizeof(L_REAL)/sizeof(INT)-1;
 			s=ecvt(*rptr, prec, &decpt, &n);
 			*digitptr++=(n?'-':'+');
 			*digitptr++ = (decpt<=0 ? '0' : *s++);

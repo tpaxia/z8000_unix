@@ -1,6 +1,6 @@
 #
 /*
- *	UNIX/INTERDATA debugger
+ *	UNIX/Z8000 debugger
  */
 
 /* unix parameters */
@@ -9,16 +9,16 @@
 #define OFFMODE "+%o"
 #define TXTRNDSIZ 8192L
 
-TYPE	unsigned TXTHDR[8];
+
 TYPE	unsigned SYMV;
 
-/* symbol table in a.out file */
+/* In-memory symbol; the shared s.out reader decodes the disk record. */
 struct symtab {
 	char	symc[8];
 	int	symf;
 	SYMV	symv;
 };
-#define SYMTABSIZ (sizeof (struct symtab))
+#define SYMTABSIZ 14
 
 #define SYMCHK 047
 #define SYMTYPE(symflg) (( symflg>=041 || (symflg>=02 && symflg<=04))\

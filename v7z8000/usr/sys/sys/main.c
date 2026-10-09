@@ -56,6 +56,7 @@ main()
 	cinit();
 	binit();
 	iinit();
+	dumpinit();
 	rootdir = iget(rootdev, (ino_t)ROOTINO);
 	rootdir->i_flag &= ~ILOCK;
 	u.u_cdir = iget(rootdev, (ino_t)ROOTINO);

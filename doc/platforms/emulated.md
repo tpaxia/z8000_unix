@@ -59,6 +59,10 @@ the root unit. Swap traffic never uses the root filesystem's blocks. Final
 statistics report swap sectors read/written, peak simultaneous read-only text
 mappings, protection faults and stack warnings.
 
+Read-only normal word port `0x00b6` reports root disk sectors, clamped to
+65535. A reserved tail enables [kernel panic dumps](../kernel/devices-and-io.md#kernel-written-crash-dumps);
+`-o` preserves that tail with the root image.
+
 `-K physical-core` saves raw installed low RAM and `-W saved-swap` saves the
 secondary ATA unit when the run stops. Both capture the same stopped CPU state,
 including after a panic halt; `-o` remains the root-disk save. Keep the matching

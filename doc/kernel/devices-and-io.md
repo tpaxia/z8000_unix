@@ -65,8 +65,9 @@ when all selected processes are resident. Zombies need no u-area. Processes
 locked during a memory transition are skipped, as in live inspection.
 
 The standalone emulator's `-K` and `-W` options save physical RAM and swap at
-the same stopped CPU state. They also work after a panic halt. This is a host
-capture mechanism; the kernel does not yet write crash dumps to disk itself.
+the same stopped CPU state. They also work after a panic halt. These remain host
+capture options independent of the kernel disk writer below.
+
 
 The console keeps V7's diagnostic `msgbuf`/`msgbufp` ring for `dmesg`. Normal
 TTY transmission bypasses that ring. TTY input/output counters accompany the
@@ -74,6 +75,40 @@ existing disk and clock instrumentation. `iostat` resolves each counter
 separately and uses the configured buffer count; its HD/SW columns denote root
 and swap. Emulated disks have no calibrated transfer latency, so estimated
 transfer-time columns are zero.
+
+## Kernel-written crash dumps
+
+The emulated machine selects `machine/dump.c`. After mounting root, `dumpinit()`
+checks for a reserved tail beyond the superblock's filesystem size. The required
+sector count is `1 + physmem * 4 + swap-unit sectors`: a commit sector, installed
+physical RAM and the entire secondary swap unit. Root capacity comes from normal
+word port `0x00b6`, clamped to 65535 sectors in both emulators. Insufficient space
+silently disables dumping; filesystem blocks and active swap are never used as
+output storage. The current writer requires root ATA unit 0 and swap unit 1.
+
+After bounded panic flushing, `panicdump()` copies RAM through the MMU window
+and reads swap using `hddump()`. ATA transfers poll with interrupts masked,
+without sleeping, allocating buffers or servicing the ordinary queue. Each
+poll has a finite bound. The first write clears the old commit; the last write
+commits a completed dump. A later failure leaves an invalid record. If even the
+initial clear fails, an older valid record can remain. Recursive panics skip
+both flush and dump and halt.
+
+The commit sector stores five big-endian 32-bit fields: magic `0x5a384b44`
+(`Z8KD`), version 1, RAM bytes, swap bytes and kernel time; remaining bytes are
+zero. Raw RAM follows, then raw swap. RAM is copied while the dump routine is
+running: its own buffer, stack and polling state change during capture, although
+no processes are dispatched. A separate versioned `_kcrash` record in RAM saves
+the original access-fault frame or the direct `panic()` caller's integer registers,
+FCW, PC, MMU fault latch and physical UPAGE stack mapping. The record is preserved
+before flushing and dump I/O; the remaining RAM is not an atomic pre-panic snapshot.
+Locked or transitional objects remain
+subject to the inspection restrictions above.
+
+Native `savecore` reads `/dev/rhd` (character major 3, minor 0), validates the
+record and copies its payload into mode-0600 `core` and `swap` files. `adb -k`
+reads kernel globals, saved registers and the kernel stack; see [adb](../toolchain/adb.md).
+Preparation and recovery commands are in [crash recovery](../development/crash-dumps.md).
 
 ## Terminal control
 
@@ -153,7 +188,7 @@ at the instant sync returns.
 ### Panic-time flushing
 
 `panic()` masks interrupts, preserves the first diagnostic, calls the separate
-`sys/panic.c` flush and halts without enabling interrupts. A recursive panic
+`sys/panic.c` flush, invokes the machine dump hook and halts without enabling interrupts. A recursive panic
 prints its diagnostic and halts immediately. It never calls V7 `update()`, whose
 buffer allocation and I/O waits can sleep on resources owned by the panicking
 path.

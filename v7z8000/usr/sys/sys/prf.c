@@ -76,10 +76,12 @@ long n;
  * It prints "panic: mesg" and
  * then halts.
  */
-panic(s)
+/* Public panic entry is the CPU veneer: capture before this C prolog. */
+panich(s)
 char *s;
 {
 	spl7();
+	panicctx();
 	if (panicstr) {
 		printf("recursive panic: %s\n", s);
 		panichalt();
@@ -87,6 +89,7 @@ char *s;
 	panicstr = s;
 	printf("panic: %s\n", s);
 	panicflush();
+	panicdump();
 	panichalt();
 }
 

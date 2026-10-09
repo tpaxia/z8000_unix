@@ -80,9 +80,11 @@ seg_dispatch:
 	push	@r14, r2
 	push	@r14, r1
 	push	@r14, r0
+	ld	r2, r14		! SEG system stack segment, before mode change
 	ld	r0, #0x4000
 	ldctl	fcw, r0
 	ld	r0, sp
+	push	@sp, r2
 	push	@sp, r14
 	push	@sp, r13
 	ld	r1, sp
@@ -91,7 +93,7 @@ seg_dispatch:
 	call	_segtrap
 	ld	r13, 4(sp)
 	ld	r14, 6(sp)
-	add	sp, #8
+	add	sp, #10
 	ld	r0, #0xC000
 	ldctl	fcw, r0
 	pop	r0, @r14
@@ -123,6 +125,8 @@ epu_dispatch:
 ! --- Syscall dispatch entry ---
 ! trap.s pushes (num, regs) on the stack, calls 0x0200.
 ! C-callable wrapper around trap().
+	.globl _scwrap
+_scwrap:
 syscall_dispatch:
 	push	@sp, r13
 	ld	r13, sp
@@ -150,6 +154,8 @@ syscall_dispatch:
 ! Called from trap.s nvientry in NONSEG+SYS mode.
 ! R0 = interrupted FCW (passed by nvientry from IRET frame).
 ! Pass the saved frame to CPU clock dispatch.
+	.globl _nviwrap
+_nviwrap:
 nvi_dispatch:
 	push	@sp, r13
 	ld	r13, sp
@@ -165,6 +171,8 @@ nvi_dispatch:
 ! Called from trap.s vi_entry in NONSEG+SYS mode.
 ! R0 = vector identifier (from tag word on IRET frame).
 ! The selected configuration dispatches the vector to its device handlers.
+	.globl _viwrap
+_viwrap:
 vi_dispatch:
 	push	@sp, r13
 	ld	r13, sp
@@ -253,6 +261,35 @@ _waitloc:
 	ret
 
 ! Panic never admits interrupts or resumes process execution.
+! Capture the caller before a C prologue changes its registers or frame.
+! A fault handler has already installed its interrupted context; keep it.
+	.globl _panic
+_panic:
+	ld _ksave, r0
+	ldctl r0, fcw
+	ld _ksave+2, r0
+	and r0, #0xe7ff
+	ldctl fcw, r0
+	test _kcrash+4
+	jr ne, panic_saved
+	ld r0, _ksave
+	ldm _kcrash+8, r0, #16
+	ld r0, _ksave+2
+	ld _kcrash+40, r0
+	ld _kcrash+42, #0x8100
+	ld r0, @sp
+	ld _kcrash+44, r0
+	ld _kcrash+60, r0
+	ld _kcrash+62, #0x8100
+	ld r0, sp
+	add r0, #2
+	ld _kcrash+38, r0
+	ld _kcrash, #0x4b43
+	ld _kcrash+2, #1
+	ld _kcrash+4, #1
+panic_saved:
+	jp _panich
+
 	.globl _panichalt
 _panichalt:
 	di vi,nvi

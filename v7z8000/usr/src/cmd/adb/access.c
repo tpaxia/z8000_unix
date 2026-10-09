@@ -60,7 +60,7 @@ L_INT	adr;
 	     w = ptrace(pmode, pid, shorten(adr&~01), value);
 	     IF adr&01
 	     THEN w1 = ptrace(pmode, pid, shorten(adr+1), value);
-		  w = (w>>8)&LOBYTE | (w1<<8);
+		  w = (w<<8) | ((unsigned)w1>>8);
 	     FI
 	     IF errno
 	     THEN errflg = (space&DSP ? BADDAT : BADTXT);
@@ -76,7 +76,7 @@ L_INT	adr;
 	FI
 	file=(space&DSP?datmap.ufd:txtmap.ufd);
 	IF longseek(file,adr)==0 ORF
-	   (rd ? read(file,&w,2) : write(file,&value,2)) < 1
+	   (rd ? read(file,&w,2) : write(file,&value,2)) != 2
 	THEN	errflg=(space&DSP?BADDAT:BADTXT);
 	FI
 	return(w);

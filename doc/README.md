@@ -27,6 +27,7 @@ an explicit working directory is given.
 - [Native development tools](toolchain/native-development.md)
 - [Shared Zilog assembler](toolchain/asz8k.md)
 - [s.out linker](toolchain/ldz8.md)
+- [V7 adb](toolchain/adb.md)
 - [Object utilities and nlist](toolchain/object-utilities.md)
 - [V7 userland coverage and remaining ports](toolchain/userland.md)
 - [Structure-return ABI and historical comparison](toolchain/structure-return-abi.md)
@@ -45,6 +46,7 @@ an explicit working directory is given.
 - [Build and run](development/build-and-run.md)
 - [Build and run in MAME](development/mame.md)
 - [Native rebuild](development/native-rebuild.md)
+- [Kernel crash recovery](development/crash-dumps.md)
 - [Testing and emulator diagnostics](development/testing.md)
 - [V7 compatibility](development/v7-compatibility.md)
 

@@ -84,6 +84,7 @@ def main():
     report={}
     if (WORK/'report.json').exists(): report=json.loads((WORK/'report.json').read_text())
     specs = {p.stem: {'sources':[p]} for p in sorted(CMD.glob('*.c'))}
+    specs['savecore']={'sources':[ROOT/'tools/savecore.c']}
     for source in sorted((ROOT/'v7z8000/usr/src/games').glob('*.c')):
         specs[source.stem]={'sources':[source],'game':True}
     specs['make']={'sources':[CMD/'make'/(n+'.c') for n in ['ident','main','doname','misc','files','dosys']],
@@ -126,7 +127,7 @@ def main():
                   'flags':['-I'+str(CMD/'awk')], 'libs':['m']}
     specs['tp']={'sources':[CMD/'tp'/('tp'+str(n)+'.c') for n in range(4)]}
     specs['adb']={'sources':[CMD/'adb'/(n+'.c') for n in
-        'access command expr findfn format input opset main message output pcs print runpcs setup sym'.split()]}
+        'access command expr findfn format input opset main message output pcs print runpcs setup sym'.split()]+[ROOT/'tools/sout-utils/object.c',ROOT/'tools/asz8k/src/soutfmt.c'], 'flags':['-I'+str(ROOT/'tools/sout-utils'),'-I'+str(ROOT/'tools/asz8k/src')]}
     specs['lint2']={'sources':[CMD/'lint/lpass2.c'],'flags':['-I'+str(CMD/'mip')]}
     specs['lint1']={'sources':[CMD/'mip'/(n+'.c') for n in ['xdefs','scan','comm1','pftn','trees','optim']]+[CMD/'lint/lint.c'],
                     'grammar':CMD/'mip/cgram.y','flags':['-I'+str(CMD/'lint'),'-I'+str(CMD/'mip')]}

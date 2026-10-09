@@ -81,6 +81,7 @@ def setup(preserve=False, update_toolchain=False,sout=True):
         if 'con.h' not in seen:files['usr/src/libplot/'+name+'/con.h']=ROOT/'v7z8000/usr/src/libplot/con.h'
     files['usr/src/build/makefile']=RECIPES/'makefile'
     files['usr/src/build/normal.c']=ROOT/'tools/native-cc/normal.c'
+    files['usr/src/savecore.c']=ROOT/'tools/savecore.c'
     for path in [ROOT/'tools/sout-utils'/n for n in ('object.c','object.h')]+[
             ROOT/'tools/asz8k/src/soutfmt.c',ROOT/'tools/asz8k/src/soutfmt.h',
             *[ROOT/'v7z8000/usr/src/cmd'/(n+'.c') for n in ('nm','size','strip')]]:
@@ -99,9 +100,9 @@ def setup(preserve=False, update_toolchain=False,sout=True):
     for row in catalog:
         name=row['name'];recipe=RECIPES/(name+'.mk')
         text=recipe.read_text().replace('/bin/ldz8 -i','/bin/ldz8 -z -i')
-        if name in ('file','prof','make'):
+        if name in ('file','prof','make','adb'):
             text=text.replace('CFLAGS=','CFLAGS=-I/usr/src/objutils ')
-        if name in ('prof','make'):
+        if name in ('prof','make','adb'):
             text=text.replace(name+': ',name+': object.b soutfmt.b ',1)
             text=text.replace(' -o '+name,' object.b soutfmt.b -o '+name,1)
             for obj in ('object','soutfmt'):

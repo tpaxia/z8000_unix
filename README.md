@@ -44,6 +44,10 @@ user profiling and privileged residency locking are supported. Installed kernel
 ABI headers are checked against the kernel sources during builds. Exec arguments
 use the original V7 swap-backed staging; swap is required, including for boot. See the [memory contract](doc/kernel/memory-and-swapping.md#shared-text-and-swapping).
 
+Native [adb](doc/toolchain/adb.md) inspects Z8000 processes and saved kernel
+memory. A reserved disk tail enables kernel-written panic RAM/swap dumps;
+[crash recovery](doc/development/crash-dumps.md) uses native savecore and ps k.
+
 ### MMU: Segment Numbers as Map Set Selectors
 
 Instead of using the Z8001's segmentation with Zilog's Z8010 base+limit MMU, the 7-bit segment number is repurposed as a map set selector for a custom paged MMU. This combines hardware-assisted context selection with fine-grained paged translation: each segment number selects a map set, context switching is free (segment number is embedded in PC), and the kernel accesses user memory by constructing pointers with the target process's segment number.

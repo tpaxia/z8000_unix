@@ -34,19 +34,26 @@ L_INT		localval;
 /* breakpoints */
 BKPTR		bkpthead;
 
-REGLIST reglist [] {
-		"ps", ps,
-		"pc", pc,
-		"sp", sp,
-		"r5", r5,
-		"r4", r4,
-		"r3", r3,
-		"r2", r2,
-		"r1", r1,
-		"r0", r0,
+REGLIST reglist[] {
+ "r0", 1,
+ "r1", 2,
+ "r2", 3,
+ "r3", 4,
+ "r4", 5,
+ "r5", 6,
+ "r6", 7,
+ "r7", 8,
+ "r8", 9,
+ "r9", 10,
+ "r10", 11,
+ "r11", 12,
+ "r12", 13,
+ "r13", 14,
+ "r14", 15,
+ "r15", 16,
+ "fcw", ps, "seg", UREG_SEG+1, "pc", pc,
+ "sp", sp, "fp", r5, "ps", ps,
 };
-
-INT		frnames[] { 0, 3, 4, 5, 1, 2 };
 
 char		lastc;
 POS		corhdr[];
@@ -62,6 +69,9 @@ L_INT		var[];
 STRING		symfil;
 STRING		corfil;
 INT		pid;
+INT kernelcore;
+INT kernelregs;
+INT adbseg;
 L_INT		adrval;
 INT		adrflg;
 L_INT		cntval;
@@ -165,6 +175,14 @@ printtrace(modif)
 		OD
 		break;
 
+	    case 'z': case 'Z':
+		if(adrflg) {
+		 if(adrval!=0 && adrval!=1)error("use 0$z for NONSEG or 1$z for SEG");
+		 adbseg=adrval;
+		}
+		printf("instruction mode: %s\n",adbseg?"SEG":"NONSEG");
+		break;
+
 	    case 'm': case 'M':
 		printmap("? map",&txtmap);
 		printmap("/ map",&datmap);
@@ -178,14 +196,17 @@ printtrace(modif)
 		sigprint(); flushbuf();
 
 	    case 'r': case 'R':
+		if(kernelcore && !kernelregs)error("kernel dump has no saved kernel register context");
 		printregs();
 		return;
 
 	    case 'f': case 'F':
+		if(kernelcore)error("kernel dump has no saved floating register context");
 		printfregs(modif=='F');
 		return;
 
 	    case 'c': case 'C':
+		if(kernelcore && !kernelregs && !adrflg)error("specify the kernel frame address explicitly");
 		frame=(adrflg?adrval:endhdr[r5])&EVEN; lastframe=0;
 		callpc=(adrflg?get(frame+2,DSP):endhdr[pc]);
 		WHILE cntval--
@@ -210,9 +231,18 @@ printtrace(modif)
 			     OD
 			FI
 
+			if(kernelcore) {
+			 if(eqstr(symbol.symc,"_scwrap"))break;
+			 if(eqstr(symbol.symc,"_nviwrap") || eqstr(symbol.symc,"_viwrap")) {
+			  if(!(get(frame+32,DSP)&0x4000) ||
+			     (unsigned)get(frame+34,DSP)!=0x8100)break;
+			  callpc=get(frame+36,DSP);
+			 }
+			}
 			lastframe=frame;
 			frame=get(frame, DSP)&EVEN;
 			IF frame==0 THEN break; FI
+			IF frame<=leng(lastframe) THEN error("invalid frame chain"); FI
 		OD
 		break;
 
@@ -228,42 +258,7 @@ printtrace(modif)
 		break;
 
 	    case 'a': case 'A':
-		frame=(adrflg ? adrval : endhdr[r4]);
-
-		WHILE cntval--
-		DO chkerr();
-		   stat=get(frame,DSP); dynam=get(frame+2,DSP); link=get(frame+4,DSP);
-		   IF modif=='A'
-		   THEN printf("%8O:%8t%-8o,%-8o,%-8o",frame,stat,dynam,link);
-		   FI
-		   IF stat==1 THEN break; FI
-		   IF errflg THEN error(A68BAD); FI
-
-		   IF get(link-4,ISP)!=04767
-		   THEN IF get(link-2,ISP)!=04775
-			THEN error(A68LNK);
-			ELSE /*compute entry point of routine*/
-			     prints(" ? ");
-			FI
-		   ELSE printf("%8t");
-		        valpr(name=shorten(link)+get(link-2,ISP),ISYM);
-			name=get(leng(name-2),ISP);
-			printf("%8t\""); limit=8;
-			REP word=get(leng(name),DSP); name += 2;
-			    lo=word&LOBYTE; hi=(word>>8)&LOBYTE;
-			    printc(lo); printc(hi);
-			PER lo ANDF hi ANDF limit-- DONE
-			printc('"');
-		   FI
-		   limit=4; i=6; printf("%24targs:%8t");
-		   WHILE limit--
-		   DO printf("%8t%o",get(frame+i,DSP)); i += 2; OD
-		   printc(EOR);
-
-		   frame=dynam;
-		OD
-		errflg=0;
-		flushbuf();
+		error("Algol frames are not supported on Z8000");
 		break;
 
 	    /*set default c frame*/
@@ -302,17 +297,15 @@ STRING	s; MAP *amap;
 
 printfregs(longpr)
 {
-	REG i;
-	L_REAL f;
-
-	printf("fpsr	%o\n", corhdr[0].fpsr);
-	FOR i=0; i<FRMAX; i++
-	DO	IF corhdr[0].fpsr&FD ORF longpr	/* long mode */
-		THEN	f = corhdr[0].Lfr[frnames[i]];
-		ELSE	f = corhdr[0].Sfr[frnames[i]];
-		FI
-		printf("fr%-8d%-32.18f\n", i, f);
-	OD
+ int i,j;
+ unsigned char *state;
+ state=(unsigned char *)((struct user *)corhdr)->u_fpe;
+ prints("software EPU state (raw words)\n");
+ for(i=0;i<8;i++) {
+  printf("fr%d%8t",i);
+  for(j=0;j<10;j+=2)printf("%x ",(state[i*10+j]<<8)|state[i*10+j+1]);
+  printc(EOR);
+ }
 }
 
 printregs()
@@ -320,7 +313,7 @@ printregs()
 	REG REGPTR	p;
 	INT		v;
 
-	FOR p=reglist; p < &reglist[9]; p++
+	FOR p=reglist; p < &reglist[NREG]; p++
 	DO	printf("%s%8t%o%8t", p->rname, v=endhdr[p->roffs]);
 		valpr(v,(p->roffs==pc?ISYM:DSYM));
 		printc(EOR);
@@ -330,22 +323,21 @@ printregs()
 
 getreg(regnam)
 {
-	REG REGPTR	p;
-	REG STRING	regptr;
-	CHAR		regnxt;
-	regnxt=readchar();
-	FOR p=reglist; p<&reglist[9]; p++
-	DO	regptr=p->rname;
-		IF (regnam == *regptr++) ANDF (regnxt == *regptr)
-		THEN	return(p->roffs);
-		FI
-	OD
-	lp--;
-	return(0);
+ char name[8], *saved;
+ int n,i;
+ saved=lp;n=0;name[n++]=regnam;
+ while(n<7 && (letter(*lp) || digit(*lp)))name[n++]=readchar();
+ name[n]=0;
+ for(i=0;i<NREG+3;i++)if(eqstr(name,reglist[i].rname))return(reglist[i].roffs);
+ lp=saved;return(0);
 }
 
 printpc()
 {
+	if(kernelcore && kernelregs && (unsigned)endhdr[18]!=0x8100) {
+	 printf("pc segment %x offset %x\n",endhdr[18],endhdr[pc]);return;
+	}
+	adbseg=((unsigned)endhdr[ps]&0x8000)!=0;
 	dot=endhdr[pc];
 	psymoff(dot,ISYM,":%16t"); printins(0,ISP,chkget(dot,ISP));
 	printc(EOR);

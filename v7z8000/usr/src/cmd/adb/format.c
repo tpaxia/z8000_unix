@@ -86,10 +86,8 @@ STRING		ifp;
 	STRING		fp;
 	CHAR		c, modifier, longpr;
 	L_REAL		fw;
-	struct{
-		L_INT	sa;
-		INT	sb,sc;
-	};
+	union {L_INT bits; REAL value;} single;
+	union {POS words[4]; L_REAL value;} wide;
 
 	WHILE fcount>0
 	DO	fp = ifp; c = *fp;
@@ -103,8 +101,9 @@ STRING		ifp;
 		     FI
 		FI
 		IF c=='F'
-		THEN fw.sb=get(inkdot(4),itype);
-		     fw.sc=get(inkdot(6),itype);
+		THEN wide.words[0]=w;wide.words[1]=get(inkdot(2),itype);
+		     wide.words[2]=get(inkdot(4),itype);
+		     wide.words[3]=get(inkdot(6),itype);
 		FI
 		IF errflg THEN return(fp); FI
 		IF mkfault THEN error(0); FI
@@ -139,17 +138,17 @@ STRING		ifp;
 
 		    case 'c': case 'C':
 			IF modifier=='C'
-			THEN printesc(w&LOBYTE);
-			ELSE printc(w&LOBYTE);
+			THEN printesc(((unsigned)w>>8)&LOBYTE);
+			ELSE printc(((unsigned)w>>8)&LOBYTE);
 			FI
 			dotinc=1; break;
 
 		    case 'b': case 'B':
-			printf("%-8o", w&LOBYTE); dotinc=1; break;
+			printf("%-8o", ((unsigned)w>>8)&LOBYTE); dotinc=1; break;
 
 		    case 's': case 'S':
 			savdot=dot; dotinc=1;
-			WHILE (c=get(dot,itype)&LOBYTE) ANDF errflg==0
+			WHILE (c=((unsigned)get(dot,itype)>>8)&LOBYTE) ANDF errflg==0
 			DO dot=inkdot(1);
 			   IF modifier == 'S'
 			   THEN printesc(c);
@@ -192,13 +191,12 @@ STRING		ifp;
 			printf("%-16D", wx); break;
 
 		    case 'f':
-			fw = 0;
-			fw.sa = wx;
+			single.bits=wx;fw=single.value;
 			printf("%-16.9f", fw);
 			dotinc=4; break;
 
 		    case 'F':
-			fw.sa = wx;
+			fw=wide.value;
 			printf("%-32.18F", fw);
 			dotinc=8; break;
 

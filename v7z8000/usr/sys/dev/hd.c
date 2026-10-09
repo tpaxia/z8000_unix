@@ -209,3 +209,33 @@ dev_t dev;
 	}
 	physio(hdstrategy, &rhdbuf, dev, rw);
 }
+
+/* Crash path: no queue, buffer allocation, interrupts or sleeping. */
+hddump(dev, block, data, writing)
+dev_t dev;
+daddr_t block;
+char *data;
+{
+ unsigned n;
+ int status;
+ if(minor(dev)>1 || block<0 || block>=65536L)return(0);
+ for(n=0;n<30000;n++)if(!(inb(HD_STATUS)&ST_BSY))break;
+ if(n==30000)return(-1);
+ outb(HD_SC,1);outb(HD_SN,(int)block&255);
+ outb(HD_CL,(int)(block>>8)&255);outb(HD_CH,0);
+ outb(HD_DH,0xe0|((minor(dev)&1)<<4));
+ outb(HD_CMD,writing?CMD_WRITE:CMD_READ);
+ for(n=0;n<30000;n++) {
+  status=inb(HD_STATUS);
+  if(status&ST_BSY)continue;
+  if(status&ST_ERR)return(0);
+  if(status&ST_DRQ)break;
+ }
+ if(n==30000)return(-1);
+ if(writing)outsw(HD_DATA,data,256);else insw(HD_DATA,data,256);
+ for(n=0;n<30000;n++) {
+  status=inb(HD_STATUS);
+  if(!(status&ST_BSY))return((status&ST_ERR)?0:1);
+ }
+ return(-1);
+}

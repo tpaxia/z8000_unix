@@ -35,6 +35,7 @@ L_INT		var[];
 L_INT		locval;
 L_INT		locmsk;
 INT		pid;
+INT errno;
 L_INT		expv;
 L_INT		adrval;
 INT		adrflg;
@@ -178,7 +179,10 @@ CHAR		defcom;
 		lastcom=0; savc=rdc();
 		IF regptr=getreg(savc)
 		THEN endhdr[regptr]=shorten(dot);
-		     ptrace(WUREGS,pid,2*(512+regptr),endhdr[regptr]);
+		     if(pid) {
+		      ptrace(WUREGS,pid,REGADDR(regptr),endhdr[regptr]);
+		      if(errno)error("cannot write Z8000 register");
+		     }
 		ELIF (modifier=varchk(savc)) != -1
 		THEN	var[modifier]=dot;
 		ELSE	error(BADVAR);

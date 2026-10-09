@@ -161,6 +161,7 @@ unsigned *extra;
 					regs[16] = p[1];
 					return;
 				}
+		crashtrap(regs, extra, fault);
 		panic("kernel access fault");
 		return;
 	}

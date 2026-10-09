@@ -8,7 +8,7 @@ The emulated MMU provides 128 segments x 32 pages x 2KB pages, with only ROM, ke
 
 | Port | Width | Name | Function |
 |------|-------|------|----------|
-| 0x00B0 | word | UPAGE | KDSA6 equivalent: sets seg1 pages 30-31 to frame pair (value, value+1) |
+| 0x00B0 | word | UPAGE | KDSA6 equivalent: writes seg1 pages 30-31 to frame pair (value, value+1); reads current base frame |
 | 0x00B2 | word, read-only | SWAPSIZE | Dedicated swap unit size in 512-byte blocks |
 | 0x00B4 | word | WPAGE | Copy window: sets seg1 pages 28-29 to frame pair (value, value+1) |
 | 0x00B8 | word | IMAP | High byte: logical segment; low byte: instruction backing segment (7 bits each) |

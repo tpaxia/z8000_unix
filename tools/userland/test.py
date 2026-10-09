@@ -23,7 +23,7 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
     # The emulator loads this same kernel; its global symbols name live data.
     files['unix']=SYS/'handler.sout'
     # Native replacements are already supplied by build.image().
-    replaced={'cc','ld','init','arcv','ranlib','adb'}
+    replaced={'cc','ld','init','arcv','ranlib'}
     for name,rec in report.items():
         if rec['status']!='built' or name.startswith('lib'):continue
         destination='bin/'+name

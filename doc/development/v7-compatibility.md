@@ -32,7 +32,7 @@ in the original distribution.
 | `sys/iget.c` | Converts inode addresses to/from big-endian three-byte disk fields instead of PDP-11 byte order. |
 | `sys/main.c` | Configured global tables and boot devices; MMU initializes real memory and process storage. Process 0 runs the swapper. Console initialization opens/duplicates the initial terminal; boot uses the small console init. |
 | `sys/malloc.c` | First-fit allocation/free code is unchanged; its comment describes 2 KiB physical frames instead of 64-byte core-map units. |
-| `sys/prf.c` | Panic uses a bounded polled flush instead of V7's sleeping `update()`. The separate `sys/panic.c` writes coherent cache blocks, unlocked dirty inodes and unlocked superblocks, then halts with interrupts masked. |
+| `sys/prf.c` | Panic uses a bounded polled flush instead of V7's sleeping `update()`. The separate `sys/panic.c` writes coherent cache blocks, unlocked dirty inodes and unlocked superblocks, then invokes the machine disk-dump hook and halts with interrupts masked. |
 | `sys/rdwri.c` | Original read/write and `iomove()` policy. Differences are two explicit low-word offset casts, whitespace and comments; the casts are retained departures, not an established CPU requirement. |
 | `sys/subr.c` | Original byte-copy policy, with parentheses correcting V7's conditional-expression precedence in `passc()` and comments clarifying the three copy spaces. |
 | `sys/slp.c` | Adapts V7 scheduling, sleep/wakeup and swapper policy to separately allocated process sections. Only residents can run. Allocation/copy/swap use MMU services; extent reservations and dispatch/yield safeguards prevent races and starvation with fast emulated transfers. Fork retains direct-to-swap fallback and rolls back allocation failure. |
@@ -129,6 +129,7 @@ not installed command availability. Current changed groups are:
 | Source group | Reason for differences |
 |---|---|
 | `ar.c`, `make/files.c` | Portable archive members and s.out symbol lookup. |
+| `adb/` | Z8000 instruction display, public register/core layout, s.out symbols and one-shot breakpoints replace PDP-11 mechanisms. Shared V7 command and expression handling is retained; symbol comparison has an explicit false return instead of relying on a fall-through return value. |
 | `nm.c`, `size.c`, `strip.c`, `prof.c`, `file.c`, both `mkfs.c` copies | Target object formats and inspection. Installed object utilities use the shared s.out reader. |
 | `cpp/cpp.c`, `cpy.y`, `yylex.c` | Signed-character tables for Z8000, complete macro names, `#error`, and corrections to unary-expression and hexadecimal-digit evaluation. Complete names distinguish MMU register macros sharing their first eight characters. |
 | `sh/` | Target headers/types, signed-character tables, allocation/stack handling and CPU-specific signal/exec details. The Bourne shell runs natively. |

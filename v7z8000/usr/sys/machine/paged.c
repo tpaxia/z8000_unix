@@ -785,3 +785,13 @@ char *value;
      value, 1, writing);
  return(0);
 }
+
+/* Panic uses physical RAM, independent of the current u-area/window maps. */
+dumpcopy(offset, value)
+long offset;
+char *value;
+{
+ if(offset<0 || offset+512L>(long)physmem*2048L)return(-1);
+ physcopy((unsigned)(offset/2048L),(unsigned)(offset%2048L),value,512,0);
+ return(0);
+}
