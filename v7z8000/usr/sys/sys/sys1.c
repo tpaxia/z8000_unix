@@ -226,7 +226,7 @@ out:
  * then builds the user stack with argc/argv[]/envp[]/strings.
  *
  * Simplified from V7: no swap for argument collection,
- * shared 0411 text. V7 set-ID policy is retained.
+ * shared split-I/D text. V7 set-ID policy is retained.
  *
  * u_arg[0] = pathname (user pointer)
  * u_arg[1] = argv (user pointer to array of user pointers)

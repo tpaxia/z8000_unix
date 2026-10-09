@@ -5,10 +5,8 @@ s.out by default for NONSEG and SEG code. PCC assembly uses `-c`; machine
 assembly uses `-g` and optionally `-s`. The default compiler bootstrap and
 kernel/boot builds use this assembler and the shared s.out linker.
 
-The separate host `make oracle` build selects `ASZ_LEGACY`, retaining the old
-Unidot/a.out writers for historical comparisons. It is not installed in Unix.
-The native comparison trial produces s.out and verifies the production defaults;
-obsolete output options are negative tests.
+s.out is the only object writer. Obsolete output options are rejection tests;
+there is no historical-format build target or converter.
 
 See the [assembler reference](../../doc/toolchain/asz8k.md) and
 [native rebuild procedure](../../doc/development/native-rebuild.md).
@@ -22,8 +20,8 @@ hashes. That checkout traces its sources to the surviving `8k0583.zip`
 collection and includes its maintained EPA instruction fixes. Existing source
 notices are retained. CRLF and terminal CP/M padding were normalized.
 
-`src/aout.c`, `src/sout.c`, `src/soutfmt.c` and `src/pcc.c` are new port code. The imported
-assembler calls the selected backend at the pass boundary, byte emission and
+`src/sout.c`, `src/soutfmt.c` and `src/pcc.c` are new port code. The imported
+assembler calls the s.out backend at the pass boundary, byte emission and
 finalization. Outside PCC mode instruction selection is unchanged; PCC mode
 also relaxes external/out-of-range JR and CALR transfers to JP and CALL. s.out short-address output
 additionally rejects offsets above 255 before the encoder truncates them.
@@ -57,8 +55,3 @@ section declaration. The corrupt tail was replaced by `__data .sect`, the
 missing `foo` definition and `.end`. `tests/biosdefs.z8k` is the minimal Z8002
 FPE definitions file from the same CPM8000 checkout. The FPE source itself is
 staged from the existing kernel tree without modification.
-
-`tests/expected.json` records SHA-256 values and exact byte lengths from the
-original distribution CP/M assembler, with only padding after the Unidot
-object-end record removed. `oracle.py` independently regenerates and checks
-those objects; it never rewrites the recorded expectations.

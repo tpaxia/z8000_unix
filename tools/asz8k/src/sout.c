@@ -1,5 +1,5 @@
-/* Direct ZEUS s.out relocatable output. The existing encoder supplies Unidot
- * actions; this backend translates them, without changing instruction choice.
+/* Direct ZEUS s.out relocatable output. The encoder supplies internal
+ * relocation actions; this backend translates them to s.out tags.
  * Initial section contract: __text, __data, __bss; no fixed/common sections.
  */
 #include <stdio.h>
@@ -7,11 +7,6 @@
 #include "obj.h"
 #include "soutfmt.h"
 
-#ifdef ASZ_LEGACY
-int zflag;
-#else
-int zflag = 1;
-#endif
 static int kinds[SECSIZ], segments[3], nseg, symbols, symfd, relfd;
 static int present[3];
 static long lengths[SECSIZ], sizes[3], bases[3], files[3], nextbyte[3];
@@ -282,5 +277,5 @@ sofinish()
 
 socheck()
 {
-    if (zflag && (curloc < 0 || curloc > 65535L)) fail("section size overflow");
+    if (curloc < 0 || curloc > 65535L) fail("section size overflow");
 }

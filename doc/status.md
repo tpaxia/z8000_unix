@@ -46,7 +46,7 @@ See [native development](toolchain/native-development.md) for scope and
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
   and install inside Unix; the resulting disk boots and runs native C compilation.
-  On `work/native-asz8k`, s.out is now the sole production object/executable
+  On `work/native-asz8k`, s.out is now the sole object/executable
   format. The shared host/native assembler and linker build the kernel,
   standalone bootloader, bootstrap tools and default native development image.
   ROM, trap, software EPU and disk-sector artifacts are raw images linked from
@@ -58,7 +58,9 @@ See [native development](toolchain/native-development.md) for scope and
   libc members, including the final 39-check libc test. The full userland
   rebuild passes all 194 stages, validates 192 installed outputs and passes
   the full runtime smoke suite. Positive regression producers now use s.out;
-  kernel exec and shared object utilities reject obsolete a.out formats. See
+  kernel exec and shared object utilities reject obsolete a.out formats. The
+  historical assembler/linker writers are removed, and standalone PCC suites
+  also use the shared s.out tools. See
   [ABI and formats](toolchain/abi.md), [native rebuild](development/native-rebuild.md)
   and [linker support](toolchain/ldz8.md).
 - The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports

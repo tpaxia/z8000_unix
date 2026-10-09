@@ -105,9 +105,8 @@ uns	seg;
 emitss(value, reloc) uns value, reloc; {
 
 uns	seg;
-extern int zflag;
 
-	if (zflag && pass2 && value > 255) {
+	if (pass2 && value > 255) {
 		fprintf(ERROR, "s.out: short segmented offset exceeds 255\n");
 		exit(1);
 	}

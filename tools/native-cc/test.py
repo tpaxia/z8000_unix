@@ -69,10 +69,11 @@ main() {
     reference = module('c2_reference', PCC / 'c2z8.py')
     # Generate the large optimizer fixture from source, without depending on
     # an earlier legacy assembler bootstrap's build directory.
-    source=PCC/'az8/ins.c'
+    source=ROOT/'v7z8000/usr/src/cmd/cpp/cpp.c'
     pre=run(['cpp','-nostdinc','-undef','-Dz8000','-Dz8002','-Dunix=1',
              '-I'+str(source.parent),'-I'+str(ROOT/'v7z8000/usr/include'),source])
     assembly=run([PCC/'cz8/cz8'],input=pre.stdout).stdout.decode()
+    assembly += ('! streamed fixture padding\n' * max(0, 1 + (65536-len(assembly))//27))
     assert len(assembly) > 65536
     (WORK / 'opt.az8').write_text(assembly)
     (WORK / 'opt.want').write_text(reference.compact(assembly))
@@ -90,6 +91,12 @@ main() {
             '0 - /bin/cc -O ' + flag + options + ' input.c helper.c -o result',
             '0 - /tmp/result', '0 - /bin/check ' + ('e711' if mode=='split' else 'e707') + ' result',
         ]
+    extra['tmp/ccz8.c'] = PCC/'ccz8.c'
+    plans['selfhost-driver'] = [
+        '0 - /bin/cc -O -i -DTWOPASS ccz8.c -o cc',
+        '0 - /tmp/cc -O -i '+options+' input.c helper.c -o result',
+        '0 - /tmp/result', '0 - /bin/check e711 result',
+    ]
     plans['stages'] = [
         '0 pre.i /bin/cc -E ' + options + ' input.c',
         '0 - /bin/check pre pre.i',
@@ -146,7 +153,7 @@ main() {
         extra['tmp/plan'] = WORK / 'plan'
         image(extra,WORK/'hd.img',sout=sout)
         # Restored clock statistics push optimized split I/D just past 2B cycles.
-        cycles = '12000000000'
+        cycles = '200000000000' if name in ('selfhost-driver','optimizer') else '12000000000'
         result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', cycles,
             '-d', WORK / 'hd.img', '-i', 'runner\\n', '-w', 'NATIVE CC DONE',
             '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True,

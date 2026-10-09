@@ -37,13 +37,13 @@ def setup(preserve=False, reuse=False):
     for p in (SOURCE / 'tests').iterdir():
         if not p.is_file(): continue
         files['usr/src/asz8k/' + p.name] = p
-    for p in (SOURCE / 'tests/aout').iterdir():
+    for p in (SOURCE / 'tests/objects').iterdir():
         files['usr/src/asz8k/' + p.name] = p
     badbyte=WORK/'badbyte.8kn';badbyte.write_text('__data .sect\n .global _abs\n .byte _abs\n .end\n')
     files['usr/src/asz8k/badbyte.8kn']=badbyte
     for name in ('probe.8kn','probe.az8'):
         path=WORK/name
-        path.write_text((SOURCE/'tests/aout'/name).read_text().replace('.byte _abs','.byte 9').replace('.long _abs','.word 0,_abs'))
+        path.write_text((SOURCE/'tests/objects'/name).read_text().replace('.byte _abs','.byte 9').replace('.long _abs','.word 0,_abs'))
         files['usr/src/asz8k/'+name]=path
     files['usr/src/asz8k/fpe.8kn'] = ROOT / 'v7z8000/usr/sys/fpe/fpe.z8k'
     if preserve:
@@ -120,7 +120,7 @@ def setup(preserve=False, reuse=False):
     steps += [('partial', '/bin/ldz8 -r probe.b abs.b -o partial.b'),
               ('partial-link', '/bin/cc -i -s check.b partial.b -o partial'),
               ('partial-run', './partial')]
-    steps += [('sout-'+p.stem, './asz8k '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
+    steps += [('sout-'+p.stem, './asz8k '+p.name) for p in sorted((SOURCE / 'tests/objects').glob('bad*.8kn'))]
     for i, (name, command) in enumerate(steps):
         p = WORK / ('p%03d' % i)
         p.write_text(('1' if name.startswith(('bad', 'sout-bad')) or name in ('bad-mode', 'bad-option', 'overflow') else '0') + ' - ' + command + '\n')

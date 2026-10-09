@@ -54,7 +54,6 @@ These records preserve observations from their implementation stage. Old limits,
 size measurements and missing-feature statements are not current specifications.
 
 - [Implementation journal](history/implementation-steps.md)
-- [V7 restoration audit and validation batches](history/v7-restoration.md)
 - [Interrupt-masking investigation and clock measurements](history/interrupt-masking.md)
 - [Early trap infrastructure](history/step3-trap-infrastructure.md)
 - [Initial V7 kernel](history/step7-v7-kernel.md)

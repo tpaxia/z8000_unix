@@ -24,7 +24,7 @@ def check(fs=None):
     # Refuse to compare against native binaries tested with stale sources.
     for p in (SOURCE / 'src').iterdir():
         assert fs.read('/usr/src/asz8k/' + p.name) == p.read_bytes(), ('refresh native sources', p)
-    for directory in (SOURCE / 'tests', SOURCE / 'tests/aout'):
+    for directory in (SOURCE / 'tests', SOURCE / 'tests/objects'):
         for p in directory.iterdir():
             if p.is_file():
                 expected=p.read_bytes()

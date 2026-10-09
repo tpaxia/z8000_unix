@@ -4,8 +4,6 @@
  */
 #include "acom.h"
 #include "obj.h"
-extern int aflag;
-extern int zflag;
 
 /*
  * Version 3.4, 8/27/82.  Changed this routine to dircom, and moved
@@ -47,7 +45,6 @@ char	llsave;
 			if(i > curaln) curaln = i;
 			l = -1L<<i;
 			curloc = curloc-l-1&l;
-			if(pass2) setorg();
 		} else err('E');
 		assign(STLAB,curloc,cursec);
 		break;
@@ -59,7 +56,6 @@ char	llsave;
 		expression();
 		if(curop.op_rel == RBABS) {
 			curloc += curop.op_val;
-			if(pass2) setorg();
 		} else err('E');
 		break;
 
@@ -111,22 +107,9 @@ char	llsave;
 		break;
 
 	case ADEND:	/* .end */
-		if(toktyp == TKSPC) {  /* read transfer address */
-			if (zflag) {
-				fprintf(ERROR,"s.out: transfer address is unsupported\n");
-				exit(1);
-			}
-			if (aflag) {
-				fprintf(ERROR,"a.out: transfer address is unsupported\n");
-				exit(1);
-			}
-			iilex();
-			expression();
-			if(pass2) {  /* output transfer address */
-				oflush();  objtyp = OBTRA;
-				oputl((long)curop.op_val);
-				oputw(curop.op_rel);
-			}
+		if(toktyp == TKSPC) {
+			fprintf(ERROR,"s.out: transfer address is unsupported\n");
+			exit(1);
 		}
 		reading = 0;
 		break;
@@ -229,7 +212,6 @@ char	llsave;
 		if(curop.op_rel == cursec) {
 			curloc = curop.op_val;
 			assign(STLAB,curop.op_val,curop.op_rel);
-			if(pass2) setorg();
 		} else err('E');
 		break;
 

@@ -195,10 +195,8 @@ def main():
                 sources.append(directory/'y.tab.c')
                 if 'header' in spec:shutil.copyfile(directory/'y.tab.h',directory/spec['header'])
         if name in ('make','prof','nm','size','strip'):
-            spec['flags']=spec.get('flags',[])+['-DSOUT','-I'+str(ROOT/'tools/sout-utils'),'-I'+str(ROOT/'tools/asz8k/src')]
-            if name in ('nm','size','strip'):sources=[ROOT/'tools/sout-utils'/(name+'.c')]
+            spec['flags']=spec.get('flags',[])+['-I'+str(ROOT/'tools/sout-utils'),'-I'+str(ROOT/'tools/asz8k/src')]
             sources += [ROOT/'tools/sout-utils/object.c',ROOT/'tools/asz8k/src/soutfmt.c']
-        if name=='file':spec['flags']=spec.get('flags',[])+['-DSOUT']
         record={'sources':[str(p.relative_to(ROOT)) for p in spec['sources']], 'status':error or 'compiled'}
         record['kind']='terminal-table' if spec.get('data_only') else ('game' if spec.get('game') else 'command')
         objects=[]

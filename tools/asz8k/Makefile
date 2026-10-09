@@ -7,17 +7,11 @@ HEADERS = $(wildcard src/*.h)
 
 all: $(BUILD)/asz8k
 
-# Historical object oracle is separate from the installed s.out assembler.
-oracle: $(BUILD)/asz8k-oracle
-$(BUILD)/asz8k-oracle: $(SOURCES) $(HEADERS) Makefile
-	mkdir -p $(BUILD)
-	$(HOSTCC) $(HOSTFLAGS) -DASZ_HOST -DASZ_LEGACY $(SOURCES) -o $@
-
 $(BUILD)/asz8k: $(SOURCES) $(HEADERS) Makefile
 	mkdir -p $(BUILD)
-	$(HOSTCC) $(HOSTFLAGS) -DASZ_HOST $(SOURCES) -o $@
+	$(HOSTCC) $(HOSTFLAGS) -DASZ_HOST -DPDDIR=\"$(abspath src)\" $(SOURCES) -o $@
 
 test: all
 	python3 ../kernel-asm/test.py --host-only
 
-.PHONY: all test oracle
+.PHONY: all test

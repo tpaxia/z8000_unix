@@ -1,54 +1,36 @@
+/* V7 nlist ABI adapter. SEG addresses require a different public interface. */
 #include <a.out.h>
-int a_magic[] = {A_MAGIC1, A_MAGIC2, A_MAGIC3, A_MAGIC4, 0};
-#define SPACE 100		/* number of symbols read at a time */
+#include "object.h"
 
+int
 nlist(name, list)
 char *name;
 struct nlist *list;
 {
-	register struct nlist *p, *q;
-	int f, n, m, i;
-	long sa;
-	struct exec buf;
-	struct nlist space[SPACE];
-
-	for(p = list; p->n_name[0]; p++) {
-		p->n_type = 0;
-		p->n_value = 0;
-	}
-	f = open(name, 0);
-	if(f < 0)
-		return(-1);
-	read(f, (char *)&buf, sizeof buf);
-	for(i=0; a_magic[i]; i++)
-		if(a_magic[i] == buf.a_magic) break;
-	if(a_magic[i] == 0){
-		close(f);
-		return(-1);
-	}
-	sa = buf.a_text + (long)buf.a_data;
-	sa += (long)buf.a_trsize + buf.a_drsize;
-	sa += sizeof buf;
-	lseek(f, sa, 0);
-	n = buf.a_syms;
-
-	while(n){
-		m = sizeof space;
-		if(n < sizeof space)
-			m = n;
-		read(f, (char *)space, m);
-		n -= m;
-		for(q = space; (m -= sizeof(struct nlist)) >= 0; q++) {
-			for(p = list; p->n_name[0]; p++) {
-				for(i=0;i<8;i++)
-					if(p->n_name[i] != q->n_name[i]) goto cont;
-				p->n_value = q->n_value;
-				p->n_type = q->n_type;
-				break;
-		cont:		;
-			}
-		}
-	}
-	close(f);
-	return(0);
+    FILE *f;
+    struct object o;
+    struct osymbol s;
+    struct nlist *p;
+    long length;
+    unsigned i;
+    int k;
+    for (p = list; p->n_name[0]; p++) p->n_type = p->n_value = 0;
+    f = fopen(name, "rb");
+    if (!f) return -1;
+    fseek(f, 0L, 2); length = ftell(f);
+    if (objread(&o, f, 0L, length) != 1 || o.segmented) goto bad;
+    /* Validate the complete table before changing the caller's results. */
+    for (i = 0; i < o.symbols; i++)
+        if (!objsym(&o, i, &s) || s.value > 65535L) goto bad;
+    for (i = 0; i < o.symbols; i++) {
+        if (!objsym(&o, i, &s)) goto bad;
+        for (p = list; p->n_name[0]; p++) {
+            for (k = 0; k < 8; k++) if (p->n_name[k] != s.name[k]) break;
+            if (k == 8) { p->n_type = s.type; p->n_value = s.value; break; }
+        }
+    }
+    fclose(f); return 0;
+bad:
+    for (p = list; p->n_name[0]; p++) p->n_type = p->n_value = 0;
+    fclose(f); return -1;
 }

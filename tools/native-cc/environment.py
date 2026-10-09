@@ -77,7 +77,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         extra['usr/src/make/'+path.name]=path
     step('make-parser', '/usr/src/make', ['/bin/yacc gram.y'])
     for name in ['ident', 'main', 'doname', 'misc', 'files', 'dosys', 'y.tab']:
-        step('make-' + name, '/usr/src/make', ['/bin/cc -O -c -Dunix=1 '+'-DSOUT ' + name + '.c'])
+        step('make-' + name, '/usr/src/make', ['/bin/cc -O -c -Dunix=1 '+ name + '.c'])
     for name in ('object','soutfmt'):
         step('make-'+name,'/usr/src/make',['/bin/cc -O -c '+name+'.c'])
     makeobjects='ident.b main.b doname.b misc.b files.b dosys.b y.tab.b object.b soutfmt.b'
@@ -112,7 +112,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         if group not in ('front','back'):commands.append('/bin/cp ' + output + ' ' + install)
         step(group+'-link', directory, commands)
 
-    makegroup('cc', {'ccz8.c': PCC/'ccz8.c'}, '/bin/cc', '-DTWOPASS -DSOUT')
+    makegroup('cc', {'ccz8.c': PCC/'ccz8.c'}, '/bin/cc', '-DTWOPASS')
     assembler=ROOT/'tools/asz8k/src'
     for path in assembler.iterdir():
         if path.suffix in ('.h','.pd'): extra['usr/src/asz8k/'+path.name]=path
@@ -120,7 +120,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
     for tool in ('nm','size','strip'):
         for path in (ROOT/'tools/sout-utils/object.h',assembler/'soutfmt.h'):
             extra['usr/src/'+tool+'/'+path.name]=path
-        makegroup(tool,{tool+'.c':ROOT/'tools/sout-utils'/(tool+'.c'),
+        makegroup(tool,{tool+'.c':CMD/(tool+'.c'),
                         'object.c':ROOT/'tools/sout-utils/object.c',
                         'soutfmt.c':assembler/'soutfmt.c'},'/bin/'+tool)
     extra['usr/src/ldz8/soutfmt.h'] = ROOT/'tools/asz8k/src/soutfmt.h'
@@ -153,7 +153,6 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         options = [ROOT/'v7z8000/usr/src/libc'/part/(name+'.c') for part in ['stdio','gen']]
         options.append(ROOT/'tools/libc'/(name+'.c'))
         source = next(p for p in options if p.exists())
-        if name=='nlist': source=ROOT/'tools/sout-utils/nlist.c'
         extra['usr/src/libc/'+name+'.c'] = source
         rules += [name+'.b: '+name+'.c'+(' object.h soutfmt.h' if name=='nlist' else ''), '\t/bin/cc -O -Dunix=1 -c '+name+'.c']
     for name in ('object','soutfmt'):
@@ -241,7 +240,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
     for group,names in [('yacc','y1 y2 y3 y4'),('make','ident main doname misc files dosys y.tab')]:
         objects=[n+'.b' for n in names.split()]+(['object.b','soutfmt.b'] if group=='make' else [])
         deps='dextern files' if group=='yacc' else 'defs'
-        rules=['CFLAGS=-O -Dunix=1'+(' -DSOUT' if group=='make' else ''),'all: '+group,group+': '+' '.join(objects),
+        rules=['CFLAGS=-O -Dunix=1','all: '+group,group+': '+' '.join(objects),
                '\t/bin/cc -i '+' '.join(objects)+' -o '+group]
         for name in names.split():
             rules += [name+'.b: '+name+'.c '+deps,'\t/bin/cc $(CFLAGS) -c '+name+'.c']

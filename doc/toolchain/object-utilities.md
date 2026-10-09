@@ -1,11 +1,15 @@
 # Object utilities
 
-On `work/native-asz8k`, `tools/sout-utils` provides shared host/native `nm`,
+On `work/native-asz8k`, the port command sources provide shared host/native `nm`,
 `size` and `strip`, and a libc `nlist` adapter. A machine-dependent reader
 decodes on-disk fields explicitly; it never reads target C structures into
 host structures. The original V7 nm/size/strip and nlist sources remain intact.
 The default native environment installs these replacements and the nlist
-adapter. The shared reader accepts only s.out; see [formats](abi.md).
+adapter. Command sources live in `v7z8000/usr/src/cmd`, the nlist adapter in
+`v7z8000/usr/src/libc/gen`, and the shared reader in `tools/sout-utils`. The
+public `a.out.h` filename preserves V7’s nlist API; it defines no legacy
+executable header or magic constants. The reader accepts only s.out; see
+[formats](abi.md).
 
 ## Formats and presentation
 
@@ -59,20 +63,22 @@ their relative order.
 
 ## Other format consumers
 
-The `SOUT` builds of V7 make and prof use the same reader for archive-symbol
+V7 make and prof use the same reader for archive-symbol
 dependencies and NONSEG profiling symbols. Their existing timestamp selection
 and histogram/report policy remain unchanged. Make supports symbol lookup in
 mixed portable archives, including SEG objects. Prof rejects SEG programs;
-its histogram and the process ABI remain 16-bit. V7 file gains conditional
-s.out magic recognition. Without `SOUT`, these commands retain their existing
-a.out behavior. These are machine-format adaptations, not compiler workarounds.
+its histogram and the process ABI remain 16-bit. V7 file recognizes s.out and portable archives. There are no conditional
+legacy readers. These are machine-format adaptations, not compiler workarounds.
 
 Native regression checks exercise make's `archive((symbol))` dependencies
 with NONSEG and SEG s.out, classify s.out with file, and produce a prof report
 from a s.out executable and V7 histogram. They require rejection of obsolete
 archive symbols by make and obsolete profile images by prof. Original V7 prof
 reports bad format with exit status zero; the test checks its diagnostic and
-empty report. Standalone disk boot uses s.out.
+empty report. Mkfs prototype boot images use resolved NONSEG s.out; its native
+check verifies the sector-zero payload and rejection of all four old header
+magics. Board disk installation is covered by the
+[native kernel/boot procedure](../development/native-rebuild.md#native-kernel-and-disk-bootstrap).
 
 Reproduction is in [native rebuild](../development/native-rebuild.md#sout-object-utilities).
 

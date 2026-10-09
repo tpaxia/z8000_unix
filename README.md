@@ -158,7 +158,7 @@ for verified scope and remaining work.
 | `tools/sout2bin.py` | Extract split s.out kernel instruction/data boot images |
 | `v7z8000/` | V7 source tree adapted for Z8000 (kernel, libc, commands, man pages) |
 | `v7unix/` | V7 Unix source tree (from TUHS, pristine reference) |
-| `PCC-z8000/` | PCC compiler submodule with Z8000 backend (cz8/az8/ldz8) |
+| `PCC-z8000/` | PCC compiler submodule with Z8000 backend and optimizer (cz8/oz8) |
 | `z8000_emu/` | Z8000 emulator submodule |
 
 ## Documentation

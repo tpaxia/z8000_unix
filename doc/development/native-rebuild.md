@@ -250,6 +250,8 @@ compiler controls and failure cleanup.
 
 ```sh
 python3 tools/sout-utils/test.py
+python3 tools/userland/test-formats.py
+python3 tools/userland/test-mkfs-boot.py
 ```
 
 The trial builds positive fixtures as s.out and verifies obsolete a.out
@@ -284,9 +286,8 @@ python3 tools/asz8k/host.py
 
 The trial uses the verified native assembler from the environment, produces
 s.out, and compares objects, listings and diagnostic cases with the host build.
-Omit `--reuse-tool` to rebuild the assembler for the trial. Its separate
-historical host oracle can be built with `make -C tools/asz8k oracle`; that
-executable is not installed in Unix.
+Use `--setup` instead of `--reuse-tool` for a fresh source rebuild of the
+assembler. Both host and native builds write only s.out.
 
 ## Complete cross-built userland
 

@@ -18,11 +18,18 @@ def main():
     WORK.mkdir(parents=True,exist_ok=True)
     files={}
     native=Filesystem(ROOT/'tests/build/native-environment-sout/hd.img')
-    # Require the corrected native make, not the previous a.out reader.
-    assert native.read('/usr/src/make/files.c')==(ROOT/'v7z8000/usr/src/cmd/make/files.c').read_bytes()
-    assert native.read('/usr/src/make/object.b')[:2]==b'\xe7\x07'
     for name in ('make','ar','cp','runner'):
         path=WORK/name;path.write_bytes(native.read('/bin/'+name));files['bin/'+name]=path
+    for name in ('ident.c','main.c','doname.c','misc.c','files.c','dosys.c','defs','gram.y'):
+        files['usr/src/test/make/'+name]=ROOT/'v7z8000/usr/src/cmd/make'/name
+    files['usr/lib/yaccpar']=ROOT/'PCC-z8000/z8000/yacc/yaccpar'
+    files['bin/yacc']=ROOT/'tests/build/native-environment-sout/native/bin/yacc'
+    for name in ('object.c','object.h'):
+        files['usr/src/test/make/'+name]=ROOT/'tools/sout-utils'/name
+    for name in ('soutfmt.c','soutfmt.h'):
+        files['usr/src/test/make/'+name]=ROOT/'tools/asz8k/src'/name
+    recipe=WORK/'make.mk';recipe.write_text('CC=/bin/cc\nall: make\ny.tab.c: gram.y\n\t/bin/yacc gram.y\nmake: y.tab.c\n\t$(CC) -O -c -Dunix=1 ident.c main.c doname.c misc.c files.c dosys.c y.tab.c object.c soutfmt.c\n\t$(CC) -i ident.b main.b doname.b misc.b files.b dosys.b y.tab.b object.b soutfmt.b -o make\n')
+    files['usr/src/test/make/makefile']=recipe
     for source in [ROOT/'tools/sout-utils'/n for n in ('object.c','object.h')]+[
             ROOT/'tools/asz8k/src'/n for n in ('soutfmt.c','soutfmt.h')]+[
             ROOT/'v7z8000/usr/src/cmd'/n for n in ('file.c','prof.c')]:
@@ -51,9 +58,12 @@ queryseg: mix.a((entry))
 queryextra: mix.a((_extra))
 	/bin/cp main.b queryextra
 ''');files['usr/src/test/makefile']=recipe
+    procedure=WORK/'make.sh';procedure.write_text('cd /usr/src/test/make\n/bin/make && /bin/cp make /bin/make\n')
+    files['tmp/make.sh']=procedure
     plan=WORK/'plan';plan.write_text('\n'.join([
-        '0 - /bin/cc -O -i -DSOUT file.c -o file',
-        '0 - /bin/cc -O -c -DSOUT prof.c object.c soutfmt.c',
+        '0 - /bin/sh /tmp/make.sh',
+        '0 - /bin/cc -O -i file.c -o file',
+        '0 - /bin/cc -O -c prof.c object.c soutfmt.c',
         '0 - /bin/cc -i prof.b object.b soutfmt.b -o prof',
         '0 - /bin/cc -O -c main.c answer.c',
         '0 - /bin/ar rc liba.a answer.b','0 - /bin/ar rc mix.a seg.so extra.b',
@@ -66,7 +76,7 @@ queryextra: mix.a((_extra))
     ])+'\n');files['tmp/plan']=plan
     image(files,WORK/'hd.img',blocks=10000,inodes=900,sout=True)
     with (WORK/'native.log').open('wb') as log:
-        result=subprocess.run([str(SYS/'test_driver'),'-c','200000000000',
+        result=subprocess.run([str(SYS/'test_driver'),'-c','2000000000000',
             '-d',str(WORK/'hd.img'),'-o',str(WORK/'next.img'),
             '-i','runner /tmp/plan /usr/src/test\\n','-w','NATIVE CC DONE',
             '-I','exit\\n','-x','NATIVE CC DONE'],cwd=SYS,

@@ -37,8 +37,6 @@ static	char	ident[] = "@(#)a.ascom.c	3.6";
 
 extern	char	segflg;
 extern	char	oflag;
-extern int aflag;
-extern int zflag;
 
 char putfile[15];
 char optfile[128];
@@ -56,7 +54,6 @@ int	index;
 	pass2 = 1;
 	if (pccflg) pccreset();
 	dopass();
-	oflush();  objtyp = OBOND;  oflush();
 	if(lflag) {
 		pgcheck();  fputc('\n',LIST);
 		pgcheck();  fprintf(LIST,errfmt,errct,warnct);
@@ -68,11 +65,7 @@ int	index;
 		fclose(OBJECT);
 		exit(1);
 	}
-	/* Unix port: retain the native Unidot object; no CP/M xcon chaining. */
-#ifdef ASZ_LEGACY
-	if (aflag) aofinish();
-#endif
-	if (zflag) sofinish();
+	sofinish();
 	if (fclose(OBJECT) == EOF) exit(1);
 	if (lflag && fclose(LIST) == EOF) exit(1);
 	exit(0);
@@ -258,28 +251,7 @@ dopass() {
 emitb(value,reloc) uns value, reloc; {
 
 	if(pass2) {
-#ifdef ASZ_LEGACY
-		if (aflag) aobyte(value,reloc); else
-#endif
-		if (zflag) sobyte(value,reloc);
-		else {
-		/*
-		 * Check whether relocation is needed.
-		 */
-		if((reloc&RAMSK)==RANOP || (reloc&RBMSK)==RBABS) reloc = 0;
-		/*
-		 * Output to the object file without breaking up a relocatable
-		 * item.
-		 */
-		if(relbot-objtop<(reloc?7:1)) oflush();
-		setorg();
-		if(reloc) {
-			*--relbot = reloc>>8;
-			*--relbot = reloc;
-			*--relbot = objtop-objbuf;
-		}
-		oputb(value);  objbuf[5]++;
-		}
+		sobyte(value,reloc);
 		/*
 		 * Output to the listing.
 		 */
@@ -290,7 +262,7 @@ emitb(value,reloc) uns value, reloc; {
 		sprintf(llobt,"%02x",value&0377);
 		llobt = llobt + 2;
 	}
-	nxtloc = ++curloc;
+	++curloc;
 }
 
 /*
@@ -343,61 +315,7 @@ expression() {
  * interlude - Performs processing between pass 1 and pass 2.
  */
 interlude() {
-
-struct	sytab	*syp;
-vmadr	p;
-uns	h;
-uns	rel;
-char	type;
-
-#ifdef ASZ_LEGACY
-	if (aflag) { aobegin(); return; }
-#endif
-	if (zflag) { sobegin(); return; }
-	objtyp = OBOST;  oflush();
-	for(rel=RBSEC ; rel<secct ; rel++) {  /* output sections blocks */
-		if(objtyp!=OBSEC || relbot-objtop<8+7) {
-			oflush();  objtyp = OBSEC;
-		}
-		syp = (struct sytab *)rfetch(sectab[rel].se_sym);
-		oputb(sectab[rel].se_aln);
-		oputb(sectab[rel].se_ext);
-		oputb(sectab[rel].se_atr);
-		oputs(syp->sy_str);
-	}
-	rel = RBEXT;
-	for(h=0 ; h<1<<SHSHLOG ; h++) {
-		for(p=syhtab[h] ; p ; p=syp->sy_lnk) {
-			syp = (struct sytab *)rfetch(p);
-			if(syp->sy_typ==STKEY || syp->sy_typ==STSEC) continue;
-			if(syp->sy_atr&SAGLO || uext&&syp->sy_typ==STUND)
-				type = OBGLO;
-			else
-				type = OBLOC;
-			if(objtyp!=type || relbot-objtop<8+7) {
-				oflush();  objtyp = type;
-			}
-			if(syp->sy_typ == STUND) {
-				oputl(0L);
-				oputb(RBUND);
-				if(syp->sy_atr&SAGLO || uext) {
-					if(rel >= RBMSK) {
-						fprintf(ERROR,"Too many externals\n");
-						exit(1);
-					}
-					syp = (struct sytab *)wfetch(p);
-					syp->sy_typ = STLAB;
-					syp->sy_atr |= SAGLO;
-					syp->sy_val = 0;
-					syp->sy_rel = rel++;
-				}
-			} else {
-				oputl((long)syp->sy_val);
-				oputb(syp->sy_rel);
-			}
-			oputs(syp->sy_str);
-		}
-	}
+	sobegin();
 }
 
 /*
@@ -542,67 +460,6 @@ newsec() {
 }
 
 /*
- * oflush - Outputs an object block to the object file.
- */
-oflush() {
-
-char	*op;
-
-	if(objtyp && !aflag && !zflag) {
-		fputc(objtyp,OBJECT);
-		fputc(OBJSIZ-(relbot-objtop),OBJECT);
-		for(op=objbuf ; op<objtop ; op++) fputc(*op,OBJECT);
-		for(op=relbot ; op<&objbuf[OBJSIZ] ; op++) fputc(*op,OBJECT);
-	}
-	objtop = objbuf;  relbot = &objbuf[OBJSIZ];  objtyp = 0;
-}
-
-/*
- * oputb - Puts a byte into the object buffer.
- */
-oputb(c) char c; {
-
-	if(objtop >= relbot) {
-		fprintf(ERROR,"Object buffer overflow\n");
-		exit(1);
-	}
-	*objtop++ = c;
-}
-
-/*
- * oputl - Puts a long word into the object buffer.
- */
-oputl(l) long l; {
-
-	oputw((uns)l);
-	oputw((uns)(l>>16));
-}
-
-/*
- * oputs - Puts a symbol into the object buffer.
- */
-oputs(s) char *s; {
-
-char	i;
-
-	i = 8;
-	do {
-		if(*s == '\0') break;
-		oputb(*s++);
-	} while(--i > 0);
-	oputb('\0');
-}
-
-/*
- * oputw - Puts a word into the object buffer.
- */
-oputw(w) uns w; {
-
-	oputb(w);
-	oputb(w>>8);
-}
-
-/*
  * rpt1 - Copies one statement into a repeat definition.
  */
 rpt1() {
@@ -647,25 +504,10 @@ char	rch;
 }
 
 /*
- * setorg - Sets up the next address for text output.
- */
-setorg() {
-
-	if(objtyp!=OBTXT || nxtloc!=curloc || nxtsec!=cursec) {
-		oflush();  objtyp = OBTXT;
-		oputl((long)curloc);  oputb(cursec);  oputb(0);
-		nxtloc = curloc;  nxtsec = cursec;
-	}
-}
-
-/*
  * setsec - Changes to the specified section for code generation.
  */
 setsec(sec) uns sec; {
 
-#ifdef ASZ_LEGACY
-	aocheck();
-#endif
 	socheck();
 	sectab[cursec].se_aln = curaln;
 	sectab[cursec].se_ext = curext;

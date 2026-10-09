@@ -1,46 +1,29 @@
-#include	<stdio.h>
-#include 	<a.out.h>
-
-/*
-	size -- determine object size
-
-*/
-
-int a_magic[] = {A_MAGIC1,A_MAGIC2,A_MAGIC3,A_MAGIC4,0};
-
+/* V7 size presentation, using the machine-dependent object reader. */
+#include "object.h"
+int
 main(argc, argv)
+int argc;
 char **argv;
 {
-	struct exec buf;
-	long sum;
-	int gorp,i;
-	FILE *f;
-
-	if (argc==1) {
-		*argv = "a.out";
-		argc++;
-		--argv;
-	}
-	gorp = argc;
-	while(--argc) {
-		++argv;
-		if ((f = fopen(*argv, "r"))==NULL) {
-			printf("size: %s not found\n", *argv);
-			continue;
-		}
-		fread((char *)&buf, sizeof(buf), 1, f);
-		for(i=0;a_magic[i];i++)
-			if(a_magic[i] == buf.a_magic) break;
-		if(a_magic[i] == 0) {
-			printf("size: %s not an object file\n", *argv);
-			fclose(f);
-			continue;
-		}
-		if (gorp>2)
-			printf("%s: ", *argv);
-		printf("%u+%u+%u = ", buf.a_text,buf.a_data,buf.a_bss);
-		sum = (long) buf.a_text + (long) buf.a_data + (long) buf.a_bss;
-		printf("%Db = 0%Ob\n", sum, sum);
-		fclose(f);
-	}
+    struct object o;
+    FILE *f;
+    long length, sum;
+    int i, status;
+    char *name;
+    status = 0;
+    for (i = 1; i < argc || (i == 1 && argc == 1); i++) {
+        name = argc == 1 ? "a.out" : argv[i];
+        f = fopen(name, "rb");
+        if (!f) { fprintf(stderr, "size: cannot open %s\n", name); status = 1; continue; }
+        fseek(f, 0L, 2); length = ftell(f);
+        if (objread(&o, f, 0L, length) != 1) {
+            fprintf(stderr, "size: %s-- bad format\n", name); status = 1;
+        } else {
+            if (argc > 2) printf("%s: ", name);
+            sum = o.text+o.data+o.bss;
+            printf("%ld+%ld+%ld = %ldb = 0%lob\n", o.text, o.data, o.bss, sum, sum);
+        }
+        fclose(f);
+    }
+    return status;
 }

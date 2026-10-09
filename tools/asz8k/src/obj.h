@@ -1,27 +1,12 @@
 /*
  * @(#)obj.h	3.3
  *
- * Unidot Object Format.
+ * Internal encoder relocation actions and section attributes.
  *
  * Copyright 1981 by John D. Polstra and Robert M. McClure.
  * All rights reserved.
  */
 
-/*
- * Object file block types.
- */
-#define	OBOST	1		/* object start block */
-#define	OBLST	2		/* library start block */
-#define	OBSEC	3		/* sections block */
-#define	OBGLO	4		/* global symbols block */
-#define	OBLOC	5		/* local symbols block */
-#define	OBTXT	6		/* text block */
-#define	OBBSZ	7		/* bssz block */
-#define	OBTRA	8		/* transfer address block */
-#define	OBLIX	9		/* library index block */
-#define	OBLND	10		/* library end block */
-#define	OBOND	11		/* object end block */
-#define	OBMOD	12		/* module name block */
 /*
  * Object file relocation actions.
  */

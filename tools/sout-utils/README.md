@@ -1,7 +1,8 @@
 # Object utilities
 
-Shared host/native `nm`, `size` and `strip` for the port's a.out and s.out
-formats, plus a V7 `nlist` ABI adapter. Original V7 source files remain intact.
+Shared s.out reader for host/native `nm`, `size`, `strip`, make, prof and
+libc `nlist`. Command and libc implementations live in `v7z8000/usr/src`;
+the pristine PDP-11 sources remain in `v7unix`. There are no legacy readers.
 
 Build host tools with `make -C tools/sout-utils`. After the
 [native s.out C trial](../../doc/development/native-rebuild.md#sout-native-c-pipeline),

@@ -83,7 +83,7 @@ def main():
             sources=[ROOT/'v7z8000/usr/src/libc'/p/(name+'.c') for p in ('gen','stdio')]
             sources += [ROOT/'tools/libc'/(name+'.c')]
             if name=='softfp': sources=[ROOT/'tools/fpe/glue.c']
-            if name in ('nlist','object'): sources=[ROOT/'tools/sout-utils'/(name+'.c')]
+            if name=='object': sources=[ROOT/'tools/sout-utils/object.c']
             if name=='soutfmt': sources=[ROOT/'tools/asz8k/src/soutfmt.c']
             source=next(p for p in sources if p.exists())
             files['usr/src/libc/'+name+'.c']=source
@@ -121,7 +121,7 @@ def main():
         '/bin/cc -i -s dispatch.b ldso.b soutfmt.b -o ldz8','/bin/cp ldz8 /bin/ldz8'])
     files['usr/src/test/ccz8.c']=ROOT/'PCC-z8000/z8000/ccz8.c'
     step('driver','/usr/src/test',[
-        '/bin/cc -O -i -DTWOPASS -DSOUT ccz8.c -o cc','/bin/cp cc /bin/cc'])
+        '/bin/cc -O -i -DTWOPASS ccz8.c -o cc','/bin/cp cc /bin/cc'])
     step('selfhost-smoke','/usr/src/test',[
         '/bin/cc -O -i hello.c -o finalhello','./finalhello',
         '/bin/cc -O -i libctest.c -o /bin/libctest','/bin/libctest'])

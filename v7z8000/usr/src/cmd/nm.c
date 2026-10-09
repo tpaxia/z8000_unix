@@ -1,239 +1,172 @@
-/*
-**	print symbol tables for
-**	object or archive files
-**
-**	nm [-goprun] [name ...]
-*/
+/* V7 nm selection, ordering and archive presentation; machine object access
+ * is explicit rather than fread of target C structures. */
+#include "object.h"
+#include <arport.h>
+#include <ctype.h>
 
+static int numeric, undefined, reverse = 1, global, unsorted, prefix;
+static int status;
 
+static int
+compare(a, b)
+struct osymbol *a, *b;
+{
+    int i;
+    if (numeric) {
+        if (a->segment != b->segment) return a->segment > b->segment ? reverse : -reverse;
+        if (a->value != b->value) return a->value > b->value ? reverse : -reverse;
+    }
+    for (i = 0; i < 8; i++) if (a->name[i] != b->name[i])
+        return (a->name[i]&255) > (b->name[i]&255) ? reverse : -reverse;
+    return 0;
+}
 
-#include	<arport.h>
-#include	<a.out.h>
-#include	<stdio.h>
-#include	<ctype.h>
-#define	MAGIC	exp.a_magic
-#define	BADMAG	MAGIC!=A_MAGIC1 && MAGIC!=A_MAGIC2  \
-		&& MAGIC!=A_MAGIC3 && MAGIC!=A_MAGIC4
-#define	SELECT	arch_flg ? arp.ar_name : *argv
-int	numsort_flg;
-int	undef_flg;
-int	revsort_flg = 1;
-int	globl_flg;
-int	nosort_flg;
-int	arch_flg;
-int	prep_flg;
-struct	ar_member	arp;
-struct	exec	exp;
-FILE	*fi;
-long	off;
-long	ftell();
-char	*malloc();
-char	*realloc();
+static int
+names(o, path, member, many)
+struct object *o;
+char *path, *member;
+int many;
+{
+    struct osymbol *symbols, s;
+    unsigned i, count;
+    int kind, c;
+    char *select;
+    select = member ? member : path;
+    if (!o->symbols) {
+        fprintf(stderr, "nm: %s-- no name list\n", select); return 0;
+    }
+    /* Bound allocation on the native 16-bit heap. -p streams the table. */
+    symbols = NULL;
+    if (!unsorted) {
+        if (o->symbols > 60000L/sizeof(s)) goto memory;
+        symbols = (struct osymbol *)malloc(o->symbols*sizeof(s));
+        if (!symbols) goto memory;
+    }
+    count = 0;
+    for (i = 0; i < o->symbols; i++) {
+        if (!objsym(o, i, &s)) {
+            fprintf(stderr, "nm: %s-- bad symbol table\n", select);
+            status = 1; if (symbols) free((char *)symbols); return 0;
+        }
+        if (global && !(s.type & SO_EXTERNAL)) continue;
+        kind = s.type & 31;
+        switch (kind) {
+        case 0: c = s.value ? 'c' : 'u'; break;
+        case 2: c = 't'; break;
+        case 3: c = 'd'; break;
+        case 4: c = 'b'; break;
+        case 024: c = 'r'; break;
+        case 037: c = 'f'; break;
+        default: c = 'a'; break;
+        }
+        if (undefined && c != 'u') continue;
+        s.letter = s.type & SO_EXTERNAL ? toupper(c) : c;
+        if (unsorted) {
+            if (!count && (member || many) && !prefix) printf("\n%s:\n", select);
+            if (prefix) { if (member) printf("%s:", path); printf("%s:", select); }
+            if (!undefined) {
+                if (c == 'u') printf(o->segmented ? "           " : "      ");
+                else if (o->segmented && kind >= 2 && kind <= 4)
+                    printf("%03o:%06lo", s.segment, s.value);
+                else if (o->segmented) printf("    %06lo", s.value);
+                else printf("%06lo", s.value);
+                printf(" %c ", s.letter);
+            }
+            printf("%.8s\n", s.name);
+        } else symbols[count] = s;
+        count++;
+    }
+    if (symbols) {
+        qsort(symbols, count, sizeof(s), compare);
+        if ((member || many) && !prefix) printf("\n%s:\n", select);
+        for (i = 0; i < count; i++) {
+            s = symbols[i]; kind = s.type & 31;
+            if (prefix) { if (member) printf("%s:", path); printf("%s:", select); }
+            if (!undefined) {
+                if (s.letter == 'u' || s.letter == 'U') printf(o->segmented ? "           " : "      ");
+                else if (o->segmented && kind >= 2 && kind <= 4)
+                    printf("%03o:%06lo", s.segment, s.value);
+                else if (o->segmented) printf("    %06lo", s.value);
+                else printf("%06lo", s.value);
+                printf(" %c ", s.letter);
+            }
+            printf("%.8s\n", s.name);
+        }
+        free((char *)symbols);
+    }
+    return 1;
+memory:
+    fprintf(stderr, "nm: out of memory on %s (use -p to stream)\n", select);
+    status = 1; return 0;
+}
 
+static int
+file(path, many)
+char *path;
+int many;
+{
+    FILE *f;
+    struct object o;
+    struct ar_disk d;
+    struct ar_member m;
+    char magic[8];
+    long length, off, next;
+    int archive, r;
+    f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "nm: cannot open %s\n", path); status = 1; return 0; }
+    fseek(f, 0L, 2); length = ftell(f); rewind(f);
+    archive = fread(magic, 1, 8, f) == 8 && !strncmp(magic, ARMAG, 8);
+    off = archive ? 8 : 0;
+    if (archive && many && !prefix) printf("\n%s:\n", path);
+    do {
+        if (archive) {
+            if (off == length) break;
+            if (off > length || length-off < 60 || fseek(f, off, 0) ||
+                fread((char *)&d, 1, 60, f) != 60) goto bad;
+            /* An optional GNU symbol index has no object contents. */
+            if (d.name[0] == '/' && d.name[1] == ' ') {
+                m.ar_size = arnum(d.size, 10, 10);
+                if (d.end[0] != '`' || d.end[1] != '\n' || m.ar_size < 0) goto bad;
+                m.ar_name[0] = 0;
+            } else if (!ardecode(&d, &m)) goto bad;
+            off += 60;
+            if (m.ar_size > length-off) goto bad;
+            next = off+m.ar_size+(m.ar_size&1);
+            if (next > length) goto bad;
+            if (!m.ar_name[0] || !strcmp(m.ar_name, "__.SYMDEF")) { off = next; continue; }
+            r = objread(&o, f, off, m.ar_size);
+        } else { next = length; r = objread(&o, f, 0L, length); }
+        if (r < 0 || (!archive && !r)) goto bad;
+        if (r == 1) names(&o, path, archive ? m.ar_name : NULL, many);
+        off = next;
+    } while (archive);
+    fclose(f); return 1;
+bad:
+    fprintf(stderr, "nm: %s-- bad format\n", path); status = 1;
+    fclose(f); return 0;
+}
+
+int
 main(argc, argv)
+int argc;
 char **argv;
 {
-	int narg;
-	char magic[SARMAG];
-	int  compare();
-
-	if (--argc>0 && argv[1][0]=='-' && argv[1][1]!=0) {
-		argv++;
-		while (*++*argv) switch (**argv) {
-		case 'n':		/* sort numerically */
-			numsort_flg++;
-			continue;
-
-		case 'g':		/* globl symbols only */
-			globl_flg++;
-			continue;
-
-		case 'u':		/* undefined symbols only */
-			undef_flg++;
-			continue;
-
-		case 'r':		/* sort in reverse order */
-			revsort_flg = -1;
-			continue;
-
-		case 'p':		/* don't sort -- symbol table order */
-			nosort_flg++;
-			continue;
-
-		case 'o':		/* prepend a name to each line */
-			prep_flg++;
-			continue;
-
-		default:		/* oops */
-			fprintf(stderr, "nm: invalid argument -%c\n", *argv[0]);
-			exit(1);
-		}
-		argc--;
-	}
-	if (argc == 0) {
-		argc = 1;
-		argv[1] = "a.out";
-	}
-	narg = argc;
-	while(argc--) {
-		fi = fopen(*++argv,"r");
-		if (fi == NULL) {
-			fprintf(stderr, "nm: cannot open %s\n", *argv);
-			continue;
-		}
-		off = SARMAG;
-		arch_flg = 0;
-		fread((char *)&exp, 1, sizeof(MAGIC), fi);	/* get magic no. */
-		rewind(fi);
-		if (fread(magic, 1, SARMAG, fi) == SARMAG &&
-		    strncmp(magic, ARMAG, SARMAG) == 0)
-			arch_flg++;
-		else if (BADMAG) {
-			fprintf(stderr, "nm: %s-- bad format\n", *argv);
-			continue;
-		}
-		fseek(fi, 0L, 0);
-		if (arch_flg) {
-			nextel(fi);
-			if (narg > 1)
-				printf("\n%s:\n", *argv);
-		}
-		do {
-			long o;
-			register i, n, c;
-			struct nlist *symp = NULL;
-			struct nlist sym;
-
-			fread((char *)&exp, 1, sizeof(struct exec), fi);
-			if (BADMAG)		/* archive element not in  */
-				continue;	/* proper format - skip it */
-			o = (long)exp.a_text + exp.a_data;
-			o += (long)exp.a_trsize + exp.a_drsize;
-			fseek(fi, o, 1);
-			n = exp.a_syms / sizeof(struct nlist);
-			if (n == 0) {
-				fprintf(stderr, "nm: %s-- no name list\n", SELECT);
-				continue;
-			}
-			i = 0;
-			while (--n >= 0) {
-				fread((char *)&sym, 1, sizeof(sym), fi);
-				if (globl_flg && (sym.n_type&N_EXT)==0)
-					continue;
-				switch (sym.n_type&N_TYPE) {
-
-				case N_UNDF:
-					c = 'u';
-					if (sym.n_value)
-						c = 'c';
-					break;
-
-				default:
-				case N_ABS:
-					c = 'a';
-					break;
-
-				case N_TEXT:
-					c = 't';
-					break;
-
-				case N_DATA:
-					c = 'd';
-					break;
-
-				case N_BSS:
-					c = 'b';
-					break;
-
-				case N_FN:
-					c = 'f';
-					break;
-
-				case N_REG:
-					c = 'r';
-					break;
-				}
-				if (undef_flg && c!='u')
-					continue;
-				if (sym.n_type&N_EXT)
-					c = toupper(c);
-				sym.n_type = c;
-				if (symp==NULL)
-					symp = (struct nlist *)malloc(sizeof(struct nlist));
-				else {
-					symp = (struct nlist *)realloc(symp, (i+1)*sizeof(struct nlist));
-				}
-				if (symp == NULL) {
-					fprintf(stderr, "nm: out of memory on %s\n", *argv);
-					exit(2);
-				}
-				symp[i++] = sym;
-			}
-			if (nosort_flg==0)
-				qsort(symp, i, sizeof(struct nlist), compare);
-			if ((arch_flg || narg>1) && prep_flg==0)
-				printf("\n%s:\n", SELECT);
-			for (n=0; n<i; n++) {
-				if (prep_flg) {
-					if (arch_flg)
-						printf("%s:", *argv);
-					printf("%s:", SELECT);
-				}
-				c = symp[n].n_type;
-				if (!undef_flg) {
-					if (c=='u' || c=='U')
-						printf("      ");
-					else
-						printf(FORMAT, symp[n].n_value);
-					printf(" %c ", c);
-				}
-				printf("%.8s\n", symp[n].n_name);
-			}
-			if (symp)
-				free((char *)symp);
-		} while(arch_flg && nextel(fi));
-		fclose(fi);
-	}
-	exit(0);
-}
-
-compare(p1, p2)
-struct nlist *p1, *p2;
-{
-	register i;
-
-	if (numsort_flg) {
-		if (p1->n_value > p2->n_value)
-			return(revsort_flg);
-		if (p1->n_value < p2->n_value)
-			return(-revsort_flg);
-	}
-	for(i=0; i<sizeof(p1->n_name); i++)
-		if (p1->n_name[i] != p2->n_name[i]) {
-			if (p1->n_name[i] > p2->n_name[i])
-				return(revsort_flg);
-			else
-				return(-revsort_flg);
-		}
-	return(0);
-}
-
-nextel(af)
-FILE *af;
-{
-	register r;
-	struct ar_disk disk;
-
-	fseek(af, off, 0);
-	r = fread((char *)&disk, 1, sizeof disk, af);
-	if (r == 0)
-		return(0);
-	if (r != sizeof disk || !ardecode(&disk, &arp)) {
-		fprintf(stderr, "nm: malformed archive header\n");
-		exit(1);
-	}
-	if (arp.ar_size & 1)
-		++arp.ar_size;
-	off = ftell(af) + arp.ar_size;	/* offset to next element */
-	return(1);
+    char *p;
+    int first, i;
+    first = 1;
+    if (argc > 1 && argv[1][0] == '-' && argv[1][1]) {
+        for (p = argv[1]+1; *p; p++) switch (*p) {
+        case 'n': numeric = 1; break;
+        case 'g': global = 1; break;
+        case 'u': undefined = 1; break;
+        case 'r': reverse = -1; break;
+        case 'p': unsorted = 1; break;
+        case 'o': prefix = 1; break;
+        default: fprintf(stderr, "nm: invalid argument -%c\n", *p); return 1;
+        }
+        first++;
+    }
+    if (first == argc) file("a.out", 0);
+    for (i = first; i < argc; i++) file(argv[i], argc-first > 1);
+    return status;
 }

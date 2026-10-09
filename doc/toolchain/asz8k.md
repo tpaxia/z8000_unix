@@ -2,8 +2,7 @@
 
 `tools/asz8k` ports the CP/M-8000 Zilog assembler to V7. Host and native builds
 compile the same K&R C sources. The installed assembler produces s.out by
-default; it rejects `-a`. The separate host `make oracle` build retains the
-historical writers for comparison with the recovered CP/M objects.
+default; it rejects `-a`. s.out is the only object writer in both builds.
 
 [Source provenance](../../tools/asz8k/README.md).
 [Build and validation](../development/native-rebuild.md#machine-assembly-and-raw-images).
@@ -79,6 +78,5 @@ long local labels, external calls and both I/O forms, and rejects legacy output
 and linker input. Four unchanged firmware/FPU hashes retain the previous GNU
 build as a separate comparison. The primary loader changed to read s.out.
 
-The separate historical oracle compares five recovered CP/M object hashes.
-It is not installed on the Unix disk. Native source rebuilding belongs to the
+Native source rebuilding belongs to the
 [native environment procedure](../development/native-rebuild.md#supporting-tools-and-libc).

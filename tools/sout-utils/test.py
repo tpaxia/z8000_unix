@@ -85,7 +85,7 @@ def main():
     for name in ('ar','cp','cmp'):
         files['bin/'+name]=ROOT/'tests/build/native-environment-sout/native/bin'/name
     files['usr/lib/asz8k.pd']=ROOT/'tools/asz8k/src/asz8k.pd'
-    sources=list(SOURCE.glob('*.c'))+[SOURCE/'object.h']+[
+    sources=list(SOURCE.glob('*.c'))+[ROOT/'v7z8000/usr/src/cmd'/(n+'.c') for n in ('nm','size','strip')]+[ROOT/'v7z8000/usr/src/libc/gen/nlist.c',SOURCE/'object.h']+[
         ROOT/'tools/asz8k/src/soutfmt.c',ROOT/'tools/asz8k/src/soutfmt.h']
     for path in sources: files['usr/src/utils/'+path.name]=path
     fixtures=['start.so','help.so','seg.so','ext.so','combined','split','partial',

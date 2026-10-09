@@ -25,7 +25,6 @@
 #define	LLOBJ	8		/* length of object field in listing line */
 #define	LLPP	58		/* listing lines/page (must be less than 64) */
 #define	LLSEQ	5		/* length of sequence field in listing line */
-#define	OBJSIZ	255		/* maximum object block length */
 #define	OHSHLOG	6		/* log base 2 of opcode hash table size */
 
 #ifndef PDDIR			/* following define overridable in cc line */
@@ -340,11 +339,6 @@ char		mctchr;		/* macro expansion count character */
 uns		mexct;		/* count of macro expansions */
 uns		minaln;		/* minimum section alignment value */
 int		ntdflt[];	/* nonterminal default action table */
-exprval		nxtloc;		/* next location for text output */
-uns		nxtsec;		/* next section for text output */
-char		objbuf[];	/* object block construction area */
-char		*objtop;	/* top of text info in objbuf */
-char		objtyp;		/* object block type being built */
 struct	octab	*ochtab[];	/* opcode hash table */
 struct	octab	*opcode;	/* octab pointer for statement opcode */
 char		opcstr[];	/* opcode string */
@@ -360,7 +354,6 @@ char		*prname;	/* name of this assembler */
 int		ptab[];		/* parsing action table */
 char		rbrchr;		/* right brace character for macro args */
 char		reading;	/* flag indicating we are reading input */
-char		*relbot;	/* bottom of relocation info in objbuf */
 uns		rmarg;		/* listing right margin column */
 char		rptct;		/* repeat count for current repeat def */
 uns		rptlev;		/* repeat definition nesting level */

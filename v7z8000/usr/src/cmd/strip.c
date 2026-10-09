@@ -1,111 +1,82 @@
-#include <a.out.h>
+/* V7 strip's temporary-copy policy, with explicit target-format fields. */
+#include "object.h"
 #include <signal.h>
 
-char	*tname;
-char	*mktemp();
-struct exec head;
-int 	a_magic[] = {A_MAGIC1, A_MAGIC2, A_MAGIC3, A_MAGIC4, 0};
-int	status;
-int	tf;
-
-main(argc, argv)
-char *argv[];
-{
-	register i;
-
-	signal(SIGHUP, SIG_IGN);
-	signal(SIGINT, SIG_IGN);
-	signal(SIGQUIT, SIG_IGN);
-	tname = mktemp("/tmp/sXXXXX");
-	close(creat(tname, 0600));
-	tf = open(tname, 2);
-	if(tf < 0) {
-		printf("cannot create temp file\n");
-		exit(2);
-	}
-	for(i=1; i<argc; i++) {
-		strip(argv[i]);
-		if(status > 1)
-			break;
-	}
-	close(tf);
-	unlink(tname);
-	exit(status);
-}
-
-strip(name)
-char *name;
-{
-	register f;
-	long size;
-	int i;
-
-	f = open(name, 0);
-	if(f < 0) {
-		printf("cannot open %s\n", name);
-		status = 1;
-		goto out;
-	}
-	read(f, (char *)&head, sizeof(head));
-	for(i=0;a_magic[i];i++)
-		if(a_magic[i] == head.a_magic) break;
-	if(a_magic[i] == 0) {
-		printf("%s not in a.out format\n", name);
-		status = 1;
-		goto out;
-	}
-	if(head.a_syms == 0 && head.a_trsize == 0 && head.a_drsize == 0) {
-		printf("%s already stripped\n", name);
-		goto out;
-	}
-	size = (long)head.a_text + head.a_data;
-	head.a_syms = 0;
-	head.a_trsize = head.a_drsize = 0;
-
-	lseek(tf, (long)0, 0);
-	write(tf, (char *)&head, sizeof(head));
-	if(copy(name, f, tf, size)) {
-		status = 1;
-		goto out;
-	}
-	size += sizeof(head);
-	close(f);
-	f = creat(name, 0666);
-	if(f < 0) {
-		printf("%s cannot recreate\n", name);
-		status = 1;
-		goto out;
-	}
-	lseek(tf, (long)0, 0);
-	if(copy(name, tf, f, size))
-		status = 2;
-
-out:
-	close(f);
-}
-
-copy(name, fr, to, size)
-char *name;
+static int
+copy(in, out, size)
+FILE *in, *out;
 long size;
 {
-	register s, n;
-	char buf[512];
+    char b[512];
+    int n;
+    while (size) {
+        n = size > 512 ? 512 : (int)size;
+        if (fread(b, 1, n, in) != n || fwrite(b, 1, n, out) != n) return 0;
+        size -= n;
+    }
+    return 1;
+}
 
-	while(size != 0) {
-		s = 512;
-		if(size < 512)
-			s = size;
-		n = read(fr, buf, s);
-		if(n != s) {
-			printf("%s unexpected eof\n", name);
-			return(1);
-		}
-		n = write(to, buf, s);
-		if(n != s) {
-			printf("%s unexpected write eof\n", name);
-			return(1);
-		}
-		size -= s;
-	}
-	return(0);
+static int
+strip(name, temp)
+char *name, *temp;
+{
+    FILE *in, *out;
+    struct object o;
+    struct osymbol s;
+    char h[24];
+    long length;
+    int n, i, ok;
+    in = fopen(name, "rb");
+    if (!in) { fprintf(stderr, "strip: cannot open %s\n", name); return 1; }
+    fseek(in, 0L, 2); length = ftell(in);
+    if (objread(&o, in, 0L, length) != 1) goto bad;
+    /* Do not destroy a recognized file with unsupported symbol records. */
+    for (i = 0; i < o.symbols; i++) if (!objsym(&o, i, &s)) goto bad;
+    if (length == o.keep && !o.symbols) {
+        fclose(in); return 0;
+    }
+    n = objstrip(&o, h);
+    out = fopen(temp, "wb");
+    if (!out) { fclose(in); fprintf(stderr, "strip: cannot create temporary file\n"); return 1; }
+    ok = n && fwrite(h, 1, n, out) == n && !fseek(in, (long)n, 0) &&
+        copy(in, out, o.keep-n);
+    if (fclose(out)) ok = 0;
+    fclose(in);
+    if (!ok) { fprintf(stderr, "strip: %s-- copy failed\n", name); return 1; }
+    in = fopen(temp, "rb");
+    if (!in) return 1;
+    /* Opening an existing file preserves its permissions, as in V7 strip. */
+    out = fopen(name, "wb");
+    if (!out) { fclose(in); fprintf(stderr, "strip: cannot rewrite %s\n", name); return 1; }
+    ok = copy(in, out, o.keep);
+    if (fclose(out)) ok = 0;
+    fclose(in);
+    if (!ok) fprintf(stderr, "strip: %s-- write failed\n", name);
+    return !ok;
+bad:
+    fprintf(stderr, "strip: %s-- bad format\n", name); fclose(in); return 1;
+}
+
+int
+main(argc, argv)
+int argc;
+char **argv;
+{
+    char temp[32];
+    int i, fd, status;
+    signal(SIGHUP, SIG_IGN); signal(SIGINT, SIG_IGN); signal(SIGQUIT, SIG_IGN);
+    strcpy(temp, "/tmp/suXXXXXX");
+#ifdef z8000
+    if (mktemp(temp) != temp) {
+        fprintf(stderr, "strip: cannot create temporary file\n"); return 2;
+    }
+    fd = creat(temp, 0600);
+#else
+    fd = mkstemp(temp);
+#endif
+    if (fd < 0) { fprintf(stderr, "strip: cannot create temporary file\n"); return 2; }
+    close(fd); status = 0;
+    for (i = 1; i < argc; i++) if (strip(argv[i], temp)) status = 1;
+    unlink(temp); return status;
 }

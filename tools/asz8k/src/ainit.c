@@ -15,8 +15,6 @@ static	char	ident[] = "@(#)a.init.c	3.2";
 
 extern	char	segflg;
 extern	char	oflag;
-extern int aflag;
-extern int zflag;
 
 /*
  * badpre - Issues a fatal error for a bad PREDEF file.
@@ -66,12 +64,8 @@ static char errbuf[BUFSIZ];
 			while(*++ap) switch(*ap) {
 
 			case 'a':
-#ifdef ASZ_LEGACY
-				aflag = 1; zflag = 0; break;
-#else
 				fprintf(ERROR,"Only s.out output is supported\n"); exit(1);
-#endif
-			case 'z': zflag = 1; break;
+			case 'z': break;
 			case 'c': pccflg = 1; break;
 			case 'g': machineflg = pccflg = 1; break;
 
@@ -112,14 +106,9 @@ static char errbuf[BUFSIZ];
 			srcfile = ap;
 		}
 	}
-	if (aflag && zflag) usage();
-	if (pccflg && (!zflag || (segflg && !machineflg))) usage();
+	if (pccflg && segflg && !machineflg) usage();
 	if (pccflg && !machineflg) uext = 1;
 	objectseg = segflg;
-	if (aflag && segflg) {
-		fprintf(ERROR,"a.out: segmented output is not implemented\n");
-		exit(1);
-	}
 	if(!srcfile) {printf("no srcfile\n"); usage();}
 	if((sp = rindex(srcfile,'/')) == 0) sp = srcfile; else sp++;
 	if(strlen(sp) > 14) usage();
@@ -144,7 +133,7 @@ static char errbuf[BUFSIZ];
 		fprintf(ERROR,"Cannot open %s\n",srcfile);
 		exit(1);
 	}
-	strcpy(ep,zflag ? "so" : aflag ? "b" : "obj");  OBJECT = newfile(oflag ? optfile : fname,BinFile);
+	strcpy(ep,"so");  OBJECT = newfile(oflag ? optfile : fname,BinFile);
 	strcpy(putfile,fname);
 	if(lflag) {
 		strcpy(ep,"lst");  LIST = newfile(fname,AscFile);
@@ -165,7 +154,7 @@ newfile(s,binary) char *s; char binary; {
 FILE	*fd;
 static char objbuf[BUFSIZ], lstbuf[BUFSIZ];
 
-	if((fd = fopen(s,(aflag || zflag) && binary ? "w+" : "w")) == NULL) {
+	if((fd = fopen(s,binary ? "w+" : "w")) == NULL) {
 		fprintf(ERROR,"Cannot create %s\n",s);
 		exit(1);
 	}

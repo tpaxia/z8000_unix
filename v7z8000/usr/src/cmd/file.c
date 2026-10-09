@@ -98,7 +98,6 @@ spcl:
 		goto out;
 	}
 	switch(*(int *)buf) {
-#ifdef SOUT
 	case 0xe607:
 	case 0xe611:
 	case 0xe707:
@@ -113,30 +112,7 @@ spcl:
 		if(buf[12] || buf[13]) printf(" not stripped");
 		printf("\n");
 		goto out;
-#endif
 
-	case 0410:
-		printf("pure ");
-		goto exec;
-
-	case 0411:
-		printf("separate ");
-
-	case 0407:
-exec:
-		printf("executable");
-		if(((int *)buf)[4] != 0)
-			printf(" not stripped");
-		printf("\n");
-		goto out;
-
-	case 0177555:
-		printf("old archive\n");
-		goto out;
-
-	case 0177545:
-		printf("archive\n");
-		goto out;
 	}
 
 	i = 0;

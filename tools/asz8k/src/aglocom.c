@@ -67,13 +67,11 @@ struct	output	lstout = { &lstout.ou_buf[0], 0, -1 };
 char		mctchr = '#';
 /*		ntdflt	is initialized in as*gram.c */
 struct	output	objout = { &objout.ou_buf[0], 0, -1 };
-char		*objtop = &objbuf[0];
 char		*phylim;
 char		*phytop;
 /*		ptab	is initialized in as*gram.c */
 char		rbrchr = '}';
 char		reading = 1;
-char		*relbot = &objbuf[OBJSIZ];
 uns		rmarg = 80;
 char		*scanpt = &sline[0];
 /*		scntab	is initialized in as*gram.c */
@@ -132,10 +130,6 @@ char		llobj[LLOBJ+1] = { 0 };
 char		llseq[LLSEQ+1] = { 0 };
 char		llsrc[SLINSIZ+2] = { 0 };
 uns		mexct = 0;
-exprval		nxtloc = 0;
-uns		nxtsec = 0;
-char		objbuf[OBJSIZ] = { 0 };
-char		objtyp = 0;
 struct	octab	*ochtab[1<<OHSHLOG] = { 0 };
 struct	octab	*opcode = 0;
 char		opcstr[SYMSIZ+1] = { 0 };

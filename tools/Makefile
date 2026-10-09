@@ -313,7 +313,7 @@ asz8k.pd: asz8k/src/asz8k.pd
 libctest preempttest signaltest init echo cat sh ttytest splittest idnext idnormal libcid signalid: $(LDZ8) Makefile
 
 # The format adapter precedes stdio, retaining V7's remaining archive order.
-$(LIBV7_DIR)/nlist.az8: sout-utils/nlist.c sout-utils/object.h asz8k/src/soutfmt.h $(CZ8) Makefile
+$(LIBV7_DIR)/nlist.az8: $(V7LIBC)/gen/nlist.c sout-utils/object.h asz8k/src/soutfmt.h $(CZ8) Makefile
 	@mkdir -p $(LIBV7_DIR)
 	$(CPP) $(CPPFLAGS) -nostdinc -I$(USR_INCLUDE) $< | $(CZ8) > $@
 $(LIBV7_DIR)/object.az8: sout-utils/object.c sout-utils/object.h asz8k/src/soutfmt.h $(CZ8) Makefile

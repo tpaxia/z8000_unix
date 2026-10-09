@@ -1,8 +1,8 @@
 CC=/bin/cc
 CFLAGS=-O -I.
 all: asz8k
-asz8k: pcc.b sout.b soutfmt.b aout.b aparse.b aoutput.b asz8kglo.b aascom.b axref.b ainput.b asz8kgrm.b amisc.b atoken.b aglocom.b asz8k.b avm.b alook.b adirec.b ainit.b
-	$(CC) -i -s pcc.b sout.b soutfmt.b aout.b aparse.b aoutput.b asz8kglo.b aascom.b axref.b ainput.b asz8kgrm.b amisc.b atoken.b aglocom.b asz8k.b avm.b alook.b adirec.b ainit.b -o asz8k
+asz8k: pcc.b sout.b soutfmt.b aparse.b aoutput.b asz8kglo.b aascom.b axref.b ainput.b asz8kgrm.b amisc.b atoken.b aglocom.b asz8k.b avm.b alook.b adirec.b ainit.b
+	$(CC) -i -s pcc.b sout.b soutfmt.b aparse.b aoutput.b asz8kglo.b aascom.b axref.b ainput.b asz8kgrm.b amisc.b atoken.b aglocom.b asz8k.b avm.b alook.b adirec.b ainit.b -o asz8k
 pcc.b: pcc.c acom.h asz8k.h
 	$(CC) $(CFLAGS) -c pcc.c
 aparse.b: aparse.c acom.h asz8k.h obj.h
@@ -35,8 +35,6 @@ adirec.b: adirec.c acom.h asz8k.h obj.h
 	$(CC) $(CFLAGS) -c adirec.c
 ainit.b: ainit.c acom.h asz8k.h obj.h
 	$(CC) $(CFLAGS) -c ainit.c
-aout.b: aout.c acom.h obj.h
-	$(CC) $(CFLAGS) -c aout.c
 sout.b: sout.c acom.h obj.h soutfmt.h
 	$(CC) $(CFLAGS) -c sout.c
 soutfmt.b: soutfmt.c soutfmt.h

@@ -39,8 +39,7 @@ def library():
     report = []
     for name in names+['crt0']:
         assembly = WORK/(name+'.az8')
-        if name == 'nlist': source=ROOT/'tools/sout-utils/nlist.c'
-        elif name == 'object': source=ROOT/'tools/sout-utils/object.c'
+        if name == 'object': source=ROOT/'tools/sout-utils/object.c'
         elif name == 'soutfmt': source=ROOT/'tools/asz8k/src/soutfmt.c'
         elif name == 'softfp': source=ROOT/'tools/fpe/glue.c'
         else:
@@ -75,7 +74,7 @@ def seeds():
         ('asz8k',sorted((ROOT/'tools/asz8k/src').glob('*.c')),[]),
         ('ldz8',[ROOT/'tools/ldz8/dispatch.c',ROOT/'tools/ldz8/ldso.c',ROOT/'tools/asz8k/src/soutfmt.c'],
             ['-I'+str(PCC),'-I'+str(ROOT/'tools/asz8k/src')]),
-        ('cc',[PCC/'ccz8.c'],['-DTWOPASS','-DSOUT']),
+        ('cc',[PCC/'ccz8.c'],['-DTWOPASS']),
     ]:
         dest=directory/tool; dest.mkdir(exist_ok=True)
         objects=[]

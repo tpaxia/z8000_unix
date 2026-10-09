@@ -10,7 +10,6 @@
 #define	itoo(x)	(int)((x+15)&07)
 #ifndef STANDALONE
 #include <stdio.h>
-#include <a.out.h>
 #endif
 #include <sys/param.h>
 #include <sys/ino.h>
@@ -33,7 +32,8 @@ union {
 	char pad1[BSIZE];
 } fbuf;
 #ifndef STANDALONE
-struct exec head;
+unsigned char head[40];
+#define BWORD(p) (((unsigned)(p)[0]<<8)|(p)[1])
 #endif
 char	string[50];
 union {
@@ -131,12 +131,16 @@ char *argv[];
 		printf("%s: cannot  open init\n", string);
 		goto f2;
 	}
-	read(f, (char *)&head, sizeof head);
-	if(head.a_magic != A_MAGIC1) {
+	if(read(f, (char *)head, sizeof head) != sizeof head ||
+	   BWORD(head) != 0xe707 || BWORD(head+10) != 16 ||
+	   BWORD(head+18) != 1 || BWORD(head+14) ||
+	   BWORD(head+20) || BWORD(head+22) ||
+	   head[24] || head[25] || head[26] || head[27] ||
+	   BWORD(head+28) > BSIZE || BWORD(head+30) > BSIZE) {
 		printf("%s: bad format\n", string);
 		goto f1;
 	}
-	c = head.a_text + head.a_data;
+	c = BWORD(head+28) + BWORD(head+30);
 	if(c > BSIZE) {
 		printf("%s: too big\n", string);
 		goto f1;

@@ -1,19 +1,4 @@
-struct	exec {	/* a.out header */
-	int     	a_magic;	/* magic number */
-	unsigned	a_text; 	/* size of text segment */
-	unsigned	a_data; 	/* size of initialized data */
-	unsigned	a_bss;  	/* size of unitialized data */
-	unsigned	a_syms; 	/* size of symbol table */
-	unsigned	a_entry; 	/* entry point */
-	unsigned	a_trsize;	/* text relocation size */
-	unsigned	a_drsize;	/* data relocation size */
-};
-
-#define	A_MAGIC1	0407       	/* normal */
-#define	A_MAGIC2	0410       	/* read-only text */
-#define	A_MAGIC3	0411       	/* separated I&D */
-#define	A_MAGIC4	0405       	/* overlay */
-
+/* V7 nlist API; objects and executables use Z8000 s.out. */
 struct	nlist {	/* symbol table entry */
 	char    	n_name[8];	/* symbol name */
 	int     	n_type;    	/* type flag */

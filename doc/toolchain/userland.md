@@ -51,8 +51,9 @@ reads portable archives. `prof` uses the same reader, and `file` recognizes s.ou
 and portable archives. The shared reader rejects obsolete a.out objects; see
 [object utilities](object-utilities.md).
 Lint uses 16-bit alignment for long and floating types on Z8000.
-Cpp selects the original signed-character table layout for Z8000, as it does
-for PDP-11 and VAX; its preprocessing algorithm is unchanged.
+Cpp selects V7's signed-character table layout for Z8000. It retains complete
+macro names, supports `#error`, and corrects unary-expression and hexadecimal
+evaluation; see the [source comparison](../development/v7-compatibility.md).
 An original dc initialization loop now terminates its symbol free list at the
 last entry instead of writing beyond the array.
 

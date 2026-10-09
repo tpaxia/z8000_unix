@@ -1,69 +1,163 @@
-# Compatibility with Original Unix V7
+# Comparison with Original Unix V7
 
-The checked-in `v7unix/` tree is the pristine reference; `v7z8000/` is the port.
-The policy is to retain original shared code unchanged wherever possible and
-isolate required CPU, MMU and device differences behind documented interfaces.
-See [current status](../status.md) for overall completeness and the
-[restoration record](../history/v7-restoration.md) for audit evidence and tests.
+`v7unix/` is the pristine distribution used for comparison; `v7z8000/`
+is the current port. This reference describes their present source and behavior
+differences. Subsystem references define the detailed contracts; the
+[current status](../status.md) lists remaining work.
 
-## Shared code restored
+The port retains V7 filesystem, terminal and process policy wherever its
+interfaces can be preserved. PDP-11 CPU, MMU, interrupt and peripheral code
+is replaced with Z8000 machine support. Some shared files still contain
+substantial port implementations; they are identified below rather than
+counted as unchanged V7 merely because their behavior follows V7.
 
-Restoration covers signal exit status, user-copy policy and error accounting,
-filesystem/device-close interfaces, common TTY control flow, ordinary buffer
-cache, resource maps, shared-text lifecycle, process/swapper policy, raw physio,
-core policy, ptrace requests 0–8, exec credentials, accounting, profiling and
-residency locking. Exec arguments now use original V7 swap-backed staging;
-the earlier serialized kernel argument buffer has been removed.
+## Kernel source comparison
 
-Examples recorded as byte-identical include alloc, prim, pipe, sys3, sys4, fio,
-nami and common partab, along with several original headers. These are examples of restored files, not a complete source inventory.
-Kernel ABI headers are exported to user space and checked by the build:
+Paths below are relative to `usr/sys`. `sys/bio.c` corresponds to original
+`dev/bio.c`; `sys/physio.c` separates the raw-I/O routine originally in that
+same file. Machine and device implementations are compared separately.
+
+Eight shared kernel files are byte-identical: `sys/alloc.c`, `sys/fakemx.c`,
+`sys/fio.c`, `sys/nami.c`, `sys/pipe.c`, `sys/prim.c`, `sys/sys3.c` and
+`sys/sys4.c`. The common character table `dev/partab.c` is also identical.
+These comparisons cover the files present in the port, not every facility
+in the original distribution.
+
+| Shared source | Current differences from V7 |
+|---|---|
+| `sys/acct.c` | Original accounting and residency-locking bodies, wrapped with serialization between accounting-file replacement and exit writers. This is a concurrency fix, not a CPU requirement. |
+| `sys/bio.c` | Ordinary cache policy is retained. PDP-11 physical swap transfers are replaced by machine services; raw I/O is separated into `physio.c`. UNIBUS `B_MAP` cleanup is absent. DISKMON initializes the buffer count, and error comments describe specific driver errors. |
+| `sys/physio.c` | Retains V7 exclusive-buffer, wait/completion and residency policy. MMU hooks validate and pin memory and describe transfers for drivers; the code does not simulate PDP-11 mapping registers. Zero-length requests, byte residual validation and completed-byte accounting are explicit. |
+| `sys/clock.c` | Original callout, CPU/time accounting, alarms, profiling and scheduler policy. The machine acknowledges the clock; CPU helpers interpret the saved PC/flags and idle state. Its entry signature and priority predicates replace PDP-11 trap arguments/macros. |
+| `sys/iget.c` | Converts inode addresses to/from big-endian three-byte disk fields instead of PDP-11 byte order. |
+| `sys/main.c` | Configured global tables and boot devices; MMU initializes real memory and process storage. Process 0 runs the swapper. Console initialization opens/duplicates the initial terminal; boot uses the small console init. |
+| `sys/malloc.c` | First-fit allocation/free code is unchanged; its comment describes 2 KiB physical frames instead of 64-byte core-map units. |
+| `sys/prf.c` | Panic omits V7's `update()` call. A safe panic-specific flushing protocol remains unimplemented. |
+| `sys/rdwri.c` | Original read/write and `iomove()` policy. Differences are two explicit low-word offset casts, whitespace and comments; the casts are retained departures, not an established CPU requirement. |
+| `sys/subr.c` | Original byte-copy policy, with parentheses correcting V7's conditional-expression precedence in `passc()` and comments clarifying the three copy spaces. |
+| `sys/slp.c` | Adapts V7 scheduling, sleep/wakeup and swapper policy to separately allocated process sections. Only residents can run. Allocation/copy/swap use MMU services; extent reservations and dispatch/yield safeguards prevent races and starvation with fast emulated transfers. Fork retains direct-to-swap fallback and rolls back allocation failure. |
+| `sys/sys1.c` | Fork/exit/wait retain V7 semantics through different memory and context operations. Exec validates only NONSEG s.out, supports combined/split I/D and shared text, and uses original swap-backed argument staging and set-ID rules. CPU helpers construct startup stacks/registers and initialize EPU state. Process zombie storage uses the port's `xproc` overlay. |
+| `sys/sys2.c` | Original syscall policy plus an MMU `useracc()` check before read/write touches a user range. |
+| `sys/sysent.c` | V7 syscall numbers with register-based argument dispatch. EPU signal-state return occupies unused slot 62. There are no aliases for earlier port numbering. |
+| `sys/sig.c` | Original signal selection/default-action and tracing semantics adapted to Z8000 saved registers. CPU helpers build signal frames and MMU helpers write core images. Ptrace supports requests 0–8; request 9 has no implementation without hardware stepping. |
+| `sys/text.c` | Substantial adaptation for separate physical text extents and machine swap transfers. Preserves inode ownership/write exclusion, sticky text, reference/resident counts and V7 text lock/cache-release policy. Exclusive ptrace writes invalidate backing and prevent fresh sharing. Includes a precedence correction in `xrele()`. |
+| `dev/tty.c` | Original line-discipline, queue, ioctl and multiplexor control flow. Parameter copies complete before flushing; live parameter/special-character updates are interrupt-protected and cannot be partially changed by a user-copy fault. Remaining differences include whitespace. |
+
+These changes include architecture requirements, defensive fixes and retained
+implementation choices. They are not all unavoidable consequences of Z8000.
+In particular, process-memory and shared-text policy have more source differences
+than ordinary filesystem policy.
+
+## Kernel headers and machine boundaries
+
+Sixteen headers are byte-identical: `acct.h`, `callo.h`, `conf.h`, `dir.h`,
+`fblk.h`, `file.h`, `filsys.h`, `ino.h`, `inode.h`, `map.h`, `mount.h`,
+`mx.h`, `stat.h`, `text.h`, `timeb.h` and `tty.h`.
+
+| Header | Current differences |
+|---|---|
+| `buf.h` | Clarifies that driver residuals are bytes; the structure matches V7. |
+| `param.h` | Z8000 types/context labels, configured table sizes and a 4 KiB u-area/system-stack window. V7 memory accounting still uses 64-byte clicks. |
+| `proc.h` | Separately allocated memory sections, residency/swap state and the shared zombie overlay. |
+| `reg.h` | Z8000 trap and saved-user register indices, replacing PDP-11 indices and trace-bit definitions. |
+| `seg.h` | Does not expose PDP-11 hardware mapping registers. |
+| `systm.h` | Machine declaration changes, including absence of PDP-11 `regloc`; original shared declarations otherwise remain. |
+| `user.h` | Z8000 context/register/EPU storage, fixed u-area mapping, executable state and section sizes. V7's return-value union is retained. |
+
+Public kernel ABI headers are exported from the kernel definitions:
 
 ```sh
 python3 tools/export-headers.py --check
 ```
 
-## Required adaptations and remaining departures
+CPU support lives in `machine/`; the selected MMU supplies mapping, physical
+allocation, user-access recovery, growth, raw-I/O and swap operations. `conf/`
+selects the machine, MMU, devices and global tables for both host and native
+kernel builds. Device switch interfaces and common TTY code remain V7-shaped;
+`dev/cons.c`, `hd.c` and `md.c` implement the current emulated hardware rather
+than PDP-11 peripherals. See the [kernel overview](../kernel/overview.md) and
+[porting guide](../platforms/porting-guide.md).
 
-| Area | Current disposition |
-|---|---|
-| CPU ABI | Z8000 register/trap conventions, context labels, signals and EPU state |
-| Executables | Port a.out and opt-in NONSEG s.out loading, combined or split I/D; no full SEG execution |
-| Disk representation | Big-endian three-byte inode address conversion |
-| Memory | 2 KiB physical allocation units behind 64-byte V7 accounting clicks; separate u-area and section extents |
-| Swapping | Original sched policy with machine transfer services, extent reservations and progress safeguards |
-| Faults | Fault-safe user access and conservative backout; arbitrary instruction restart absent |
-| Tracing | Requests 0–8; request 9 requires hardware support |
-| Startup | Small console init, with original multiuser startup not integrated |
-| Optional facilities | Disabled multiplexor stubs, no active channel device; no bus-map implementation |
-| Panic | Ordinary update/flushing restored elsewhere; panic-specific flushing remains deferred |
-| Memory device | Only minor-2 EOF/rathole behavior; physical/kernel-memory minors reject open |
+The current MMU allocates contiguous 2 KiB-frame extents separately for text,
+data, stack and u-area. Unused gaps are unmapped; shared text is protected.
+Stack growth and access recovery use a conservative Z8001 software-backout
+whitelist. Arbitrary instruction restart and scattered-page allocation remain
+absent. Whole-process swapping uses original V7 selection/aging policy with
+machine transfer services and the port safeguards described above. See
+[memory and swapping](../kernel/memory-and-swapping.md).
 
-There are no compatibility aliases for earlier port syscall-number mistakes.
-Rebuild libc, programs and kernel together after ABI changes; see
-[user startup and migration](../kernel/processes-and-exec.md#user-program-startup).
-The structure-return investigation documents an inherited ABI limitation and
-[a proposed repair](../toolchain/structure-return-abi.md), not an implemented change.
+## Executables, compiler and libc
 
-## Userland source preservation and execution coverage
+s.out replaces PDP-11 a.out for objects and executables. NONSEG e707 combines
+instruction/data space; e711 separates them. SEG objects support kernel/boot
+machine code, but SEG user execution requires further process ABI/MMU work.
+Portable ASCII archives replace V7 binary archives. Raw ROM, sector-zero and
+EPU images are hardware images linked from s.out, not alternate Unix executable
+formats. See [ABI and formats](../toolchain/abi.md).
 
-The essential-userland audit covers 158 top-level original command units,
-762 files: none missing and 720 byte-identical. Changes are confined to ar,
-make archive handling, pstat, shell files, yacc configuration, dc's free-list
-termination, lint alignment, nm/prof/strip/file format handling and two cpp
-platform checks selecting V7's signed-character table layout for Z8000. These are
-source-preservation counts, not counts of working installed commands.
+The native compiler is the two-pass Z8000 PCC backend. Its assembler and linker
+use the same sources on the host and in Unix. Native rebuilding covers the
+compiler, supporting tools, libc, C userland, kernel, software EPU and disk
+bootstrap. Host scripts construct seed filesystems and supervise trials; target
+compilation, assembly, linking and boot installation run inside Unix. See the
+[native rebuild procedure](native-rebuild.md).
+
+Libc's original portable C is retained where possible; CPU startup, arithmetic,
+context switches and syscall wrappers implement the Z8000 ABI. Wrappers use V7
+syscall numbers and are separate archive members. Shared brk/sbrk bookkeeping
+accounts for the separate data/stack layout. `nlist` decodes s.out through the
+shared object reader. Floating operations trap to the separately mapped Zilog
+software EPU, replacing PDP-11 hardware FPS or its emulator. This service uses
+the preserved Zilog arithmetic source, not a rewritten V7 floating library.
+The static-result structure-return ABI remains a limitation; its
+[proposed repair](../toolchain/structure-return-abi.md) is not implemented.
+
+## Userland source comparison
+
+The original-command inventory covers 158 top-level units and 762 files in
+`usr/src/cmd`: none missing, 716 byte-identical and 46 changed. This includes
+preserved PDP-11 implementations that are not built for Z8000. Recompute it with:
 
 ```sh
 python3 tools/native-cc/userland.py --audit
 ```
 
-The inventory is written to `tests/build/userland/audit.json`. The
-[native development reference](../toolchain/native-development.md) lists the
-45 unchanged command sources built and tested by that workload. Libc mknod/stime
-wrappers and shared brk/sbrk bookkeeping supply missing port support without
-changing those commands. Native ar/make use portable archives intentionally;
-original V7 binary archives are not the target format.
-The [full userland inventory](../toolchain/userland.md) additionally builds
-160 command executables, seven games, 12 libraries and 12 terminal tables, while recording
-the PDP-11 implementations and machine integrations that remain unfinished.
+The report is `tests/build/userland-sout/audit.json`; it compares source files,
+not installed command availability. Current changed groups are:
+
+| Source group | Reason for differences |
+|---|---|
+| `ar.c`, `make/files.c` | Portable archive members and s.out symbol lookup. |
+| `nm.c`, `size.c`, `strip.c`, `prof.c`, `file.c`, both `mkfs.c` copies | Target object formats and inspection. Installed object utilities use the shared s.out reader. |
+| `cpp/cpp.c`, `cpy.y`, `yylex.c` | Signed-character tables for Z8000, complete macro names, `#error`, and corrections to unary-expression and hexadecimal-digit evaluation. Complete names distinguish MMU register macros sharing their first eight characters. |
+| `sh/` | Target headers/types, signed-character tables, allocation/stack handling and CPU-specific signal/exec details. The Bourne shell runs natively. |
+| `yacc/dextern` | Generator configuration for the target's memory budget. |
+| `dc/dc.c` | Terminates the original free list without writing beyond its array. |
+| `lint/lint.c` | Target alignment for long and floating types. |
+| `pstat.c` | Z8000 saved-user registers; runtime kernel-memory access is still missing. |
+
+The full native userland builds 161 command executables, seven games,
+12 libraries and 12 terminal tables. This includes support programs and programs
+still needing machine integration; it does not imply all original commands
+are operational. The [userland reference](../toolchain/userland.md) owns the
+installed inventory, runtime coverage and remaining command ports.
+
+## Remaining departures from the original system
+
+- Boot uses console init. Original init/getty/login build, but multiuser startup,
+  accounts and terminal configuration are not integrated.
+- `/dev/mem` implements only minor-2 EOF/rathole behavior. Physical and kernel
+  memory minors reject open; ps/pstat/dmesg/iostat need this and layout work.
+- Original disabled-multiplexor stubs are selected. There is no active channel
+  device or UNIBUS map implementation.
+- Ptrace single-stepping requires hardware support. Automatic growth has the
+  restart restrictions described above.
+- Panic-specific filesystem flushing remains absent.
+- PDP-11 assembler/compiler/Fortran backends and assembly commands require
+  replacement or further porting; preserved sources are not target support.
+- Physical disks, tape, printers, serial terminals and site communications still
+  require board drivers/configuration and testing.
+
+The syscall, executable and register ABI must match the installed libc and
+programs. Rebuild them together after an ABI change; see
+[startup and migration](../kernel/processes-and-exec.md#user-program-startup).

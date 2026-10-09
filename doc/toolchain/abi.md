@@ -2,7 +2,7 @@
 
 ## Execution and object model
 
-Kernel and user C use NONSEG 16-bit pointers. **s.out is the sole production
+Kernel and user C use NONSEG 16-bit pointers. **s.out is the sole
 object and executable format.** e707 combines code and data; e711 provides
 separate 64 KiB instruction and data/BSS/heap/stack spaces. The same format
 family represents SEG objects, without changing the NONSEG C ABI.
@@ -16,8 +16,8 @@ SEG user processes remain unsupported. Kernel exec accepts only NONSEG s.out;
 obsolete a.out images fail with ENOEXEC. The shared nm/size/strip/nlist reader
 also rejects obsolete objects, including archive members. Positive regression
 producers use the shared s.out assembler/linker; obsolete objects are retained
-only as rejection fixtures. Unidot is confined to the separate historical
-assembler oracle, not the installed toolchain. `.b` object filenames
+only as rejection fixtures. No historical object writers or converters remain
+in the Z8000 toolchain. `.b` object filenames
 and the default output name `a.out` do not specify the file's format.
 
 See [split-I/D mappings](../kernel/memory-and-swapping.md#separate-instruction-and-data-spaces),

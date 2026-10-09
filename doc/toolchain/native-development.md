@@ -7,7 +7,7 @@ code in s.out. See [ABI and formats](abi.md) and
 
 `cc -i` selects e711 split I/D; ordinary output is e707 combined space. Both
 retain 16-bit pointers. `cc -O` invokes native assembly optimization. The PCC
-driver invokes `asz8k -zc` and `ldz8`; compiler passes retain their existing
+driver invokes `asz8k -c` and `ldz8`; compiler passes retain their existing
 assembly syntax and calling convention. The separate software EPU keeps its
 arithmetic engine out of each executable.
 
