@@ -18,16 +18,21 @@ p.add_argument('--output', type=Path, default=ROOT/'tests/build/z8001unix')
 a = p.parse_args()
 a.output = a.output.resolve()
 a.output.mkdir(parents=True, exist_ok=True)
+AS = ROOT/'tests/build/asz8k-host/asz8k'
+LD = ROOT/'tests/build/ldz8-host/ldz8'
+subprocess.run(['make','-C',str(ROOT/'tools/asz8k')],check=True)
+subprocess.run(['make','-C',str(ROOT/'tools/ldz8')],check=True)
+(a.output/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
 
 def assemble(name, source, address=0):
     (a.output/(name+'.s')).write_text(source)
-    for cmd in [['z8k-coff-as','-z8001','-o',name+'.o',name+'.s'],
-                ['z8k-coff-ld','-m','z8001',f'-Ttext={address}','-e','0','-o',name+'.coff',name+'.o'],
-                ['z8k-coff-objcopy','-O','binary',name+'.coff',name+'.bin']]:
+    for cmd in [[str(AS),'-zgs','-o',name+'.so',name+'.s'],
+                [str(LD),'-z','-b','-C',str(address>>16),'-T',str(address&0xffff),
+                 '-o',name+'.bin',name+'.so']]:
         subprocess.run(cmd,cwd=a.output,check=True)
     return (a.output/(name+'.bin')).read_bytes()
 
-handoff = (ROOT/'v7z8000/usr/sys/machine/emurom.s').read_text().split('init_start:',1)[1]
+handoff = (ROOT/'v7z8000/usr/sys/machine/emurom.s').read_text().split('initboot:',1)[1]
 handoff = handoff.replace('ROM data', 'RAM').replace('ROM offset', 'RAM offset')
 rom = assemble('rom',(ROOT/'mame/boot/rom.s').read_text()+'\n.org 0x200\n'+handoff)
 if len(rom)>2048: raise SystemExit('ROM exceeds 2 KiB')

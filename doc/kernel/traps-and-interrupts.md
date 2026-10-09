@@ -79,7 +79,7 @@ The trap stub is assembled in z8001 (segmented) mode because the trap handler ex
 - **z8001 (segmented)**: 6 bytes — opcode(2) + segment(2) + offset(2)
 - **z8002 (nonseg)**: 4 bytes — opcode(2) + displacement(2)
 
-The z8k-coff-as assembler provides `.unsegm` and `.segm` directives to switch encoding mode within a single file. The NONSEG section of trap.s uses `.unsegm` so that instructions like `ld r0, 26(r15)` get correct 4-byte z8002 encodings, then switches back to `.segm` before the SEG+SYS register restore and IRET.
+The shared asz8k assembler in machine-source mode (`-zgs`) provides `.unsegm` and `.segm` directives to switch encoding mode within a single file. The NONSEG section of trap.s uses `.unsegm` so that instructions like `ld r0, 26(r15)` get correct 4-byte z8002 encodings, then switches back to `.segm` before the SEG+SYS register restore and IRET.
 
 Instructions using only immediate, register, or indirect-register addressing modes encode identically in both modes and need no special handling.
 
@@ -106,13 +106,13 @@ R1 = return     — second result (u.u_r.r_val2), or errno on error
 
 ## Entry Points
 
-`machine/trap.s` (assembled with `z8k-coff-as`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `machine/krt.s`, which is linked at 0x0200:
+`machine/trap.s` (assembled with shared `asz8k -zgs`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `machine/krt.s`, which is linked at 0x0200:
 
 | Address | Label | Reached from | Calls |
 |---------|-------|--------------|-------|
-| 0x0200 | `syscall_dispatch` | `syscall_entry` | `_trap` |
+| 0x0200 | `syscall_dispatch` | `scentry` | `_trap` |
 | 0x0202 | `boot_entry` | boot code at 0x01F0 | `_main` |
-| 0x0204 | `nvi_dispatch` | `nvi_entry` | `_clock` |
+| 0x0204 | `nvi_dispatch` | `nvientry` | `_clock` |
 | 0x0206 | `vi_dispatch` | `vi_entry` | configuration `_devintr(vector)` |
 | 0x0208 | `epu_dispatch` | segment 127 EPU entry (SEG call) | `_fptrap` |
 
@@ -126,8 +126,9 @@ PSA offset 0x08 enters segment 127 offset 0 in SEG+SYS mode. EPA remains
 disabled in user FCW, so extended instructions trap for software execution.
 The arithmetic/decoder is the preserved `fpe/fpe.z8k` from CP/M-8000;
 `tools/fpe/translate.py` translates assembler syntax and replaces only the
-CP/M entry adapter. The build uses GNU Z8000 binutils, without requiring a
-CP/M installation or prebuilt arithmetic objects. `fpe/unix.s` provides Unix
+CP/M entry adapter. Host builds of the shared asz8k/ldz8 tools assemble and raw-link this service;
+GNU Z8000 binutils, a CP/M installation and prebuilt arithmetic objects are
+not required. `fpe/unix.s` provides Unix
 entry/return and instruction/data memory access helpers.
 
 The machine loads `fpe.bin` at physical 0x7f0000. Segment 127 and its physical

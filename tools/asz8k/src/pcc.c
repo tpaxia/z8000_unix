@@ -7,6 +7,7 @@
 #include "obj.h"
 
 int pccflg, pccpass;
+int machineflg, objectseg;
 static unsigned branch;
 static char longjr[1024], pending[1024]; /* 8192 branches, one bit each */
 static int changed;
@@ -114,6 +115,18 @@ pccstmt()
     vmadr sym;
     char name[SYMSIZ+1];
     point();
+    if (machineflg) {
+        if (!strcmp(opcstr,".segm")) { segflg = 1; return 1; }
+        if (!strcmp(opcstr,".unsegm")) { segflg = 0; return 1; }
+        if (!strcmp(opcstr,".global")) { direc(ADGLOB); return 1; }
+        if (!strcmp(opcstr,".org") || !strcmp(opcstr,".space")) {
+            value(); n = curop.op_val;
+            if (!strcmp(opcstr,".space")) n += curloc;
+            if (curop.op_rel || n < curloc || n > 65535L) err('E');
+            else curloc = n;
+            return 1;
+        }
+    }
     if (toktyp == TKRELOP && tokval == TVEQ &&
         (!strcmp(opcstr,".") || (!*opcstr && *labstr))) {
         if (*opcstr) {

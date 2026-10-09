@@ -98,6 +98,22 @@ spcl:
 		goto out;
 	}
 	switch(*(int *)buf) {
+#ifdef SOUT
+	case 0xe607:
+	case 0xe611:
+	case 0xe707:
+	case 0xe711:
+		if(in < 24) {
+			printf("data\n");
+			goto out;
+		}
+		if((buf[0]&255) == 0xe6) printf("segmented ");
+		if(buf[1] == 0x11) printf("separate ");
+		printf((buf[19]&1) ? "executable" : "object");
+		if(buf[12] || buf[13]) printf(" not stripped");
+		printf("\n");
+		goto out;
+#endif
 
 	case 0410:
 		printf("pure ");

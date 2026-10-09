@@ -11,6 +11,7 @@ import time
 sys.dont_write_bytecode = True
 from build import ROOT, PCC, compile_c, image, run
 from selfhost import Filesystem
+from object_format import sizes as object_sizes
 
 WORK = ROOT / 'tests/build/userland'
 CMD = ROOT / 'v7z8000/usr/src/cmd'
@@ -23,7 +24,7 @@ COMMANDS += EXTRA_COMMANDS
 SUPPORT = 'ar make yacc'.split()
 
 
-def audit():
+def audit(sout=False):
     """Inventory source units, not a claim that each unit is one executable."""
     inventory = []
     for source in sorted(ORIGINAL.iterdir()):
@@ -47,20 +48,23 @@ def audit():
               'unchanged_essential_sources': len(COMMANDS),
               'original_bin': original_bin,
               'original_bin_names_not_installed': sorted(set(original_bin)-installed),
-              'z8000_tool_names': {'as': 'az8', 'ld': 'ldz8'}}
+              'z8000_tool_names': {'as': 'asz8k' if sout else 'az8', 'ld': 'ldz8'}}
     (WORK/'audit.json').write_text(json.dumps(report, indent=2)+'\n')
     return report
 
 
-def setup(reuse=False):
+def setup(reuse=False,sout=False):
     WORK.mkdir(parents=True, exist_ok=True)
-    audit()
+    audit(sout)
     for name in SUPPORT:
         if not (NATIVE/'bin'/name).is_file():
             raise SystemExit('Build tools/native-cc/environment.py first: missing native ' + name)
     run(['cmake', '--build', SYS, '--target', 'kernel', 'test_driver'])
     run(['make', '-C', ROOT/'tools', 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'v7mkfs'])
     extra = {'bin/'+name: NATIVE/'bin'/name for name in SUPPORT}
+    if sout:
+        for path in NATIVE.rglob('*'):
+            if path.is_file():extra[str(path.relative_to(NATIVE))]=path
     modes = {}
     records = []
     if reuse:
@@ -70,8 +74,10 @@ def setup(reuse=False):
             if record['name'] != name: break
             records.append(record)
         assert records, 'no completed command builds to reuse'
-        assert fs.read('/lib/libc.a') == (ROOT/'tools/libv7.a').read_bytes(), 'libc changed: use --setup'
-        assert fs.read('/lib/crt0.b') == (ROOT/'tools/libc/crt0.b').read_bytes(), 'startup changed: use --setup'
+        libc=NATIVE/'lib/libc.a' if sout else ROOT/'tools/libv7.a'
+        crt0=NATIVE/'lib/crt0.b' if sout else ROOT/'tools/libc/crt0.b'
+        assert fs.read('/lib/libc.a') == libc.read_bytes(), 'libc changed: use --setup'
+        assert fs.read('/lib/crt0.b') == crt0.read_bytes(), 'startup changed: use --setup'
         saved = WORK/'compiled'
         saved.mkdir(exist_ok=True)
         for record in records:
@@ -200,21 +206,19 @@ echo USERLAND COMMANDS OK || exit 1
         '/usr/src/demo/demo', '/usr/src/demo/parser', '/bin/make', '/bin/cc -O -i syscalls.c -o syscalls',
         '/usr/src/demo/syscalls', '/bin/cc -O syscalls.c -o syscallsn',
         '/usr/src/demo/syscallsn'])
-    image(extra, WORK/'hd.img', blocks=24000, inodes=1024, modes=modes)
+    image(extra, WORK/'hd.img', blocks=24000, inodes=1024, modes=modes,sout=sout)
     (WORK/'steps.json').write_text(json.dumps(steps,indent=2)+'\n')
     (WORK/'results.json').write_text(json.dumps(records,indent=2)+'\n')
 
 
-def summarize():
+def summarize(sout=False):
     fs = Filesystem(WORK/'hd.img')
     sizes = {}
     for name in COMMANDS:
         data = fs.read('/bin/'+name)
         assert fs.read('/usr/src/cmd/'+name+'.c') == (CMD/(name+'.c')).read_bytes(), name
         assert data == fs.read('/usr/src/cmd/'+name), name
-        header = struct.unpack('>8H', data[:16])
-        assert header[0] == 0o411
-        sizes[name] = dict(zip(['text','data','bss'],header[1:4]))
+        sizes[name] = object_sizes(data,sout)
         sizes[name]['source_sha256'] = hashlib.sha256((CMD/(name+'.c')).read_bytes()).hexdigest()
     for actual, expected in [('unique','sorted'),('edited.out','edited'),('last','tail')]:
         assert fs.read('/tmp/'+actual) == fs.read('/tmp/'+expected)
@@ -266,12 +270,17 @@ def main():
                         help='recreate the test disk, keeping verified command binaries when sources/libc/startup match')
     parser.add_argument('--audit',action='store_true')
     parser.add_argument('--limit',type=int)
+    parser.add_argument('--sout',action='store_true',help='use the native s.out environment and separate output disk')
     args = parser.parse_args()
+    global WORK,NATIVE
+    if args.sout:
+        WORK=ROOT/'tests/build/userland-sout'
+        NATIVE=ROOT/'tests/build/native-environment-sout/native'
     WORK.mkdir(parents=True,exist_ok=True)
     if args.audit:
-        audit(); print(WORK/'audit.json'); return
+        audit(args.sout); print(WORK/'audit.json'); return
     if args.setup and args.reuse_commands: parser.error('choose --setup or --reuse-commands')
-    if args.setup or args.reuse_commands: setup(args.reuse_commands)
+    if args.setup or args.reuse_commands: setup(args.reuse_commands,args.sout)
     steps=json.loads((WORK/'steps.json').read_text())
     records=json.loads((WORK/'results.json').read_text())
     pending=steps[len(records):]
@@ -279,7 +288,7 @@ def main():
     for step in pending:
         name=step['name'];print('START',name,flush=True);start=time.monotonic()
         with (WORK/(name+'.log')).open('wb') as log:
-            r=subprocess.run(list(map(str,[SYS/'test_driver','-c','20000000000',
+            r=subprocess.run(list(map(str,[SYS/'test_driver','-c','100000000000' if args.sout else '20000000000',
                 '-d',WORK/'hd.img','-o',WORK/'next.img','-i',
                 'runner %s %s\\n'%(step['plan'],step['directory']),
                 '-w','NATIVE CC DONE','-I','exit\\n','-x','NATIVE CC DONE'])),
@@ -290,7 +299,7 @@ def main():
         records.append({'name':name,'seconds':round(time.monotonic()-start,2)})
         (WORK/'results.json').write_text(json.dumps(records,indent=2)+'\n')
         print('PASS',records[-1],flush=True)
-    if len(records)==len(steps): summarize()
+    if len(records)==len(steps): summarize(args.sout)
 
 
 if __name__=='__main__': main()

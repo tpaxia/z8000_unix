@@ -2,8 +2,8 @@
 ! Arithmetic and decoding come from the preserved Zilog fpe.z8k.
 .text
 .segm
-.global fpe_entry
-fpe_entry:
+.global fpentry,epu
+fpentry:
  sub r15,#32
  ldm @rr14,r0,#14
  ld r0,#0x4000

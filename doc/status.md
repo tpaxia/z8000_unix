@@ -52,8 +52,18 @@ See [native development](toolchain/native-development.md) for scope and
   C pipeline invokes asz8k directly on PCC output and has rebuilt startup/libc,
   asz8k, ldz8 and the cc driver in s.out inside V7, with runtime checks.
   Shared host/native [object utilities and a nlist adapter](toolchain/object-utilities.md)
-  support both port formats in an isolated trial. Kernel/boot images and
-  standard-image deployment remain pending. See
+  support both port formats in an isolated trial. Existing bootstrap and
+  native image builders now have an explicit `--sout` profile. Its bootstrap
+  tests, terminal-resource conversion and make/file/prof format checks pass.
+  Native cpp now selects V7's signed-character table layout for Z8000 and
+  passes a macro-expansion runtime check. The s.out native environment passes
+  all 127 stages, exports 17 s.out tools and validates 147 libc members;
+  its final libc test passes all 39 checks. Essential/full userland profile
+  rebuild validation remains pending. Reset/trap, FPU and disk-boot assembly
+  now use host builds of the shared native assembler/linker, with matching
+  host/native machine objects and raw images. GNU Z8000 tools are no longer
+  bootstrap dependencies. Kernel C/standalone executable migration and
+  changing the default image format remain pending. See
   [the linker reference](toolchain/ldz8.md) and [assembler assessment](toolchain/asz8k.md).
 - The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports
   need their own boot, interrupt, device and memory implementations.

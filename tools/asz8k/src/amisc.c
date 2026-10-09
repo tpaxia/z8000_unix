@@ -55,13 +55,25 @@ reg	char	*llp;
 			macarg(ch);
 			continue;
 		}
-		ch &= 0177;
+		if (machineflg && ch>=0200) ch = '?';
+		else ch &= 0177;
 		if(ch == '\n')  /* we have a line */
 			break;
 		if(ch == '\f') linect = 0;  /* page eject */
 		else if(slp < &sline[SLINSIZ]) *slp++ = *llp++ = ch;
 	}
 	*slp++ = *llp++ = '\n';  *slp = *llp = '\0';
+	/* Machine sources permit instructions/directives in column one. */
+	if (machineflg && reading && sline[0]!=' ' && sline[0]!='\t' && sline[0]!='!' && sline[0]!=';') {
+		char *p, *q;
+		p = sline;
+		while (*p && *p!=' ' && *p!='\t' && *p!='\n' && *p!=':') p++;
+		while (*p==' ' || *p=='\t') p++;
+		if (*p!=':' && strncmp(p,".equ",4) && strncmp(p,".sect",5) && strncmp(p,".macro",6) && strncmp(p,".MACRO",6)) {
+			for (q=slp+1; q>sline; q--) *q = q[-1];
+			sline[0] = ' ';
+		}
+	}
 	rinfp->in_seq++;
 	if(rinfp == (struct input *)instk)
 		sprintf(llseq," %4d",rinfp->in_seq);

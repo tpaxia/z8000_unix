@@ -147,8 +147,8 @@ syscall_dispatch:
 	ret
 
 ! --- NVI dispatch entry (clock) ---
-! Called from trap.s nvi_entry in NONSEG+SYS mode.
-! R0 = interrupted FCW (passed by nvi_entry from IRET frame).
+! Called from trap.s nvientry in NONSEG+SYS mode.
+! R0 = interrupted FCW (passed by nvientry from IRET frame).
 ! Pass the saved frame to CPU clock dispatch.
 nvi_dispatch:
 	push	@sp, r13

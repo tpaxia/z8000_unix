@@ -6,6 +6,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <a.out.h>
+#ifdef SOUT
+#include "object.h"
+static struct object pr_obj;
+static struct osymbol pr_sym;
+static unsigned pr_idx;
+#endif
 
 typedef	short UNIT;		/* unit of profiling */
 
@@ -100,6 +106,15 @@ char **argv;
 		fprintf(stderr, "%s: not found\n", namfil);
 		done();
 	}
+#ifdef SOUT
+	fseek(nfile,0L,2);
+	if(objread(&pr_obj,nfile,0L,ftell(nfile)) != 1 || pr_obj.segmented) {
+		fprintf(stderr,"%s: bad format\n",namfil);
+		done();
+	}
+	xbuf.a_syms = pr_obj.symbols * sizeof(struct nlist);
+	pr_idx = 0;
+#else
 	fread((char *)&xbuf, 1, sizeof(xbuf), nfile);
 	if (xbuf.a_magic!=A_MAGIC1 && xbuf.a_magic!=A_MAGIC2 && xbuf.a_magic!=A_MAGIC3) {
 		fprintf(stderr, "%s: bad format\n", namfil);
@@ -108,6 +123,7 @@ char **argv;
 	symoff = (long)xbuf.a_text + xbuf.a_data;
 	symoff += (long)xbuf.a_trsize + xbuf.a_drsize;
 	fseek(nfile, symoff+sizeof(xbuf), 0);
+#endif
 	if((pfile = fopen("mon.out","r")) == NULL) {
 		fprintf(stderr, "No mon.out\n");
 		done();
@@ -122,7 +138,17 @@ char **argv;
 	npe = nl;
 	for (nname = 0; xbuf.a_syms > 0; xbuf.a_syms -= sizeof(struct nlist)) {
 		struct nlist nbuf;
+#ifdef SOUT
+		if(!objsym(&pr_obj,pr_idx++,&pr_sym)) {
+			fprintf(stderr,"%s: bad symbols\n",namfil);
+			done();
+		}
+		nbuf.n_type = pr_sym.type;
+		nbuf.n_value = pr_sym.value;
+		for(i=0;i<8;i++) nbuf.n_name[i]=pr_sym.name[i];
+#else
 		fread((char *)&nbuf, sizeof(nbuf), 1, nfile);
+#endif
 		if (nbuf.n_type!=N_TEXT && nbuf.n_type!=N_TEXT+N_EXT)
 			continue;
 		if (aflg==0 && nbuf.n_type!=N_TEXT+N_EXT)

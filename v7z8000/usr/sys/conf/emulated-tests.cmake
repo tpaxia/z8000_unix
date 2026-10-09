@@ -72,8 +72,8 @@ add_custom_target(test-preempt
 # Clean
 # =============================================================================
 set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
-    rom.o rom.lst rom.coff rom.bin
-    trap.o trap.lst trap.coff kernel.bin
+    rom.so rom.bin
+    trap.so kernel.bin
     krt.az8 krt.b arith.az8 arith.b
     handler.bout handler.bin handler-data.bin
     root.img hd.img

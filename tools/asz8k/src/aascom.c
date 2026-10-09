@@ -51,7 +51,7 @@ int	index;
 
 	init(argc,argv);
 	dopass();
-	if (pccflg) pccrelax();
+	if (pccflg && !machineflg) pccrelax();
 	interlude();
 	pass2 = 1;
 	if (pccflg) pccreset();
@@ -218,6 +218,7 @@ delim() {
  * dopass - Performs one pass of the source input.
  */
 dopass() {
+	if (machineflg) segflg = objectseg;
 
 	if(include(srcfile) != 0) {
 		fprintf(ERROR,"Cannot open %s\n",srcfile);

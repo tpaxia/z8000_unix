@@ -8,15 +8,31 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(B "${CMAKE_CURRENT_BINARY_DIR}")
 
 # --- Configurable toolchain paths ---
-set(Z8K_PREFIX "z8k-coff-" CACHE STRING "Z8K cross-toolchain prefix")
-set(Z8K_AS "${Z8K_PREFIX}as")
-set(Z8K_LD "${Z8K_PREFIX}ld")
-set(Z8K_OBJCOPY "${Z8K_PREFIX}objcopy")
 
 set(PCC_ROOT "${CMAKE_SOURCE_DIR}/../../../PCC-z8000/z8000" CACHE PATH "PCC toolchain root")
 set(CZ8 "${PCC_ROOT}/cz8/cz8")
 set(AZ8 "${PCC_ROOT}/az8/az8")
-set(LDZ8 "${PCC_ROOT}/ldz8")
+set(PORT_TOOLS "${CMAKE_SOURCE_DIR}/../../../tools")
+set(HOST_CC "cc" CACHE STRING "Host C compiler for shared assembler/linker")
+set(ASZ8K "${B}/asz8k")
+set(LDZ8 "${B}/ldz8")
+file(GLOB ASZ_SOURCES CONFIGURE_DEPENDS "${PORT_TOOLS}/asz8k/src/*.c")
+file(GLOB ASZ_HEADERS CONFIGURE_DEPENDS "${PORT_TOOLS}/asz8k/src/*.h")
+add_custom_command(OUTPUT "${ASZ8K}"
+    COMMAND ${HOST_CC} -std=gnu89 -O2 -fwrapv -fsigned-char -fcommon -w
+        -Wno-int-conversion -Wno-return-mismatch -DASZ_HOST ${ASZ_SOURCES} -o "${ASZ8K}"
+    DEPENDS ${ASZ_SOURCES} ${ASZ_HEADERS}
+    COMMENT "Building host copy of native assembler")
+configure_file("${PORT_TOOLS}/asz8k/src/asz8k.pd" "${B}/asz8k.pd" COPYONLY)
+add_custom_command(OUTPUT "${LDZ8}"
+    COMMAND ${HOST_CC} -std=gnu89 -O2 -fwrapv -fcommon -w
+        -Wno-int-conversion -Wno-return-mismatch -I${PCC_ROOT} -I${PORT_TOOLS}/asz8k/src
+        ${PORT_TOOLS}/ldz8/dispatch.c ${PORT_TOOLS}/ldz8/ldso.c
+        ${PORT_TOOLS}/asz8k/src/soutfmt.c -o "${LDZ8}"
+    DEPENDS ${PORT_TOOLS}/ldz8/dispatch.c ${PORT_TOOLS}/ldz8/ldso.c
+        ${PCC_ROOT}/ldz8.c ${PCC_ROOT}/b.out.h
+        ${PORT_TOOLS}/asz8k/src/soutfmt.c ${PORT_TOOLS}/asz8k/src/soutfmt.h
+    COMMENT "Building host copy of native linker")
 set(OZ8 "${B}/oz8")
 add_custom_command(OUTPUT "${OZ8}"
     COMMAND cc -std=gnu89 -O -w -Wno-return-mismatch -Wno-int-conversion
@@ -75,40 +91,24 @@ rm -f "$4.raw"
 # =============================================================================
 # ROM binary (segment 0) — Z8K segmented assembly
 # =============================================================================
-add_custom_command(OUTPUT ${B}/rom.o ${B}/rom.lst
-    COMMAND ${Z8K_AS} -z8001 -alns=rom.lst -o rom.o ${CMAKE_SOURCE_DIR}/${KERNEL_ROM}
-    DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_ROM} "${CONFIG_STAMP}"
-    COMMENT "Assembling rom.s"
-)
-add_custom_command(OUTPUT ${B}/rom.coff
-    COMMAND ${Z8K_LD} -m z8001 -Ttext=0 -e 0 -o rom.coff rom.o
-    DEPENDS ${B}/rom.o
-    COMMENT "Linking rom.coff"
-)
+add_custom_command(OUTPUT ${B}/rom.so
+    COMMAND ${ASZ8K} -zgs -o rom.so ${CMAKE_SOURCE_DIR}/${KERNEL_ROM}
+    DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_ROM} "${CONFIG_STAMP}" "${ASZ8K}" ${B}/asz8k.pd
+    COMMENT "Assembling reset ROM with shared assembler")
 add_custom_command(OUTPUT ${B}/rom.bin
-    COMMAND ${Z8K_OBJCOPY} -O binary rom.coff rom.bin
-    DEPENDS ${B}/rom.coff
-    COMMENT "Building rom.bin"
-)
+    COMMAND ${LDZ8} -z -b -C 0 rom.so -o rom.bin
+    DEPENDS ${B}/rom.so "${LDZ8}"
+    COMMENT "Linking reset ROM image")
 
-# =============================================================================
-# Kernel binary (segment 1) — Z8K segmented assembly
-# =============================================================================
-add_custom_command(OUTPUT ${B}/trap.o ${B}/trap.lst
-    COMMAND ${Z8K_AS} -z8001 -alns=trap.lst -o trap.o ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS}
-    DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS} "${CONFIG_STAMP}"
-    COMMENT "Assembling trap.s"
-)
-add_custom_command(OUTPUT ${B}/trap.coff
-    COMMAND ${Z8K_LD} -m z8001 -Ttext=0 -e 0 -o trap.coff trap.o
-    DEPENDS ${B}/trap.o
-    COMMENT "Linking trap.coff"
-)
+# SEG/NONSEG trap stubs occupy the first 512 kernel instruction bytes.
+add_custom_command(OUTPUT ${B}/trap.so
+    COMMAND ${ASZ8K} -zgs -o trap.so ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS}
+    DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS} "${CONFIG_STAMP}" "${ASZ8K}" ${B}/asz8k.pd
+    COMMENT "Assembling trap stubs with shared assembler")
 add_custom_command(OUTPUT ${B}/kernel.bin
-    COMMAND ${Z8K_OBJCOPY} -O binary trap.coff kernel.bin
-    DEPENDS ${B}/trap.coff
-    COMMENT "Building kernel.bin"
-)
+    COMMAND ${LDZ8} -z -b -C 1 -M 512 trap.so -o kernel.bin
+    DEPENDS ${B}/trap.so "${LDZ8}"
+    COMMENT "Linking trap image")
 
 # =============================================================================
 # PCC compilation function
@@ -224,14 +224,14 @@ add_dependencies(kernel check_headers)
 
 add_custom_command(OUTPUT ${B}/fpe.bin
     COMMAND ${CMAKE_COMMAND} -E make_directory ${B}/fpe
+    COMMAND ${CMAKE_COMMAND} -E copy ${B}/asz8k.pd ${B}/fpe/asz8k.pd
     COMMAND python3 ${TOOLS_DIR}/fpe/translate.py ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${B}/fpe/core.s
-    COMMAND ${Z8K_AS} -z8002 -o core.o core.s
-    COMMAND ${Z8K_AS} -z8001 -o unix.o ${CMAKE_SOURCE_DIR}/fpe/unix.s
-    COMMAND ${Z8K_LD} -m z8002 -T ${CMAKE_SOURCE_DIR}/fpe/service.ld -o fpe.coff unix.o core.o
-    COMMAND ${Z8K_OBJCOPY} -O binary fpe.coff ${B}/fpe.bin
+    COMMAND ${ASZ8K} -zgs -o core.so core.s
+    COMMAND ${ASZ8K} -zgs -o unix.so ${CMAKE_SOURCE_DIR}/fpe/unix.s
+    COMMAND ${LDZ8} -z -b -C 127 -M 61440 unix.so core.so -o ${B}/fpe.bin
     WORKING_DIRECTORY ${B}/fpe
     DEPENDS ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${CMAKE_SOURCE_DIR}/fpe/unix.s
-            ${CMAKE_SOURCE_DIR}/fpe/service.ld ${TOOLS_DIR}/fpe/translate.py
+            ${TOOLS_DIR}/fpe/translate.py "${ASZ8K}" "${LDZ8}" ${B}/asz8k.pd
     COMMENT "Building separate Zilog software EPU service")
 file(MAKE_DIRECTORY ${B}/fpe)
 

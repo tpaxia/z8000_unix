@@ -3,7 +3,7 @@
 On `work/native-asz8k`, `tools/sout-utils` provides shared host/native `nm`,
 `size` and `strip`, and a libc `nlist` adapter. A machine-dependent reader
 decodes on-disk fields explicitly; it never reads target C structures into
-host structures. The original V7 command and libc sources remain intact.
+host structures. The original V7 nm/size/strip and nlist sources remain intact.
 These replacements are installed in an isolated test disk. Standard bootstrap
 and userland images still use the original a.out utilities.
 
@@ -51,7 +51,25 @@ for full addresses; this adapter does not truncate them.
 
 The utility trial replaces `nlist` and adds its reader/codec objects to a copy
 of libc with native `ar`, then tests extraction through native `cc`/`ldz8`.
-The regular libc build has not yet switched to the adapter.
+The default a.out libc retains original nlist. The explicit native-environment
+s.out profile builds and installs the adapter through its libc makefile.
+
+## Other format consumers
+
+The `SOUT` builds of V7 make and prof use the same reader for archive-symbol
+dependencies and NONSEG profiling symbols. Their existing timestamp selection
+and histogram/report policy remain unchanged. Make supports symbol lookup in
+mixed portable archives, including SEG objects. Prof rejects SEG programs;
+its histogram and the process ABI remain 16-bit. V7 file gains conditional
+s.out magic recognition. Without `SOUT`, these commands retain their existing
+a.out behavior. These are machine-format adaptations, not compiler workarounds.
+
+Native regression checks exercise make's `archive((symbol))` dependencies
+with NONSEG s.out, SEG s.out and legacy objects, classify both formats with
+file, and produce a prof report from a s.out executable and V7 histogram.
+Run `python3 tools/userland/test-formats.py` after the profile's native make
+has been rebuilt. Mkfs's boot-block input and standalone boot-format migration
+remain separate work.
 
 Reproduction is in [native rebuild](../development/native-rebuild.md#sout-object-utilities).
 
@@ -64,7 +82,7 @@ placement, mixed portable archives, 32-bit absolute symbols, malformed input,
 repeated stripping, and execution of stripped combined/split executables.
 The `nlist` checks pass both when linked directly and when extracted from the
 trial libc by native cc/ldz8. Emulator logs report zero absent-RAM accesses and
-zero kernel stack warnings.
+zero user-stack growth warnings.
 
 | Native s.out utility | Code bytes | Data bytes | BSS bytes |
 |---|---:|---:|---:|

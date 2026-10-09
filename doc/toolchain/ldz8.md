@@ -29,6 +29,22 @@ ZEUS; partial links retain word-aligned sizes and relocation.
 | `-lfoo` | Select needed members of portable `libfoo.a` |
 | `-L prefix` | Override the library filename prefix, default `/lib/lib` |
 | `-C number`, `-D number` | SEG code/data physical segment numbers, decimal; defaults 0/1 |
+| `-b` | Raw machine image: contiguous code/data in the segment selected by `-C`; omit headers, symbols, relocation and BSS bytes |
+| `-T number` | Raw-image text offset, decimal; default zero, must be even |
+| `-M number` | Raw-image end-address limit, decimal; default 65536, includes BSS |
+
+Raw output retains word alignment without executable clique padding. `-T`
+changes relocation addresses but does not prepend bytes to the file: a boot
+block linked at offset 65024 is still a 512-byte image loaded at that offset.
+`-b` rejects partial and split-I/D output. Its data follows text in the same
+segment; `-D` has no separate placement effect. Kernel C continues through
+the transitional a.out path, including its split-I/D link.
+
+The kernel and disk-boot builders use raw linking for ROM, PSA/trap stubs,
+the FPU service, board firmware and the primary disk bootstrap. FPU linking
+checks the 61440-byte boundary below the stack/u-area; trap linking checks the
+512-byte boundary before the C runtime entry table. See
+[machine-image validation](../development/native-rebuild.md#machine-assembly-and-raw-images).
 
 NONSEG output has one segment table entry and either e707 combined or e711
 separate-I/D magic. SEG executables have bound code and data segment entries;
@@ -62,11 +78,12 @@ its relative branches during assembly and does not emit those actions yet.
 
 The kernel accepts the resulting NONSEG layouts; see the authoritative
 [exec loader contract](../kernel/processes-and-exec.md#sout-loading).
-SEG user processes remain unsupported. Kernel assembly syntax, fixed-layout
-kernel images and machine boot loaders still need integration before the
-current a.out build can be retired. Shared host/native
+SEG user processes remain unsupported. Machine assembly and fixed raw images
+use the shared tools; migration of the kernel C executable and standalone
+loader from a.out remains pending. Shared host/native
 [nm/size/strip and a nlist adapter](object-utilities.md) are available on this
-branch; deployment to the standard bootstrap/userland images remains pending.
+branch. The existing image builders provide an explicit s.out profile;
+changing their default format remains pending.
 
 Reproduction and validation commands are in
 [native rebuild](../development/native-rebuild.md#sout-linking-and-execution).

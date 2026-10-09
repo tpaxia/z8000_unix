@@ -72,5 +72,9 @@ char **argv;
         return buf[0] != 1 || buf[1] != 7;
     if (strcmp(argv[1], "0411") == 0)
         return buf[0] != 1 || buf[1] != 9;
+    if (strcmp(argv[1], "e707") == 0)
+        return (buf[0]&255) != 0xe7 || buf[1] != 7;
+    if (strcmp(argv[1], "e711") == 0)
+        return (buf[0]&255) != 0xe7 || buf[1] != 0x11;
     return 5;
 }

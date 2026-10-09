@@ -348,6 +348,11 @@ if( (mout=fopen(file,"a")) != NULL )
 */
 #include <arport.h>
 #include <a.out.h>
+#ifdef SOUT
+#include "object.h"
+static struct object ar_obj;
+static struct osymbol ar_sym;
+#endif
 
 static struct ar_member arhead;
 FILE *arfd;
@@ -392,13 +397,25 @@ while(getarch())
 	if(objarch)
 		{
 		getobj();
+#ifdef SOUT
+		nsym = ar_obj.symbols;
+#else
 		nsym = objhead.a_syms / sizeof(objentry);
+#endif
 		for(i = 0; i<nsym ; ++i)
 			{
+#ifdef SOUT
+			if(!objsym(&ar_obj,i,&ar_sym))
+				fatal1("%s has invalid symbols",arhead.ar_name);
+			if((ar_sym.type & SO_EXTERNAL)
+			   && ((ar_sym.type & 31) || ar_sym.value)
+			   && eqstr(ar_sym.name,s,nc))
+#else
 			fread( (char *) &objentry, sizeof(objentry),1,arfd);
 			if( (objentry.n_type & N_EXT)
 			   && ((objentry.n_type & ~N_EXT) || objentry.n_value)
 			   && eqstr(objentry.n_name,s,nc))
+#endif
 				{
 				clarch();
 				return(arhead.ar_date);
@@ -462,6 +479,10 @@ return(1);
 
 getobj()
 {
+#ifdef SOUT
+if(objread(&ar_obj,arfd,ftell(arfd),arhead.ar_size) != 1)
+	fatal1("%s is not an object module",arhead.ar_name);
+#else
 long int skip;
 
 fread( (char *) &objhead, sizeof(objhead), 1, arfd);
@@ -473,6 +494,7 @@ if( objhead.a_magic != A_MAGIC1 &&
 skip = (long)objhead.a_text + objhead.a_data +
 	objhead.a_trsize + objhead.a_drsize;
 fseek(arfd, skip, 1);
+#endif
 }
 
 

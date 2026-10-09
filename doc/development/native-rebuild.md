@@ -1,5 +1,37 @@
 # Native Rebuild
 
+## Machine assembly and raw images
+
+After bootstrap, run:
+
+```sh
+python3 tools/kernel-asm/test.py
+```
+
+This trial builds host and target copies of the same assembler/linker C sources.
+Target tools are cross-built as the seed, then execute inside V7 to assemble
+ROM, traps, the Unix FPU adapter and preserved arithmetic core, board firmware
+and the disk boot block. It also exercises mixed instruction modes, a nonzero
+origin, cross-object code/data references, BSS limits and rejected links.
+Python stages sources/disks and launches the emulator; asz8k/ldz8 perform all
+assembly and linking. This trial does not rebuild the tools' C sources inside
+Unix; the native environment procedure below covers source rebuilding.
+
+The 19 guest commands produce eight objects and six raw images identical to
+the host results. Five machine-image hashes retain the pre-migration GNU build
+as an independent comparison. Artifacts and logs are under
+`tests/build/kernel-asm/`; `results.json` records command count, byte comparisons
+and target text/data/BSS sizes. `--kernel-build <directory>` selects another
+kernel/driver build; `--host-only` runs the host comparison and rejection checks.
+
+The [assembler](../toolchain/asz8k.md#machine-assembly) and
+[linker](../toolchain/ldz8.md) define source and placement options. The kernel
+and disk-bootstrap build recipes now use these shared tools. Kernel C and
+the standalone loader executable retain their a.out path; complete native
+kernel/boot rebuilding remains pending.
+
+## Native compiler and userland procedures
+
 Complete [bootstrap](bootstrap.md) through the native seed first. All commands
 below run on the host from the repository root; the runners perform the actual
 compilation inside Unix. `--setup` recreates the corresponding disk and resets
@@ -177,8 +209,8 @@ See [the experimental assembler assessment](../toolchain/asz8k.md) for format
 limitations and remaining kernel-build integration.
 The [common host/native s.out migration plan](../toolchain/asz8k.md#planned-common-host-and-native-format)
 is in progress. The assembler trial covers object emission; linker and loader
-checks use the separate procedure below. Replacing the installed compiler
-pipeline remains pending.
+checks use the separate procedure below. The explicit s.out profile described
+below installs the new pipeline; changing the default remains pending.
 
 ## s.out linking and execution
 
@@ -260,6 +292,56 @@ If the native build passed but the check stage was interrupted, use
 `python3 tools/sout-utils/test.py --reuse-build`. It checks the saved C/header
 sources against the checkout before reusing the compiled utilities on a fresh
 test disk.
+
+## s.out bootstrap and native environment
+
+After compiler convergence, the existing image/rebuild procedures also accept
+an explicit s.out profile:
+
+```sh
+python3 tools/native-cc/build.py --sout
+python3 tools/native-cc/test.py --sout
+python3 tools/native-cc/environment.py --sout --setup
+python3 tools/native-cc/userland.py --sout --setup
+python3 tools/userland/native.py --sout --setup
+```
+
+Use the same `--sout` option when resuming or summarizing a profile run.
+The bootstrap disk is `tests/build/native-cc-sout/hd.img`; native environment,
+essential commands and full userland use `native-environment-sout`,
+`userland-sout` and `userland-native-sout` respectively. The existing a.out
+outputs remain separate. The flag does not migrate kernel or standalone boot
+images.
+
+The seed uses host-prepared s.out startup/libc and the minimum updated driver,
+assembler and linker. Native environment makefiles rebuild asz8k, object
+utilities, both PCC passes, cpp, optimizer, libc, make, ar and yacc inside V7.
+The installed driver defaults to s.out; assembly recipes invoke `asz8k -zc`.
+The native libc includes the nlist adapter. Resource summaries decode the
+selected header format instead of treating every executable as a.out.
+
+Full-userland terminal tables retain nroff's existing data-resource layout.
+Native `mktab` converts a resolved data-only s.out partial link into that
+resource, without changing original nroff sources. Check this path separately:
+
+```sh
+python3 tools/userland/test-mktab.py
+python3 tools/userland/test-formats.py
+```
+
+The first test compares host/native resource bytes and runs unchanged nroff.
+The second requires the profile's rebuilt make; it tests archive-symbol
+dependencies, file classification and NONSEG prof symbol reads.
+Profile bootstrap, terminal-resource and format-consumer tests are validated.
+Cpp selects V7's original signed-character table layout for Z8000 through two
+platform checks. The environment procedure includes a passing macro-expansion
+runtime check after rebuilding cpp. The complete 127-stage native environment
+run passes: it exports 17 s.out tools, validates all 147 libc archive members,
+checks staged source hashes and identical native parser output, and passes the
+final 39-check libc runtime test. The full assembler rebuild has a larger
+emulator cycle budget than individual-source steps.
+Essential/full userland profile rebuild validation remains pending. Refer to
+[current status](../status.md) for completed scope.
 
 ## Complete cross-built userland
 

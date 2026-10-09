@@ -74,7 +74,10 @@ The focused binary is `$MAME_UNIX/z8001unix`. The 2 KiB firmware is
 `tests/build/z8001unix/roms/z8001unix/unix.rom`; it contains no kernel/FPU payload.
 MAME reports `NO GOOD DUMP KNOWN` for this locally built firmware.
 `build_rom.py` also produces the standalone loader, disk boot block and disk
-files; it cross-builds bootstrap artifacts, not programs at guest runtime.
+files. Firmware and the primary block use host builds of the shared native
+asz8k/ldz8 sources, without GNU Z8000 tools. The standalone loader uses PCC
+and the transitional a.out tools. These are host bootstrap builds; the native
+compiler subsequently runs inside Unix.
 
 ## Run
 

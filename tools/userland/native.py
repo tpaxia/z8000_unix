@@ -12,6 +12,7 @@ import time
 sys.dont_write_bytecode=True
 import test as packages
 from assets import oldmembers
+from object_format import sizes
 ROOT=packages.ROOT
 WORK=ROOT/'tests/build/userland-native'
 RECIPES=ROOT/'tools/userland/native'
@@ -19,7 +20,7 @@ NATIVE=ROOT/'tests/build/native-environment/native'
 SYS=packages.SYS
 
 
-def setup(preserve=False, update_toolchain=False):
+def setup(preserve=False, update_toolchain=False,sout=False):
     WORK.mkdir(parents=True,exist_ok=True)
     catalog=json.loads((RECIPES/'catalog.json').read_text())
     files,modes=packages.setup(emit_image=False,prepare_helpers=False,report_override={})
@@ -27,8 +28,9 @@ def setup(preserve=False, update_toolchain=False):
         if row['kind']=='library':files.pop('lib/'+row['output'],None)
     # The 45 essential tools were already built inside Unix. No full-userland
     # executable or support library is copied from the cross-built image.
-    seed=packages.Filesystem(ROOT/'tests/build/userland/hd.img')
-    audit=json.loads((ROOT/'tests/build/userland/audit.json').read_text())
+    essential=ROOT/('tests/build/userland-sout' if sout else 'tests/build/userland')
+    seed=packages.Filesystem(essential/'hd.img')
+    audit=json.loads((essential/'audit.json').read_text())
     seed_dir=WORK/'seed';seed_dir.mkdir(exist_ok=True)
     for name in audit['essential_commands']+['runner','normal','check']:
         p=seed_dir/name;p.write_bytes(seed.read('/bin/'+name));files['bin/'+name]=p
@@ -65,6 +67,10 @@ def setup(preserve=False, update_toolchain=False):
         if 'con.h' not in seen:files['usr/src/libplot/'+name+'/con.h']=ROOT/'v7z8000/usr/src/libplot/con.h'
     files['usr/src/build/makefile']=RECIPES/'makefile'
     files['usr/src/build/normal.c']=ROOT/'tools/native-cc/normal.c'
+    if sout:
+        for path in [ROOT/'tools/sout-utils'/n for n in ('object.c','object.h','nm.c','size.c','strip.c')]+[
+                ROOT/'tools/asz8k/src/soutfmt.c',ROOT/'tools/asz8k/src/soutfmt.h']:
+            files['usr/src/objutils/'+path.name]=path
     empty=WORK/'keep';empty.write_text('')
     for row in catalog:
         if row.get('destination'):
@@ -74,25 +80,51 @@ def setup(preserve=False, update_toolchain=False):
         p=WORK/('p%03d'%len(steps));p.write_text('0 - '+command+'\n')
         files['tmp/'+p.name]=p
         steps.append({'name':name,'plan':'/tmp/'+p.name})
+    if sout:
+        files['usr/src/build/mktab.c']=ROOT/'tools/userland/mktab.c'
+        step('mktab','/bin/cc -O -i -I/usr/src/objutils mktab.c /usr/src/objutils/object.c /usr/src/objutils/soutfmt.c -o /bin/mktab')
     for row in catalog:
-        name=row['name'];files['usr/src/build/'+name+'/makefile']=RECIPES/(name+'.mk')
+        name=row['name'];recipe=RECIPES/(name+'.mk')
+        if sout:
+            text=recipe.read_text().replace('/bin/ldz8 -i','/bin/ldz8 -z -i')
+            if name in ('file','prof','make'):
+                text=text.replace('CFLAGS=','CFLAGS=-DSOUT -I/usr/src/objutils ')
+            if name in ('prof','make'):
+                text=text.replace(name+': ',name+': object.b soutfmt.b ',1)
+                text=text.replace(' -o '+name,' object.b soutfmt.b -o '+name,1)
+                for obj in ('object','soutfmt'):
+                    text+='\n'+obj+'.b: /usr/src/objutils/'+obj+'.c /usr/src/objutils/object.h /usr/src/objutils/soutfmt.h\n\t$(CC) $(CFLAGS) -c /usr/src/objutils/'+obj+'.c\n'
+            if name.startswith('tab') and name!='tabs':
+                text=text.replace(name+': '+name+'.b',name+': '+name+'.b /bin/mktab')
+                text=text.replace('/bin/ldz8 -z -i -x '+name+'.b -o '+name,
+                    '/bin/ldz8 -z -r -x '+name+'.b -o table.so\n\t/bin/mktab table.so '+name+'\n\t/bin/rm -f table.so')
+            if name in ('nm','size','strip'):
+                objects=[name,'object','soutfmt']
+                text='CC=/bin/cc\nCFLAGS=-O -Dunix=1 -Dz8000 -Dz8002 -I/usr/src/objutils\nall: '+name+'\n'
+                text+=name+': '+' '.join(n+'.b' for n in objects)+'\n\t$(CC) -i -s '+' '.join(n+'.b' for n in objects)+' -o '+name+'\n'
+                for obj in objects:
+                    text+=obj+'.b: /usr/src/objutils/'+obj+'.c /usr/src/objutils/object.h /usr/src/objutils/soutfmt.h\n\t$(CC) $(CFLAGS) -c /usr/src/objutils/'+obj+'.c\n'
+                text+='install: all\n\t/bin/cp '+name+' /bin/ninstall\n\t/bin/mv /bin/ninstall /bin/'+name+' </dev/null\nclean:\n\t/bin/rm -f *.b '+name+'\n'
+            recipe=WORK/(name+'.mk');recipe.write_text(text)
+        files['usr/src/build/'+name+'/makefile']=recipe
         step(name,'/bin/make '+name)
     step('install','/bin/make install')
     (WORK/'steps.json').write_text(json.dumps(steps,indent=2)+'\n')
     if not preserve:(WORK/'results.json').write_text('[]\n')
     manifest={p:hashlib.sha256(s.read_bytes()).hexdigest() for p,s in files.items()}
     (WORK/'seed.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    packages.image(files,WORK/'hd.img',blocks=120000,inodes=16384,modes=modes)
+    packages.image(files,WORK/'hd.img',blocks=120000,inodes=16384,modes=modes,sout=sout)
 
 
-def summarize():
+def summarize(sout=False):
     fs=packages.Filesystem(WORK/'hd.img');report={}
     for row in json.loads((RECIPES/'catalog.json').read_text()):
         name=row['name'];data=fs.read('/usr/src/build/'+name+'/'+row['output'])
         rec={'kind':row['kind'],'sha256':hashlib.sha256(data).hexdigest()}
         if row['kind']!='library':
-            h=struct.unpack('>8H',data[:16]);assert h[0]==0o411,(name,h)
-            rec.update(zip(('text','data','bss'),h[1:4]))
+            terminal=row['name'].startswith('tab') and row['name']!='tabs'
+            rec.update(sizes(data,sout and not terminal))
+            if sout and terminal:rec['format']='V7 terminal resource'
         dest=row.get('destination')
         if row['kind']=='library':dest='lib/'+row['output']
         if dest:assert data==fs.read('/'+dest),name
@@ -109,12 +141,17 @@ def main():
     parser.add_argument('--update-toolchain',action='store_true',
                         help='with --refresh, install the verified native environment tools')
     parser.add_argument('--summary',action='store_true')
+    parser.add_argument('--sout',action='store_true',help='build with the native s.out environment on a separate disk')
     args=parser.parse_args()
+    global WORK,NATIVE
+    if args.sout:
+        WORK=ROOT/'tests/build/userland-native-sout'
+        NATIVE=ROOT/'tests/build/native-environment-sout/native'
     if args.update_toolchain and not args.refresh:
         parser.error('--update-toolchain requires --refresh')
-    if args.setup:setup()
-    elif args.refresh:setup(True,args.update_toolchain)
-    if args.summary:summarize();return
+    if args.setup:setup(sout=args.sout)
+    elif args.refresh:setup(True,args.update_toolchain,args.sout)
+    if args.summary:summarize(args.sout);return
     records=json.loads((WORK/'results.json').read_text())
     plan=json.loads((WORK/'steps.json').read_text())
     steps=plan[len(records):]
@@ -139,13 +176,14 @@ def main():
         (WORK/'results.json').write_text(json.dumps(records,indent=2)+'\n')
         print('PASS',records[-1],flush=True)
     if len(records)==len(plan):
-        summarize()
+        summarize(args.sout)
         packages.WORK=WORK
         sys.argv=[sys.argv[0]]
         packages.main()
 
 
 if __name__=='__main__':
+    if '--sout' in sys.argv[1:]:WORK=ROOT/'tests/build/userland-native-sout'
     WORK.mkdir(parents=True,exist_ok=True)
     with (WORK/'run.lock').open('w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)

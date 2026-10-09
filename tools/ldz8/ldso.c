@@ -36,6 +36,9 @@ static struct lobj *objs, *tail;
 static struct lsym *syms, *stail;
 static long total[3], address[3];
 static int partial, split, strip, mode = -1, count, created;
+static int raw;
+static long textbase;
+static long limit = 65536L;
 static unsigned cseg = 0, dseg = 1;
 static char *output = "a.out", *entryname, *libpath = "/lib/lib";
 
@@ -363,12 +366,13 @@ static int writeout()
         total[2] += (n+1)&~1L;
     }
     for (k = 0; k < 3; k++) {
-        if (!partial) total[k] = (total[k]+255)&~255L;
+        if (!partial && !raw) total[k] = (total[k]+255)&~255L;
         if (total[k] > 65535L) die("padded section exceeds 16-bit size");
     }
-    address[0] = 0;
-    address[1] = (mode || split) ? 0 : total[0];
+    address[0] = textbase;
+    address[1] = raw ? textbase+total[0] : (mode || split) ? 0 : total[0];
     address[2] = mode && partial ? 0 : address[1]+total[1];
+    if (raw && address[2]+total[2] > limit) die("raw image exceeds its memory limit");
     if ((!mode && !split && total[0]+total[1]+total[2] > 65536L) ||
         ((mode || split) && total[1]+total[2] > 65536L)) die("data address space overflow");
     if (!partial) for (s = syms; s; s = s->next) if (!s->kind) {
@@ -381,24 +385,24 @@ static int writeout()
     for (s = syms; s; s = s->next) if (!s->kind && !partial) {
         fprintf(stderr, "undefined: %s\n", s->name); die("unresolved symbols");
     }
-    ep = 0;
+    ep = address[0];
     if (entryname) {
         s = find(entryname);
         if (!s || s->kind != SO_TEXTSYM) die("entry point is not a defined code symbol");
         ep = symval(s);
     }
-    if (ep&1 || (!partial && ep >= total[0])) die("invalid entry point");
+    if (ep&1 || (!partial && (ep < address[0] || ep >= address[0]+total[0]))) die("invalid entry point");
     if (mode && !partial) ep += (0x8000L+cseg*256L)*65536L;
     ns = mode ? (partial ? 3 : 2) : 1;
-    start = 24+ns*16; image = total[0]+total[1];
+    start = raw ? 0 : 24+ns*16; image = total[0]+total[1];
     magic = mode ? (split ? SO_SID : SO_SMAG) : (split ? SO_NID : SO_NMAG);
     /* Never truncate an input that is also named as the output. */
     for (o = objs; o; o = o->next) if (!strcmp(output, o->path)) die("output is an input file");
     f = fopen(output, "wb"); if (!f) die("cannot create output"); created = 1;
     so_header(b, magic, image, total[2], ns*16, strip ? 0 : count*14,
         ep, partial ? 0 : SO_STRIP);
-    put(f, 0L, b, 24);
-    for (i = 0; i < ns; i++) {
+    if (!raw) put(f, 0L, b, 24);
+    for (i = 0; !raw && i < ns; i++) {
         if (mode) {
             sk = partial || cseg < dseg ? i : 1-i;
             attrs = (total[sk] ? 1<<sk : 0) | (partial ? 0 : SO_BOUND);
@@ -434,7 +438,7 @@ static int writeout()
         fclose(in);
     }
     pos = start+image*(partial ? 2 : 1);
-    if (!strip) for (s = syms; s; s = s->next) {
+    if (!raw && !strip) for (s = syms; s; s = s->next) {
         k = s->kind >= 2 ? s->kind-2 : 0;
         sk = k ? (dseg < cseg ? 0 : 1) : (cseg < dseg ? 0 : 1);
         so_symbol(b, symval(s), s->kind|SO_EXTERNAL|
@@ -460,12 +464,25 @@ char **argv;
         if (!strcmp(a,"-i")) { split = 1; continue; }
         if (!strcmp(a,"-r")) { partial = 1; continue; }
         if (!strcmp(a,"-s")) { strip = 1; continue; }
+        if (!strcmp(a,"-b")) { raw = 1; continue; }
         if (!strcmp(a,"-o") || !strcmp(a,"-e") || !strcmp(a,"-L") ||
-            !strcmp(a,"-u") || !strcmp(a,"-C") || !strcmp(a,"-D")) {
+            !strcmp(a,"-u") || !strcmp(a,"-C") || !strcmp(a,"-D") || !strcmp(a,"-T") || !strcmp(a,"-M")) {
             if (++i == argc) die("missing option argument");
             if (a[1]=='o') output = argv[i];
             if (a[1]=='e') entryname = argv[i];
             if (a[1]=='L') libpath = argv[i];
+            if (a[1]=='T') {
+                name = argv[i]; textbase = 0;
+                if (!*name) die("empty text offset");
+                while (*name) { if (*name<'0' || *name>'9' || textbase>65535L) die("invalid decimal text offset"); textbase=textbase*10+*name++-'0'; }
+                if (textbase>65535L || (textbase&1)) die("text offset must be even and below 65536");
+            }
+            if (a[1]=='M') {
+                name = argv[i]; limit = 0;
+                if (!*name) die("empty memory limit");
+                while (*name) { if (*name<'0' || *name>'9' || limit>65536L) die("invalid decimal memory limit"); limit=limit*10+*name++-'0'; }
+                if (!limit || limit>65536L) die("memory limit must be 1..65536");
+            }
             if (a[1]=='u') { if (strlen(argv[i])>8) die("symbol name exceeds eight characters"); enter(argv[i]); }
             if (a[1]=='C' || a[1]=='D') {
                 name = argv[i]; v = 0;
@@ -483,6 +500,9 @@ char **argv;
         else load(a);
     }
     if (partial && (strip || split)) die("-r cannot be combined with -s or -i yet");
-    if (mode && cseg == dseg) die("code and data segments must differ");
+    if (raw && (partial || split)) die("raw output cannot be partial or split I/D");
+    if (!raw && (textbase || limit!=65536L)) die("text offset and memory limit require raw output");
+    if (raw) dseg = cseg;
+    if (mode && cseg == dseg && !raw) die("code and data segments must differ");
     return writeout();
 }

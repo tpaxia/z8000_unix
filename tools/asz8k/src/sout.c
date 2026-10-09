@@ -102,7 +102,7 @@ sobegin()
         sizes[kind] = (lengths[sec] + 1) & ~1L;
         if (sizes[kind] > 65535L) fail("section size overflow");
     }
-    if (segflg) {
+    if (objectseg) {
         /* Each present section is an independent, unbound logical segment.
          * The linker chooses final physical segment numbers and placement. */
         for (i = 0; i < 3; i++) if (present[i]) segments[i] = nseg++;
@@ -147,7 +147,7 @@ sobegin()
             }
             /* Recovered ZEUS scrt0.o stores section-relative symbol offsets,
              * not encoded long addresses. sn_segt selects the segment. */
-            if (segflg && type != SO_ABS) type |= SO_SEGMENTED;
+            if (objectseg && type != SO_ABS) type |= SO_SEGMENTED;
             so_symbol(entry, value, type | (global ? SO_EXTERNAL : 0), seg, s->sy_str);
             if (write(symfd, entry, SO_SYM) != SO_SYM) fail("symbol write failed");
             symbols++;
@@ -191,11 +191,11 @@ unsigned value, reloc;
             type = kinds[base];
             index = segments[type - SO_TEXTSYM];
         }
-        tag = so_reloc(external, segflg, index, type, action);
+        tag = so_reloc(external, objectseg, index, type, action);
         if (tag == -1) fail("unrepresentable relocation");
         putrel(pos, (unsigned)tag);
         if (width == 4) {
-            tag = so_reloc(external, segflg, index, type, SO_ROFF);
+            tag = so_reloc(external, objectseg, index, type, SO_ROFF);
             if (tag == -1) fail("unrepresentable offset relocation");
             putrel(pos+2, (unsigned)tag);
         }
@@ -260,10 +260,10 @@ sofinish()
         putblock(record, SO_SYM);
     }
     seekout(0L);
-    so_header(record, segflg ? SO_SMAG : SO_NMAG,
+    so_header(record, objectseg ? SO_SMAG : SO_NMAG,
         image, sizes[2], nseg * SO_SEG, symbols * SO_SYM, 0L, 0);
     putblock(record, SO_HEAD);
-    if (!segflg) {
+    if (!objectseg) {
         v = (sizes[0] ? SO_CODE : 0) | (sizes[1] ? SO_DATA : 0) | (sizes[2] ? SO_BSS : 0);
         so_segment(record, 0, (unsigned)sizes[0], (unsigned)sizes[1], (unsigned)sizes[2], v);
         putblock(record, SO_SEG);

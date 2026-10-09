@@ -6,10 +6,11 @@ Commands run from the repository root. For routine incremental work, use
 
 ## Host prerequisites
 
-Install Git, Make, CMake, Python 3, a host C/C++ toolchain with C++17 support,
-and GNU Z8000 binutils providing the `z8k-coff` tools used for reset/trap
-assembly. The repository does not provision those host packages. The historical
-PCC compiler, assembler and linker are built from the submodule below.
+Install Git, Make, CMake, Python 3 and a host C/C++ toolchain with C++17 support.
+The repository does not provision those host packages. PCC is built from the
+submodule below. CMake builds host copies of the shared native `asz8k` and
+`ldz8` sources for reset/trap and FPU assembly/linking; GNU Z8000 binutils are
+not required. The disk-boot builder uses the same shared tools.
 
 ## Cross tools and first boot
 

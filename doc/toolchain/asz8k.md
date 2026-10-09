@@ -177,21 +177,35 @@ The CP/M pipeline is `asz8k -> Unidot -> xcon -> x.out -> ld8k`. The checkout
 contains C sources for asz8k and ld8k, but only an executable for xcon.
 The Unix port bypasses that pipeline for a.out and s.out output. Segmented
 assembly emits Unidot by default or s.out with `-z`; it does not invoke the
-CP/M converter or claim to produce a linked kernel image.
+CP/M converter. The shared linker produces the raw machine images used by
+the current kernel and disk bootstrap.
 
 The initial segmented writer uses ZEUS s.out. Existing ldz8 integer
 relocations alone do not establish general
 segmented linking.
 
-The kernel's GNU-syntax machine assembly also needs adaptation. Asz8k retains
-eight-character significant symbols, requires `.8kn`/`.8ks` main filenames,
-and reads its predefinition file from the current directory. These constraints
-need review when converting existing labels and build recipes.
+## Machine assembly
 
-The result supports reusing this assembler rather than implementing its
-segmented parser and instruction support afresh. PCC assembly-syntax
-integration, segmented linking, kernel artifact reproduction and boot/regression
-validation remain separate work.
+`-zg` accepts the current machine-source dialect in `.s` files. Add `-s` for
+SEG s.out object addressing (`-zgs`). `.segm` and `.unsegm` change instruction
+encoding within the file; they do not change the selected object addressing
+mode. The mode resets at each pass. Machine syntax accepts column-one
+instructions, `!` comments, `.global`, forward `.org`, `.space`, hexadecimal
+constants and literal I/O ports prefixed with `#`. It retains the imported
+instruction tables; byte right-shift immediates emit the manual's zero reserved
+high byte in this mode. PCC mode and original Unidot oracle output are unchanged.
+
+Symbols retain eight significant characters. Machine labels with colliding
+prefixes were shortened, without changing code. A local `asz8k.pd` takes
+precedence over `/usr/lib/asz8k.pd`. The kernel CMake build stages that file and
+builds host tools from the same C sources used in V7. The machine dialect is
+the subset needed by these sources, not general GNU assembler compatibility.
+
+ROM, PSA/trap stubs, the FPU service, board firmware and the disk boot block now
+use this assembler and [raw s.out linking](ldz8.md). Their output matches the
+previous GNU-built images. The [validation procedure](../development/native-rebuild.md#machine-assembly-and-raw-images)
+compares host/native objects and raw links, including nonzero placement and
+rejected layouts. Kernel C and the standalone loader still use a.out.
 
 ## Planned common host and native format
 
@@ -217,8 +231,8 @@ Both paths must serialize the same target bytes explicitly, independent of
 host integer widths, byte order and structure padding. For identical assembly
 input and link settings, host and native objects and linked outputs must match
 byte for byte. Compiler assembly syntax must be aligned with asz8k, and the
-kernel's existing GNU assembly path must migrate too. Changing only native
-output would leave the bootstrap and native build paths inconsistent.
+machine assembly now uses these same tools. Migration of the kernel C and
+standalone executable formats remains pending.
 
 The recovered reference files are in the Zilog_S8000 checkout:
 
@@ -244,13 +258,15 @@ the documented format in our tools.
 2. Extend ldz8 for segment placement, symbol resolution, segmented relocations,
    partial linking and range checks. The initial backend covers asz8k objects
    and NONSEG combined/split I/D. Integrate the
-   kernel's fixed segmented layout. Produce the image required by the existing
-   boot path and compare loaded bytes and entry/layout with the current build.
+   kernel's executable format. Fixed raw machine layout, image reproduction and
+   host/native comparisons are implemented; ordinary kernel C still uses a.out.
 3. Add s.out loading for the kernel's currently supported user-process layouts;
    this loader is implemented. Update nm, size, strip and other object/debugging
-   consumers. Startup/libc and the compiler driver have an opt-in native s.out
-   rebuild trial. Migrate standard-image libraries, userland and bootstrap
-   seeds through the common host/native tools.
+   consumers. Shared nm/size/strip and a nlist adapter are implemented;
+   make/file/prof have format adaptations. Startup/libc and the compiler driver
+   have an opt-in native s.out rebuild trial. Existing bootstrap and userland
+   builders now expose a separate s.out profile; finish its native rebuild
+   validation before changing the default image format.
 4. Validate boot, native compilation, full native rebuilding and existing
    regressions before retiring legacy a.out production and transitional support.
 

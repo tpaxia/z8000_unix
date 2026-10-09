@@ -7,7 +7,7 @@ sys.dont_write_bytecode = True
 from build import ROOT, PCC, WORK, BINUTILS, run, compile_c, image, module
 
 
-def test(selected=()):
+def test(selected=(), sout=False):
     run(['cmake', '--build', ROOT / 'v7z8000/usr/sys/build',
          '--target', 'kernel', 'test_driver'])
     extra = {}
@@ -137,15 +137,17 @@ main() {
     for name, plan in plans.items():
         if selected and name not in selected:
             continue
+        if sout:
+            plan=[c.replace('/bin/check 0407','/bin/check e707').replace('/bin/check 0411','/bin/check e711') for c in plan]
         (WORK / 'plan').write_text('\n'.join(plan) + '\n')
         extra['tmp/plan'] = WORK / 'plan'
-        image(extra)
+        image(extra,WORK/'hd.img',sout=sout)
         # Restored clock statistics push optimized split I/D just past 2B cycles.
-        cycles = '12000000000' if name == 'optimizer' else '3000000000'
+        cycles = '12000000000' if name == 'optimizer' or sout else '3000000000'
         result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', cycles,
             '-d', WORK / 'hd.img', '-i', 'runner\\n', '-w', 'NATIVE CC DONE',
             '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True,
-            timeout=240 if name == 'optimizer' else 60)
+            timeout=240 if name == 'optimizer' or sout else 60)
         (WORK / (name + '.log')).write_bytes(result.stdout + result.stderr)
         if result.returncode or b'NATIVE CC PASS' not in result.stdout:
             print(result.stdout.decode(errors='replace')[-4000:])
@@ -158,8 +160,10 @@ main() {
         print(records[-1], flush=True)
     (WORK / 'results.json').write_text(json.dumps(records, indent=2) + '\n')
     # Leave a clean, usable compiler image rather than the last test fixture.
-    image()
+    image(destination=WORK/'hd.img',sout=sout)
 
 
 if __name__ == '__main__':
-    test(sys.argv[1:])
+    sout='--sout' in sys.argv[1:]
+    if sout: WORK=ROOT/'tests/build/native-cc-sout'
+    test([a for a in sys.argv[1:] if a!='--sout'],sout)

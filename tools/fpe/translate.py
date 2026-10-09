@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Translate the preserved Zilog assembler syntax to GNU as.
+"""Prepare the preserved Zilog arithmetic/decoder for the Unix service.
 
 The arithmetic/decoder is unchanged. Unix supplies the entry adapter instead
 of fp_epu, and passes a per-process workspace to the original epu routine.

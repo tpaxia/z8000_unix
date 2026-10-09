@@ -24,7 +24,7 @@ char cinit;
 
 /* some code depends on whether characters are sign or zero extended */
 /*	#if '\377' < 0		not used here, old cpp doesn't understand */
-#if pdp11 | vax
+#if pdp11 | vax | z8000
 #define COFF 128
 #else
 #define COFF 0

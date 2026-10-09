@@ -48,7 +48,7 @@ char	*ap;
 char	*ep;
 char	*sp;
 char	fname[15];
-int	fd;
+int	fd, mach;
 FILE	*newfile();
 static char errbuf[BUFSIZ];
 
@@ -68,6 +68,7 @@ static char errbuf[BUFSIZ];
 			case 'a': aflag = 1; break;
 			case 'z': zflag = 1; break;
 			case 'c': pccflg = 1; break;
+			case 'g': machineflg = pccflg = 1; break;
 
 			case 'l':
 				lflag = 1;
@@ -107,8 +108,9 @@ static char errbuf[BUFSIZ];
 		}
 	}
 	if (aflag && zflag) usage();
-	if (pccflg && (!zflag || segflg)) usage();
-	if (pccflg) uext = 1;
+	if (pccflg && (!zflag || (segflg && !machineflg))) usage();
+	if (pccflg && !machineflg) uext = 1;
+	objectseg = segflg;
 	if (aflag && segflg) {
 		fprintf(ERROR,"a.out: segmented output is not implemented\n");
 		exit(1);
@@ -123,13 +125,13 @@ static char errbuf[BUFSIZ];
 	else
 		ep++;
 	if( segflg ) {		/* Prog name must end with "8ks". */
-	    if( strcmp (ep,"8ks") != 0) {
+	    if( strcmp (ep,"8ks") != 0 && !(machineflg && !strcmp(ep,"s"))) {
 		printf("Segmented source file must end with '.8ks'\n");
 		usage();
 	    }
 	}
 	else 			/* PCC accepts its native .az8 assembly suffix. */
-	    if( strcmp (ep,"8kn") != 0 && !(pccflg && !strcmp(ep,"az8"))) {
+	    if( strcmp (ep,"8kn") != 0 && !(pccflg && !strcmp(ep,"az8")) && !(machineflg && !strcmp(ep,"s"))) {
 		printf("Nonsegmented source file must end with '.8kn'\n");
 		usage();
 	    }
@@ -143,7 +145,9 @@ static char errbuf[BUFSIZ];
 		strcpy(ep,"lst");  LIST = newfile(fname,AscFile);
 	}
 	vinit();
+	mach = machineflg; machineflg = 0;
 	predef();
+	machineflg = mach;
 }
 
 /*
@@ -179,6 +183,6 @@ preget(typ) int typ; {
  */
 usage() {
 
-	fprintf(ERROR,"Usage: asz8k [-o outfile] [-azcluxs] file.8k{n|s} (or -zc file.az8)\n");
+	fprintf(ERROR,"Usage: asz8k [-o outfile] [-azcgluxs] file.8k{n|s} (or -zc file.az8, -zg file.s)\n");
 	exit(1);
 }

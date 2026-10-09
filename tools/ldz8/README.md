@@ -4,6 +4,9 @@
 `-z` selects the ZEUS s.out backend. Without it, `dispatch.c` uses the
 unchanged linker source in `PCC-z8000/z8000/ldz8.c` for the transitional
 PCC a.out pipeline. `soutfmt.c` is shared with asz8k, without copied codecs.
+`-z -b` raw-links the current machine images; `-C`, `-T` and `-M` select
+the segment, offset and memory limit. Kernel/boot builds use host copies of
+these same native sources without GNU Z8000 binutils.
 
 `tools/native-binutils/build.py` builds the same sources for V7, and
 `tools/native-cc/environment.py` stages them for native make/cc rebuilding.

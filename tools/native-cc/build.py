@@ -26,7 +26,7 @@ helpers = module('binutils_build', ROOT / 'tools/native-binutils/build.py')
 run, compile_c = helpers.run, helpers.compile_c
 
 
-def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None):
+def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None, sout=False):
     """Install target tools, V7 headers, and optional test fixtures."""
     run([sys.executable, ROOT / 'tools/export-headers.py', '--check'])
     files = {
@@ -40,6 +40,14 @@ def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=Non
         'lib/libc.a': ROOT / 'tools/libv7.a',
         'usr/src/hello.c': ROOT / 'tools/native-cc/hello.c',
     }
+    if sout:
+        seed=ROOT/'tests/build/sout-cc'
+        toolwork=ROOT/'tests/build/native-cc-sout'
+        files.update({'lib/'+name:toolwork/name for name in ('cpp','oz8')})
+        files.update({'bin/'+name:seed/'seed'/(name+'.out')
+                      for name in ('cc','asz8k','ldz8')})
+        files.update({'lib/crt0.b':seed/'crt0.b','lib/libc.a':seed/'libc.a',
+                      'usr/lib/asz8k.pd':ROOT/'tools/asz8k/src/asz8k.pd'})
     includes = ROOT / 'v7z8000/usr/include'
     for path in includes.rglob('*'):
         if path.is_file():
@@ -75,7 +83,7 @@ def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=Non
     run([ROOT / 'tools/v7mkfs', destination, proto])
 
 
-def build(no_compact=False):
+def build(no_compact=False, sout=False):
     WORK.mkdir(parents=True, exist_ok=True)
     run([sys.executable, ROOT / 'tools/pcc-native/build.py',
          *(['--no-compact'] if no_compact else [])])
@@ -90,7 +98,7 @@ def build(no_compact=False):
     report = {}
     for name, sources, flags in [
         ('cpp', [cppsrc / 'cpp.c', yaccdir / 'y.tab.c'], ['-I' + str(cppsrc)]),
-        ('cc', [PCC / 'ccz8.c'], ['-DTWOPASS']),
+        ('cc', [PCC / 'ccz8.c'], ['-DTWOPASS']+(['-DSOUT'] if sout else [])),
         ('oz8', [PCC / 'oz8.c'], []),
     ]:
         objects = []
@@ -104,11 +112,16 @@ def build(no_compact=False):
         report[name] = dict(zip(['text', 'data', 'bss'], h[1:4]))
         print(name, report[name], flush=True)
     (WORK / 'sizes.json').write_text(json.dumps(report, indent=2) + '\n')
-    image()
+    if sout:
+        seed=module('sout_seed',ROOT/'tools/sout-cc/build.py')
+        seed.library(); seed.seeds()
+    image(sout=sout)
     print('Native compiler disk:', WORK / 'hd.img', flush=True)
 
 
 if __name__ == '__main__':
-    if any(arg != '--no-compact' for arg in sys.argv[1:]):
-        raise SystemExit('usage: build.py [--no-compact]')
-    build('--no-compact' in sys.argv[1:])
+    if any(arg not in ('--no-compact','--sout') for arg in sys.argv[1:]):
+        raise SystemExit('usage: build.py [--no-compact] [--sout]')
+    sout='--sout' in sys.argv[1:]
+    if sout: WORK=ROOT/'tests/build/native-cc-sout'
+    build('--no-compact' in sys.argv[1:],sout)

@@ -23,6 +23,10 @@ not something to accept automatically after a failure.
 On the assembler branch, s.out linker/loader changes also need the
 [native linking and execution trial](native-rebuild.md#sout-linking-and-execution),
 alongside the existing a.out exec, split-I/D and tracing suites.
+Machine assembler or raw-layout changes need
+`python3 tools/kernel-asm/test.py`, kernel boot/FPU/signal/preemption tests and
+disk boot in MAME. The machine trial compares real host/native outputs and
+pre-migration hashes; see [the procedure](native-rebuild.md#machine-assembly-and-raw-images).
 PCC syntax, common-symbol or compiler-driver changes also need the
 [native s.out C pipeline trial](native-rebuild.md#sout-native-c-pipeline).
 Object-format utility changes need the

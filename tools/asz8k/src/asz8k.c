@@ -192,6 +192,11 @@ struct	operand	*opp;
 		}
 		if(curop.op_cls & (1L<<OCEXP))
 			curop.op_cls |= (1L<<OCX);
+		/* GNU-style machine sources prefix literal I/O ports with '#'. */
+		if (machineflg && (curop.op_cls&(1L<<OCIMM)) &&
+		    ((!strcmp(opcstr,"out") || !strcmp(opcstr,"outb")) && opp==optab ||
+		     (!strcmp(opcstr,"in") || !strcmp(opcstr,"inb")) && opp==optab+1))
+			curop.op_cls |= 1L<<OCEXP;
 		*opp = curop;
 		delim();
 	}
@@ -426,6 +431,8 @@ int	displen,
 	if(fmp->fm_flg & FMSKEL2) {
 		if(fmp->fm_flg & FMNEGI)	/* Fake -1 immed. for R shift */
 			skel2 = skel3 = 0xff;
+		if (machineflg && (fmp->fm_flg&FMNEGI) && (fmp->fm_op[0]&OCMSK)==OCREG8)
+			skel2 = 0; /* Manual SRLB/SRAB format: zero high byte. */
 		emitb(skel2, 0);
 		emitb(skel3, 0);
 	}
@@ -447,6 +454,7 @@ int	displen,
 			if(immrel != 0)
 				err('E');
 			immval = -immval;
+			if (machineflg && (fmp->fm_op[0]&OCMSK)==OCREG8) immval &= 255;
 		}
 		/*
 		 * For the segmented version, we generate the

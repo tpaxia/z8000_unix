@@ -80,9 +80,21 @@ s.out. `nm` displays SEG addresses without truncation; `size` totals segment
 sections; `strip` removes symbols and relocation while preserving file mode.
 The libc `nlist` adapter keeps the V7 16-bit interface and rejects SEG addresses.
 The replacements are compiled inside V7 and tested against the host builds in
-an isolated disk. The standard libc and userland builds retain their original
-utilities until image migration. See
+an isolated disk. The explicit `--sout` profile installs them and the nlist
+adapter through the native environment recipes; default a.out builds retain
+their original utilities. See
 [native utility reproduction](../development/native-rebuild.md#sout-object-utilities).
+
+The existing bootstrap, native environment and userland image builders accept
+`--sout`, using separate output directories. Bootstrap pipeline tests pass;
+native cpp uses the original signed-character configuration and passes its
+macro-expansion runtime check. The complete 127-stage environment rebuild passes
+and exports all 17 development executables in s.out, with 147 libc members and
+the final 39-check libc test validated. Essential/full userland profile rebuild
+validation remains pending. Native
+terminal tables preserve the original nroff data-resource format through a
+converter, with an independent host/native and unchanged-reader test. See
+[profile reproduction](../development/native-rebuild.md#sout-bootstrap-and-native-environment).
 
 ## Source preparation and limits
 

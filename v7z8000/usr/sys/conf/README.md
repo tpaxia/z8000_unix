@@ -33,8 +33,8 @@ depend on the host harness.
 
 `conf/emulated.cmake` selects:
 
-- `KERNEL_ROM`: reset/boot assembly, assembled by GNU Z8000 binutils.
-- `KERNEL_TRAPS`: PSA and trap assembly, also assembled by GNU binutils.
+- `KERNEL_ROM`: reset/boot assembly, assembled by shared `asz8k -zgs`.
+- `KERNEL_TRAPS`: PSA and trap assembly, also assembled by shared `asz8k -zgs`.
 - `KERNEL_ASM`: ordered PCC-assembler runtime sources. The first object must
   contain the entry table linked at `0x0200`.
 - `KERNEL_MACHINE_C`: CPU, MMU and configuration C sources.

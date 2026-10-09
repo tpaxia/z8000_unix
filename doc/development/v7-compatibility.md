@@ -28,7 +28,7 @@ python3 tools/export-headers.py --check
 | Area | Current disposition |
 |---|---|
 | CPU ABI | Z8000 register/trap conventions, context labels, signals and EPU state |
-| Executables | Port a.out layout and NONSEG 0407/0411 loading; no full SEG support |
+| Executables | Port a.out and opt-in NONSEG s.out loading, combined or split I/D; no full SEG execution |
 | Disk representation | Big-endian three-byte inode address conversion |
 | Memory | 2 KiB physical allocation units behind 64-byte V7 accounting clicks; separate u-area and section extents |
 | Swapping | Original sched policy with machine transfer services, extent reservations and progress safeguards |
@@ -48,9 +48,10 @@ The structure-return investigation documents an inherited ABI limitation and
 ## Userland source preservation and execution coverage
 
 The essential-userland audit covers 158 top-level original command units,
-762 files: none missing and 722 byte-identical. Changes are confined to ar,
+762 files: none missing and 720 byte-identical. Changes are confined to ar,
 make archive handling, pstat, shell files, yacc configuration, dc's free-list
-termination, lint alignment and nm/prof/strip/file format handling. These are
+termination, lint alignment, nm/prof/strip/file format handling and two cpp
+platform checks selecting V7's signed-character table layout for Z8000. These are
 source-preservation counts, not counts of working installed commands.
 
 ```sh

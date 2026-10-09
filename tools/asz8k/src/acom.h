@@ -310,6 +310,7 @@ char		eflg;		/* expression error flag */
 extern	char	oflag;		/* Flag to Make Labled output file */
 extern	char	segflg;		/* Flag to Make Segmented output file */
 extern int pccflg, pccpass;
+extern int machineflg, objectseg;
 uns		errct;		/* error count */
 char		escchr;		/* escape character */
 int		extoff;		/* offset of source extension in program name */

@@ -1,6 +1,6 @@
 ! =============================================================================
 ! ROM Init Code for Z8001 (Segment 0)
-! Assembled with: z8k-coff-as -z8001 -o rom.o rom.s
+! Assembled with shared asz8k -zgs.
 !
 ! Provides the reset vector and initialization code that:
 ! 1. Sets up the system stack in segment 1
@@ -11,6 +11,7 @@
 	.segm
 	.text
 	.global	_start
+_start:
 
 ! =============================================================================
 ! Reset vector at offset 0x0000 (8 bytes)
@@ -23,7 +24,7 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS (F_SEG | F_S_N)
 	.word	0x8000		! PC high: segment 0, long format
-	.word	0x0010		! PC low: offset 0x0010 (init_start)
+	.word	0x0010		! PC low: offset 0x0010 (initboot)
 
 	! Pad to offset 0x0010 (we have 8 bytes of reset vector, need 8 more)
 	.word	0x0000
@@ -35,7 +36,7 @@
 ! Init code at offset 0x0010
 ! Running in SEG+SYS mode, segment 0
 ! =============================================================================
-init_start:
+initboot:
 	! Kernel I map uses backing bank 126, physical frames 64..95.
 	ld r1, #4032
 	ld r2, #0x4040

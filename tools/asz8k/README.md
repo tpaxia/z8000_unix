@@ -7,6 +7,10 @@ The new `-a` backend emits NONSEG a.out objects directly for ldz8.
 The `-z` backend writes ZEUS s.out relocatable objects for NONSEG and SEG.
 The `-zc` mode reads PCC/az8 assembly directly. The s.out C trial installs it
 in the compiler pipeline; the standard bootstrap images retain az8 for now.
+Machine sources use `-zg` (add `-s` for SEG objects), including mixed
+`.segm`/`.unsegm` encoding. Kernel and disk-boot machine images now use these
+shared sources on the host and raw linking in ldz8. See
+[machine assembly](../../doc/toolchain/asz8k.md#machine-assembly).
 
 See [the assessment](../../doc/toolchain/asz8k.md) for results and remaining
 integration work, and [native rebuild](../../doc/development/native-rebuild.md#experimental-zilog-assembler)

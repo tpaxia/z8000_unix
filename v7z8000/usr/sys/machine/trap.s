@@ -1,6 +1,6 @@
 ! =============================================================================
 ! PSA Table + Trap Stubs + Test Code for Z8001 Kernel (Segment 1)
-! Assembled with: z8k-coff-as -z8001 -o trap.o trap.s
+! Assembled with shared asz8k -zgs.
 !
 ! Assembled in segmented (z8001) mode because the trap handler stubs
 ! execute in SEG+SYS mode and need segmented register addressing (@RR14).
@@ -41,25 +41,25 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_trap	! PC low: offset of default handler
+	.word	dflttrap	! PC low: offset of default handler
 
 ! --- EPU vector (offset 0x08) ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0xFF00		! separate software EPU service, segment 127
-	.word	0x0000		! fpe_entry
+	.word	0x0000		! fpentry
 
 ! --- TRAP vector (offset 0x10) - privilege violation ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_priv	! PC low: offset of priv handler
+	.word	dfltpriv	! PC low: offset of priv handler
 
 ! --- SYSCALL vector (offset 0x18) ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	syscall_entry	! PC low: offset of syscall handler
+	.word	scentry	! PC low: offset of syscall handler
 
 ! --- SEGTRAP vector (offset 0x20) ---
 	.word	0x0000		! reserved
@@ -71,13 +71,13 @@
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS
 	.word	0x8100		! PC high: segment 1
-	.word	default_nmi	! PC low: offset of NMI handler
+	.word	dfltnmi	! PC low: offset of NMI handler
 
 ! --- NVI vector (offset 0x30) ---
 	.word	0x0000		! reserved
 	.word	0xC000		! FCW: SEG + SYS (no NVIE — interrupts disabled on entry)
 	.word	0x8100		! PC high: segment 1
-	.word	nvi_entry	! PC low: offset of NVI handler
+	.word	nvientry	! PC low: offset of NVI handler
 
 ! --- VI vector (offset 0x38) ---
 ! FCW: SEG + SYS (no VIE/NVIE — interrupts disabled on entry)
@@ -94,11 +94,11 @@
 ! =============================================================================
 
 ! --- Default trap handlers: halt with distinguishable PCs ---
-default_trap:
+dflttrap:
 	halt
-default_epu:
+dfltepu:
 	halt
-default_priv:
+dfltpriv:
 	! Privilege violation handler: print 'P' + faulting PC, then halt.
 	! IRET frame on system stack: tag(+0), FCW(+2), PC_high(+4), PC_low(+6).
 	! Switch to NONSEG+SYS so we can use BA-mode addressing on R15.
@@ -155,7 +155,7 @@ default_priv:
 	ret
 
 	.segm
-default_nmi:
+dfltnmi:
 	halt
 
 ! =============================================================================
@@ -179,7 +179,7 @@ default_nmi:
 !   6. Restore registers (R0 gets return value from saved slot)
 !   7. IRET to return to caller
 ! =============================================================================
-syscall_entry:
+scentry:
 	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
 	! Push in reverse order so R0 is at top of saved area
 	push	@rr14, r12
@@ -284,7 +284,7 @@ syscall_entry:
 !   5. Restore registers
 !   6. IRET to return (restores FCW with NVIE set)
 ! =============================================================================
-nvi_entry:
+nvientry:
 	! Save registers R0-R12 onto system stack (via @RR14 in seg mode)
 	push	@rr14, r12
 	push	@rr14, r11
