@@ -12,6 +12,7 @@
 //   -t  Enable instruction tracing
 //   -r  Enable register tracing
 //   -m  Enable memory tracing
+//   -j file  Type literal file bytes at 64 ticks/character, without -i decoding
 //   -w text -I input  Type a second input after text appears, plus 100 ticks
 //   -n ticks -M text  Measure clock delivery after text (default: shell prompt)
 
@@ -710,6 +711,7 @@ int main(int argc, char* argv[]) {
     const char *expect = nullptr;
     const char *wait_output = nullptr;
     std::string typed, later_input;
+    unsigned console_ticks = 1, input_delay = 0;
     bool has_later_input = false;
     uint64_t measure_ticks = 0;
     const char *measure_marker = "# ";
@@ -721,7 +723,7 @@ int main(int argc, char* argv[]) {
     char swap_fail_kind = 0;
     unsigned swap_fail_nth = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:x:w:I:n:M:o:P:F:R:S:D:E:b:T:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:j:x:w:I:n:M:o:P:F:R:S:D:E:b:T:")) != -1) {
         switch (opt) {
             case 'T': {
                 char *end;
@@ -787,6 +789,22 @@ int main(int argc, char* argv[]) {
                 // text survives make and the shell unchanged.
                 typed = decode_input(optarg);
                 console_input = typed.c_str();
+                console_ticks = 1;
+                break;
+            }
+            case 'j': {
+                FILE *input = fopen(optarg, "rb");
+                if (!input) { perror(optarg); return 1; }
+                typed.clear();
+                int ch;
+                while ((ch = fgetc(input)) != EOF) typed += char(ch);
+                bool failed = ferror(input);
+                fclose(input);
+                if (failed) { fprintf(stderr, "cannot read console input: %s\n", optarg); return 1; }
+                console_input = typed.c_str();
+                // Long scripts must not overrun V7's canonical TTY queue
+                // while the shell reads a here-document or starts a child.
+                console_ticks = 64;
                 break;
             }
             case 'x': expect = optarg; break;
@@ -796,7 +814,7 @@ int main(int argc, char* argv[]) {
             case 'M': measure_marker = optarg; break;
             default:
                 fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
-                        "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input] [-x expected-text] "
+                        "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input|-j input-file] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
                         "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
@@ -960,8 +978,9 @@ int main(int argc, char* argv[]) {
             if (!input_started && io.console_output().find("# ") != std::string::npos) {
                 input_started = true;
             }
-            if (input_started) {
+            if (input_started && ++input_delay >= console_ticks) {
                 io.queue_console_char(console_input[input_idx++]);
+                input_delay = 0;
             }
         }
         if (!console_input[input_idx] && waiting_for_output &&

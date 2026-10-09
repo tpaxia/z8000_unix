@@ -49,6 +49,9 @@ supporting tools/libc, essential userland, then the full native userland rebuild
 The runners execute compilation
 inside the emulated Unix system and save the guest disk between steps.
 
-Host tools still prepare sources, two-pass glue, EPU wrapper assembly and disk
-images, and launch the emulator. Fully native kernel and boot rebuilding remains
-future work. The resulting system still uses console init, not multiuser login.
+After full userland, follow the native kernel and disk-bootstrap section of the
+[native rebuild procedure](native-rebuild.md#native-kernel-and-disk-bootstrap).
+It builds and installs kernel, FPU service and boot artifacts inside Unix, then
+boots the resulting disk. Host tools stage sources, prepare the initial source
+filesystem and launch/save emulator runs. The system still uses console init,
+not multiuser login.

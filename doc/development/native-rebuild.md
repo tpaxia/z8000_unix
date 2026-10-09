@@ -157,7 +157,75 @@ and driver; `--host-only` omits native execution.
 This test cross-builds its target tools; the environment procedure above tests
 native rebuilding of their C sources. Kernel C links as `handler.sout`;
 `sout2bin.py` extracts its instruction/data images. `/boot` and `/unix` also use
-s.out. Complete native kernel and standalone rebuilding remains future work.
+s.out. The complete source rebuild follows below.
+
+## Native kernel and disk bootstrap
+
+After the native environment and full userland builds:
+
+```sh
+python3 tools/native-system/build.py --setup
+```
+
+The host stages original kernel and standalone sources and the verified native
+compiler, runtime and commands. It first rebuilds and installs cpp with complete
+macro-name matching; MM_STACKSEL and MM_STACKBASE must remain distinct. The cpp
+probe covers definition, conditional expansion and undefinition of names sharing
+their first eight characters, unary expressions, hexadecimal digits and active/
+inactive `#error` guards. Native make compiles every configured kernel C
+source, assembles and links the kernel, traps, reset ROM and software EPU service,
+and builds board firmware, sector zero and the standalone `/boot` loader.
+Native sed adapts the preserved Zilog FPU source; the original V7 standalone
+filesystem reader is compiled unchanged through a declaration wrapper. The
+portable prefix of standalone prf.c is extracted inside Unix.
+
+The kernel makefile uses CMake's configured source selection; there is no second
+list of common services or drivers. This trial selects the `emulated` board,
+shared by the standalone emulator and MAME. Inside Unix:
+
+```sh
+cd /usr/src/sys
+make all
+cd /usr/src/boot
+make all
+make install
+```
+
+The native `pack` utility patches the kernel vector reservation and boot entry,
+pads the small firmware ROM, and installs the primary bootstrap using `/boot`'s
+actual inode block addresses. Installation replaces `/boot`, `/unix` and `/fpe`
+on the trial disk and refreshes sector zero. Its block-special device is
+`/dev/hd0` (major 1, minor 0); the installer requires `/boot` on that filesystem.
+Repeating installation refreshes the sector list. See the
+[boot contract](../platforms/z8001-unix.md#boot) for size and layout limits.
+
+The host then extracts the completed artifacts, checks the installed sector list
+and compares kernel objects and images with the independent cross build. It
+boots with `test_driver -b` and the native ROM; the emulator preloads no kernel
+or FPU image. A guest C program is compiled and executed under the rebuilt kernel
+to exercise long arithmetic and the software EPU. Package/installer rejection
+checks and repeated installation also run under that kernel.
+
+The verified build covers 35 kernel C sources and compares all 39 kernel
+objects with the cross build. All eight exported kernel/boot artifacts match;
+the disk-boot run passes nine native compiler/runtime/installer commands.
+
+Outputs are under `tests/build/native-system/`: `hd.img`, per-stage logs,
+`results.json`, `artifacts/`, `artifacts.json` and `boot.json`. Running without
+options resumes; `--limit N` limits additional stages; `--verify` repeats the
+artifact and disk-boot checks. `--setup` creates a fresh trial disk. Source or
+configuration changes require a fresh setup. The existing cross kernel build
+provides independent comparison artifacts, never native build inputs. For a
+standalone-loader comparison, use the same verified native runtime archive:
+
+```sh
+python3 mame/build_rom.py --output tests/build/native-system/cross-boot \
+  --libc tests/build/native-environment-sout/native/lib/libc.a
+python3 tools/native-system/build.py --verify
+```
+
+Both standalone builds optimize their C objects. Comparing against the
+unoptimized bootstrap libc would compare different library implementations.
 
 ## s.out linking and execution
 
@@ -237,5 +305,4 @@ listed in [userland](../toolchain/userland.md).
 
 Host Python remains responsible for source preparation, disk construction and
 emulator automation. It does not replace the native compile pipeline. Multiuser
-startup, native kernel/boot rebuilding and full SEG user execution remain
-separate work.
+startup and full SEG user execution remain separate work.

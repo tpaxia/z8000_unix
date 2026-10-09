@@ -47,6 +47,12 @@ The build records the source selection so switching configurations invalidates
 existing kernel outputs. Source basenames for assembly outputs must be unique;
 C and assembly sources must not produce the same object path.
 
+CMake also exports the ordered selection as `native-sources.txt`. The
+[native kernel procedure](../../../../doc/development/native-rebuild.md#native-kernel-and-disk-bootstrap)
+stages that selection and generates guest makefiles; common services and drivers
+are not listed independently for the native build. Private machine headers are
+staged alongside shared headers and tracked as build dependencies.
+
 ## Current machine boundary
 
 `conf/emulated.c` owns `bdevsw`, `cdevsw`, root/pipe/swap device selection,

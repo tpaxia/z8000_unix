@@ -117,7 +117,10 @@ add_custom_command(OUTPUT ${B}/kernel.bin
 # Appends the .so path to HANDLER_B_FILES in parent scope.
 # COMMAND arguments use relative paths while OUTPUT/DEPENDS use absolute paths.
 # Every kernel source may include any kernel header.
-file(GLOB KERNEL_HEADERS "${CMAKE_SOURCE_DIR}/h/*.h")
+file(GLOB KERNEL_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/h/*.h" "${CMAKE_SOURCE_DIR}/machine/*.h"
+    "${CMAKE_SOURCE_DIR}/sys/*.h" "${CMAKE_SOURCE_DIR}/dev/*.h"
+    "${CMAKE_SOURCE_DIR}/conf/*.h")
 
 function(pcc_compile_c subdir name)
     set(SRC "${CMAKE_SOURCE_DIR}/${subdir}/${name}.c")
@@ -137,6 +140,7 @@ function(pcc_compile_c subdir name)
     )
 
     set(HANDLER_B_FILES ${HANDLER_B_FILES} "${B_REL}" PARENT_SCOPE)
+    set(KERNEL_C_SOURCES ${KERNEL_C_SOURCES} "${subdir}/${name}.c" PARENT_SCOPE)
 endfunction()
 
 # =============================================================================
@@ -174,6 +178,11 @@ endforeach()
 foreach(name IN LISTS KERNEL_DRIVERS)
     pcc_compile_c(dev ${name})
 endforeach()
+
+# Native source staging consumes this selection, rather than maintaining a
+# second list of common services, drivers or machine sources.
+file(GENERATE OUTPUT "${B}/native-sources.txt" CONTENT
+    "config=${KERNEL_CONFIG}\nrom=${KERNEL_ROM}\ntraps=${KERNEL_TRAPS}\nasm=${KERNEL_ASM}\nc=${KERNEL_C_SOURCES}\n")
 
 # Arithmetic library
 add_custom_command(OUTPUT ${B}/arith.az8

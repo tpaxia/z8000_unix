@@ -48,6 +48,7 @@ only the default kernel build directory does not update that executable.
 | `-c <cycles>` | cycle limit (64-bit) |
 | `-d <image>` | hard disk image to boot from, instead of `hd.img` |
 | `-i <text>` | console input; `\n` written as two characters is a newline |
+| `-j <file>` | literal text-file input, paced at 64 timer ticks per character to avoid TTY queue overflow |
 | `-x <text>` | pass if the console output contains this text, the system comes to rest and there is no panic |
 | `-t`, `-r`, `-m` | instruction, register and memory traces |
 | `-w <marker> -I <text>` | after initial input, wait for output containing the marker plus 100 ticks, then type a second input (`\n` is decoded) |

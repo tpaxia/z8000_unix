@@ -180,6 +180,7 @@ STATIC	struct symtab *ifnloc;
 STATIC	struct symtab *ysysloc;
 STATIC	struct symtab *varloc;
 STATIC	struct symtab *lneloc;
+STATIC	struct symtab *errloc;
 STATIC	struct symtab *ulnloc;
 STATIC	struct symtab *uflloc;
 STATIC	int	trulvl;
@@ -695,6 +696,23 @@ dodef(p) char *p; {/* process '#define' */
 #define sloscan() ptrtab=slotab+COFF
 
 char *
+doerror(p) char *p; {
+	char message[BUFSIZ]; int n,c;
+	n=0; ++flslvl;
+	for (;;) {
+		outp=inp=p; p=cotoken(p);
+		while (inp<p) {
+			c= *inp++;
+			if (c=='\n') {
+				--inp; --flslvl; message[n]='\0';
+				pperror("%s",message); return(inp);
+			}
+			if (n<BUFSIZ-1) message[n++]=c;
+		}
+	}
+}
+
+char *
 control(p) register char *p; {/* find and handle preprocessor control lines */
 	register struct symtab *np;
 for (;;) {
@@ -737,6 +755,8 @@ for (;;) {
 		if (flslvl==0 && yyparse()) ++trulvl; else ++flslvl;
 		p=newp;
 #endif
+	} else if (np==errloc) {/* error */
+		if (flslvl==0) p=doerror(p);
 	} else if (np==lneloc) {/* line */
 		if (flslvl==0 && pflag==0) {
 			outp=inp=p; *--outp='#'; while (*inp!='\n') p=cotoken(p);
@@ -803,7 +823,7 @@ char *namep;
 	register int c, i; int around;
 	register struct symtab *sp;
 
-	/* namep had better not be too long (currently, <=8 chars) */
+	/* The scanner bounds the token; compare its complete name. */
 	np=namep; around=0; i=cinit;
 	while (c= *np++) i += i+c; c=i;	/* c=i for register usage on pdp11 */
 	c %= symsiz; if (c<0) c += symsiz;
@@ -826,8 +846,8 @@ struct symtab *
 slookup(p1,p2,enterf) register char *p1,*p2; int enterf;{
 	register char *p3; char c2,c3; struct symtab *np;
 	         c2= *p2; *p2='\0';	/* mark end of token */
-	if ((p2-p1)>8) p3=p1+8; else p3=p2;
-			 c3= *p3; *p3='\0';	/* truncate to 8 chars or less */
+	p3=p2;
+			 c3= *p3; *p3='\0';
 	if (enterf==1) p1=copy(p1);
 	np=lookup(p1,enterf); *p3=c3; *p2=c2;
 	if (np->value!=0 && flslvl==0) newp=subst(p2,np);
@@ -1082,6 +1102,7 @@ main(argc,argv)
 	ifnloc=ppsym("ifndef");
 	ifloc=ppsym("if");
 	lneloc=ppsym("line");
+	errloc=ppsym("error");
 	for (i=sizeof(macbit)/sizeof(macbit[0]); --i>=0; ) macbit[i]=0;
 # if unix
 	ysysloc=stsym("unix");

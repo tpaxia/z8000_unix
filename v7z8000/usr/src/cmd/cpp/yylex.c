@@ -71,9 +71,9 @@ tobinary(st, b) char *st; {
 		case '5': case '6': case '7': case '8': case '9': 
 			t = c-'0'; break;
 		case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': 
-			t = c-'a'; if (b>10) break;
+			t = c-'a'+10; if (b>10) break;
 		case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': 
-			t = c - 'A'; if (b>10) break;
+			t = c - 'A'+10; if (b>10) break;
 		default:
 			t = -1;
 			if ( c=='l' || c=='L') if (*s=='\0') break;

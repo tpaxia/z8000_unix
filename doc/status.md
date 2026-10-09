@@ -44,7 +44,8 @@ See [native development](toolchain/native-development.md) for scope and
   access and kernel-layout review. Device/site-dependent programs are built
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
-  A complete native kernel/boot/system rebuild has not been established.
+  Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
+  and install inside Unix; the resulting disk boots and runs native C compilation.
   On `work/native-asz8k`, s.out is now the sole production object/executable
   format. The shared host/native assembler and linker build the kernel,
   standalone bootloader, bootstrap tools and default native development image.
@@ -76,5 +77,4 @@ See [native development](toolchain/native-development.md) for scope and
    integration described in the userland inventory.
 2. Integrate original V7 multiuser startup: init, getty, login, account files and
    startup scripts, retaining original shared policy wherever possible.
-3. Establish a native whole-system rebuild, including kernel and boot artifacts.
-4. Bring up physical machines through the documented configuration interfaces.
+3. Bring up physical machines through the documented configuration interfaces.

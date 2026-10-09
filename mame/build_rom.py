@@ -15,6 +15,8 @@ spec.loader.exec_module(helpers)
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--kernel-build', type=Path, default=ROOT/'v7z8000/usr/sys/build')
 p.add_argument('--output', type=Path, default=ROOT/'tests/build/z8001unix')
+p.add_argument('--libc', type=Path, default=ROOT/'tests/build/sout-cc/libc.a',
+               help='standalone runtime archive (use the native archive for native/cross comparisons)')
 a = p.parse_args()
 a.output = a.output.resolve()
 a.output.mkdir(parents=True, exist_ok=True)
@@ -50,12 +52,12 @@ for name,source,flags in [
     ('prf',a.output/'prf.c',[]),
     ('l3',ROOT/'v7z8000/usr/src/libc/gen/l3.c',['-Dinterdata'])]:
     obj=a.output/(name+'.so')
-    helpers.compile_c(source,obj,['-I'+str(standalone),*flags],sout=True)
+    helpers.compile_c(source,obj,['-I'+str(standalone),*flags],sout=True,compact=True)
     objects.append(obj)
 (a.output/'start.az8').write_bytes((ROOT/'mame/boot/start.az8').read_bytes())
 subprocess.run([str(AS),'-zc','-o','start.so','start.az8'],cwd=a.output,check=True)
 subprocess.run([str(LD),'-z','-s',str(a.output/'start.so'),*map(str,objects),
-                str(ROOT/'tests/build/sout-cc/libc.a'),'-o',str(a.output/'boot')],check=True)
+                str(a.libc.resolve()),'-o',str(a.output/'boot')],check=True)
 boot=(a.output/'boot').read_bytes()
 h=struct.unpack_from('>3H',boot,28)
 if struct.unpack_from('>H',boot)[0]!=0xe707 or sum(h)>0xe000: raise SystemExit('standalone loader too large')

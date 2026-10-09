@@ -61,12 +61,14 @@ The primary sector list is the deliberate difference from the PDP-11 V7
 filesystem-searching boot block: moving or replacing `/boot` requires refreshing
 sector zero. Replacing `/unix` or `/fpe` does **not** require a ROM rebuild or
 primary-bootstrap update. These remain ordinary filesystem files. The installer
-currently creates a new disk copy and refuses existing boot filenames; it is
-not yet a native `installboot` utility for updating `/boot` on an installed disk.
+in `mame/install_boot.py` creates a new disk copy and refuses existing boot
+filenames. The [native rebuild](../development/native-rebuild.md#native-kernel-and-disk-bootstrap)
+provides `pack install block.bin /boot /dev/hd0`, which regenerates sector zero
+from the installed loader inode on the same filesystem.
 
 The bootstrap supports root unit zero, filesystem offset zero, and the controller's
 28-bit LBAs. `/boot` is limited to 63 sectors and text+data+BSS below `e000`;
-it currently uses 6,772 bytes text, 1,076 data and 4,506 BSS. Temporary bank 3
+the optimized native loader uses 6,400 bytes text, 1,280 data and 4,608 BSS. Temporary bank 3
 requires at least 256 KiB during boot and becomes ordinary allocatable memory
 after the handoff. The original standalone filesystem reader handles indirect
 blocks; the host installer supports boot files through single indirection and

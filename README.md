@@ -152,6 +152,7 @@ for verified scope and remaining work.
 | `emu/test_driver.cpp` | Emulated machine: MMU, IDE/ATA, console, RAM disk DMA, interrupt injection |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
 | `tools/native-cc/build.py` | s.out bootstrap tools and filesystem seed |
+| `tools/native-system/build.py` | Native kernel/FPU/firmware/standalone rebuild and disk-boot verification |
 | `tools/proto.small` | Filesystem prototype retained for older regression fixtures |
 | `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
 | `tools/sout2bin.py` | Extract split s.out kernel instruction/data boot images |
