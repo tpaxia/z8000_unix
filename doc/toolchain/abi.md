@@ -12,11 +12,12 @@ compiler tools and default native rebuilds use s.out. ROM, trap veneers,
 primary disk sectors and the software EPU bank are raw machine images produced
 from s.out objects. They have no Unix executable header.
 
-SEG user processes remain unsupported. The kernel exec loader and shared
-inspection utilities still read legacy a.out during the phaseout. Remaining
-legacy regression producers/readers will be retired after the default native
-environment and full-userland rebuilds pass. Unidot is confined to the separate
-historical assembler oracle, not the installed toolchain. `.b` object filenames
+SEG user processes remain unsupported. Kernel exec accepts only NONSEG s.out;
+obsolete a.out images fail with ENOEXEC. The shared nm/size/strip/nlist reader
+also rejects obsolete objects, including archive members. Positive regression
+producers use the shared s.out assembler/linker; obsolete objects are retained
+only as rejection fixtures. Unidot is confined to the separate historical
+assembler oracle, not the installed toolchain. `.b` object filenames
 and the default output name `a.out` do not specify the file's format.
 
 See [split-I/D mappings](../kernel/memory-and-swapping.md#separate-instruction-and-data-spaces),

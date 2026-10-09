@@ -5,13 +5,11 @@ On `work/native-asz8k`, `tools/sout-utils` provides shared host/native `nm`,
 decodes on-disk fields explicitly; it never reads target C structures into
 host structures. The original V7 nm/size/strip and nlist sources remain intact.
 The default native environment installs these replacements and the nlist
-adapter. The legacy reader remains transitional compatibility; see
-[format phaseout](abi.md).
+adapter. The shared reader accepts only s.out; see [formats](abi.md).
 
 ## Formats and presentation
 
-The reader accepts the port's big-endian 16-byte a.out header and 12-byte
-symbols, or the current assembler/linker's s.out contract: 24-byte header,
+The reader accepts the current assembler/linker's s.out contract: 24-byte header,
 16-byte segment records and 14-byte symbols. It accepts NONSEG combined/split
 I/D, SEG objects and bound SEG executables. See [the linker](ldz8.md) for
 placement and relocation semantics. SEG execution remains a separate kernel
@@ -25,9 +23,10 @@ retain their full 32-bit value. Numeric sorting compares segment then offset.
 `-p` streams records; sorted output allocates a bounded table and reports an
 error if it cannot fit the native heap.
 
-`nm` reads portable ASCII archives, including mixed a.out/s.out members,
-skipping ordinary non-object members and optional symbol indexes. Member
-names are limited to fourteen characters. Long-name archive extensions,
+`nm` reads portable ASCII archives containing NONSEG and SEG s.out members,
+skipping ordinary non-object members and optional symbol indexes. Obsolete
+0407/0410/0411/0405 objects are errors, including when encountered in archives.
+Member names are limited to fourteen characters. Long-name archive extensions,
 long/debug symbols and line records are unsupported.
 
 `size` sums text, data and BSS across the segment table, preserving V7's
@@ -44,10 +43,10 @@ It operates on individual files, including SEG files, rather than archives.
 ## libc nlist
 
 The adapter retains the public V7 `struct nlist` layout and return convention.
-It resolves a.out and NONSEG s.out names without changing callers. It clears
+It resolves NONSEG s.out names without changing callers. It clears
 requested results before lookup; absent names retain zero type/value.
-SEG files, malformed input and values outside the 16-bit interface return
-`-1` with cleared results. A future SEG program ABI needs a distinct interface
+Obsolete a.out images, SEG files, malformed input and values outside the
+16-bit interface return `-1` with cleared results. A future SEG program ABI needs a distinct interface
 for full addresses; this adapter does not truncate them.
 
 The utility trial replaces `nlist` and adds its reader/codec objects to a copy
@@ -69,17 +68,22 @@ s.out magic recognition. Without `SOUT`, these commands retain their existing
 a.out behavior. These are machine-format adaptations, not compiler workarounds.
 
 Native regression checks exercise make's `archive((symbol))` dependencies
-with NONSEG s.out, SEG s.out and legacy objects, classify both formats with
-file, and produce a prof report from a s.out executable and V7 histogram.
-The historical format-consumer tests still need their legacy fixture producers
-migrated. Standalone disk boot now uses s.out.
+with NONSEG and SEG s.out, classify s.out with file, and produce a prof report
+from a s.out executable and V7 histogram. They require rejection of obsolete
+archive symbols by make and obsolete profile images by prof. Original V7 prof
+reports bad format with exit status zero; the test checks its diagnostic and
+empty report. Standalone disk boot uses s.out.
 
 Reproduction is in [native rebuild](../development/native-rebuild.md#sout-object-utilities).
 
 ## Validation
 
-The native utility trial passes 174 build/check commands, 113 exact host/native output
-comparisons and nine byte-identical stripped files. Coverage includes both
+The native utility trial passes 187 build/check commands, 105 exact host/native
+output comparisons and eight byte-identical stripped files. It also checks
+24 obsolete-format utility rejections: four magics as direct files and archive
+members, each through nm, size and strip. Rejected files retain their bytes and
+mode 0751; nlist rejects all eight fixtures and clears previously filled results.
+Coverage includes both
 NONSEG layouts, bound and unbound SEG records, reversed physical segment
 placement, mixed portable archives, 32-bit absolute symbols, malformed input,
 repeated stripping, and execution of stripped combined/split executables.
@@ -87,8 +91,11 @@ The `nlist` checks pass both when linked directly and when extracted from the
 trial libc by native cc/ldz8. Emulator logs report zero absent-RAM accesses and
 zero user-stack growth warnings.
 
-| Native s.out utility | Code bytes | Data bytes | BSS bytes |
+These sizes are the trial builds. The native environment records its installed
+sizes in `summary.json`.
+
+| Trial s.out utility | Code bytes | Data bytes | BSS bytes |
 |---|---:|---:|---:|
-| nm | 23296 | 1536 | 1280 |
-| size | 18944 | 1280 | 1280 |
-| strip | 20224 | 1536 | 1280 |
+| nm | 22784 | 1536 | 1280 |
+| size | 18432 | 1280 | 1280 |
+| strip | 19712 | 1536 | 1280 |

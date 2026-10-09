@@ -80,7 +80,7 @@ stack require more, then rounds it to pages. Stack write warnings extend it
 before overflow; supported failed stores can also trigger growth with software
 backout. Other user gaps raise SIGSEGV; covered kernel user-copy faults return
 EFAULT. `useracc()` checks every data-space page in the requested range.
-Private combined-space text/data remain writable, as required for 0407.
+Private e707 combined-space text/data remain writable, following V7 combined-space policy.
 
 The Bourne shell now explicitly reserves heap workspace before stores. Its
 original SIGSEGV-driven break extension required restarting a failed store.
@@ -91,16 +91,18 @@ Other user programs must request heap memory before using it.
 `test-memory` checks the target allocator and sizing helpers, host MMU bounds,
 partial fork and resize rollback, low-RAM exhaustion/reaping/reuse, failed exec,
 layout transitions, heap zeroing/isolation/reclamation, gap EFAULT/SIGSEGV and
-large shell workspace. The low-RAM workloads run at 256, 258 and 320 KiB in both
-layouts. The driver reports unmapped accesses separately from accesses to absent
+large shell workspace. The s.out reclaim/growth probe runs at 328, 330 and 384 KiB in both layouts;
+its larger image needs a contiguous ten-page growth extent. Exec and swap
+pressure retain 320/322 KiB checks; direct-to-swap fork runs at 256 KiB.
+The 8 MiB tests reach the process-table limit. The driver reports unmapped accesses separately from accesses to absent
 physical RAM; valid mappings must never reach absent RAM.
 
 ### Separate Instruction and Data Spaces
 
-`ldz8 -i` emits V7 magic 0411: text starts at instruction address zero and
-initialized data starts at data address zero. Ordinary 0407 programs retain a
+`ldz8 -i` emits s.out e711: text starts at instruction address zero and
+initialized data starts at data address zero. Ordinary e707 programs retain a
 combined layout. Both use 16-bit pointers and NONSEG execution. Each space has
-64 KB of addresses; the a.out header limits an individual section to 65,535
+64 KB of addresses; the s.out segment record limits an individual section to 65,535
 bytes, and executable text must have even length. Data, BSS, heap, arguments,
 and stack share the data space. The exec loader reserves a mapped stack of at least 4 KiB, enlarged when
 startup arguments plus 256 bytes require more. Heap and stack pages must not
@@ -127,7 +129,7 @@ before truncating header fields or symbol values.
 including a function and PC-relative constant above address 0x8000. It covers
 BSS, initialized data, switch tables, file I/O, signals, fork isolation, failed
 exec, and transitions between combined and split programs. It also runs the
-libc and signal suites as 0411 binaries and checks linker overflow rejection.
+libc and signal suites as e711 s.out binaries and checks linker overflow rejection.
 
 ### Shared user-copy policy and machine-helper contract
 
@@ -207,7 +209,7 @@ register. Ordinary runs have no injected denied addresses.
 
 ### Kernel split I/D layout
 
-The kernel is also linked as 0411, with 16-bit pointers. Its instruction space
+The kernel is also linked as e711 s.out, with 16-bit pointers. Its instruction space
 uses logical segment 1, backing map 126 and physical bank 2 (frames 64–95).
 Data starts at logical `1:0000`, backed by bank 1; the copy window and u-area
 remain at `e000` and `f000`. ROM programs the I map before entering the kernel.
@@ -221,7 +223,7 @@ installed RAM. Images and the emulator must be rebuilt together.
 
 `machine/mmu.h` defines the board contract. PAGEFRAME bits 15 and 14 mean
 read-only and system-only; `ffff` remains unmapped. Read-only applies to system
-writes too. Kernel/EPU maps are system-only; shared 0411 text is read-only.
+writes too. Kernel/EPU maps are system-only; shared split-I/D text is read-only.
 Normal processes remain NONSEG, so their ordinary accesses select their own
 logical segment. This does not add a segmented user ABI.
 
@@ -251,7 +253,7 @@ software backout for supported cases, not general demand paging or CPU rollback.
 
 `sys/text.c` owns inode-backed text references, resident counts and immutable
 swap copies. The original V7 `struct text` is retained, including 64-byte click
-units for `x_size`; physical allocation rounds it to 2 KiB pages. Exec prepares the shared 0411 text before replacing the old layout;
+units for `x_size`; physical allocation rounds it to 2 KiB pages. Exec prepares the shared split-I/D text before replacing the old layout;
 fork shares it; exit/exec drop references. ITEXT and inode references prevent
 writes while executable text is in use, including swapped-out users. Executing
 an inode already open for writing returns ETXTBSY. The last ordinary reference

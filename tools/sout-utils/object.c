@@ -32,16 +32,10 @@ long origin, length;
         o->magic == SO_SID || o->magic == SO_NID;
     o->segmented = o->magic == SO_SMAG || o->magic == SO_SID;
     if (!o->sout) {
-        if (o->magic != 0407 && o->magic != 0410 &&
-            o->magic != 0411 && o->magic != 0405) return 0;
-        if (!objbytes(o, 0L, h, 16)) return -1;
-        o->text = so_get16(h+2); o->data = so_get16(h+4);
-        o->bss = so_get16(h+6); sy = so_get16(h+8);
-        o->imageoff = 16; o->keep = 16+o->text+o->data;
-        o->symoff = o->keep+so_get16(h+12)+so_get16(h+14);
-        o->symsize = 12; o->symbols = sy/12; o->segments = 0;
-        o->flags = 0;
-        return sy%12 == 0 && o->symoff+sy == length ? 1 : -1;
+        /* Reject obsolete objects, including archive members, without
+         * interpreting their headers. Ordinary archive data is skippable. */
+        return o->magic == 0407 || o->magic == 0410 ||
+            o->magic == 0411 || o->magic == 0405 ? -1 : 0;
     }
     if (!objbytes(o, 0L, h, 24)) return -1;
     sb = so_get16(h+10); sy = so_get16(h+12);
@@ -90,34 +84,28 @@ struct osymbol *s;
     int i;
     if (index >= o->symbols || !objbytes(o,
         o->symoff+index*(long)o->symsize, b, o->symsize)) return 0;
-    if (o->sout) {
-        s->value = (unsigned long)so_get32(b) & 0xffffffffL; s->type = b[4]&255;
-        s->segment = b[5]&255;
-        for (i = 0; i < 8; i++) s->name[i] = b[6+i];
-        kind = s->type & 31;
-        if ((s->type & 128) || kind > 4 || (s->name[0]&128) || !s->name[0] ||
-            (kind != SO_ABS && s->value > 65535L) ||
-            (!kind && !(s->type & SO_EXTERNAL)) ||
-            (kind != SO_ABS && !!(s->type & SO_SEGMENTED) != o->segmented)) return 0;
-        if (kind >= SO_TEXTSYM) {
-            if (s->segment >= o->segments ||
-                !objbytes(o, 24+s->segment*16L, b, 16)) return 0;
-            attr = so_get16(b+10);
-            size = so_get16(b+4+(kind-2)*2);
-            base = 0;
-            if (!o->segmented) {
-                if (kind >= SO_DATASYM && o->magic == SO_NMAG) base += so_get16(b+4);
-                if (kind == SO_BSSSYM) base += so_get16(b+6);
-            } else if (kind == SO_BSSSYM && (attr & 64)) base = (b[3]&255)*256L;
-            if (s->value < base || s->value > base+size) return 0;
-            /* Display the physical segment for bound executables, logical
-             * segment for relocatable objects. Values are section offsets. */
-            if (attr & SO_BOUND) s->segment = b[0]&255;
-        }
-    } else {
-        for (i = 0; i < 8; i++) s->name[i] = b[i];
-        s->type = so_get16(b+8); s->value = so_get16(b+10);
-        s->segment = 0;
+    s->value = (unsigned long)so_get32(b) & 0xffffffffL; s->type = b[4]&255;
+    s->segment = b[5]&255;
+    for (i = 0; i < 8; i++) s->name[i] = b[6+i];
+    kind = s->type & 31;
+    if ((s->type & 128) || kind > 4 || (s->name[0]&128) || !s->name[0] ||
+        (kind != SO_ABS && s->value > 65535L) ||
+        (!kind && !(s->type & SO_EXTERNAL)) ||
+        (kind != SO_ABS && !!(s->type & SO_SEGMENTED) != o->segmented)) return 0;
+    if (kind >= SO_TEXTSYM) {
+        if (s->segment >= o->segments ||
+            !objbytes(o, 24+s->segment*16L, b, 16)) return 0;
+        attr = so_get16(b+10);
+        size = so_get16(b+4+(kind-2)*2);
+        base = 0;
+        if (!o->segmented) {
+            if (kind >= SO_DATASYM && o->magic == SO_NMAG) base += so_get16(b+4);
+            if (kind == SO_BSSSYM) base += so_get16(b+6);
+        } else if (kind == SO_BSSSYM && (attr & 64)) base = (b[3]&255)*256L;
+        if (s->value < base || s->value > base+size) return 0;
+        /* Display the physical segment for bound executables, logical
+         * segment for relocatable objects. Values are section offsets. */
+        if (attr & SO_BOUND) s->segment = b[0]&255;
     }
     return 1;
 }
@@ -129,12 +117,8 @@ struct object *o;
 char *p;
 {
     int n;
-    n = o->sout ? 24 : 16;
+    n = 24;
     if (!objbytes(o, 0L, p, n)) return 0;
-    if (o->sout) {
-        so_put16(p+12, 0); so_put16(p+18, o->flags | SO_STRIP);
-    } else {
-        so_put16(p+8, 0); so_put16(p+12, 0); so_put16(p+14, 0);
-    }
+    so_put16(p+12, 0); so_put16(p+18, o->flags | SO_STRIP);
     return n;
 }

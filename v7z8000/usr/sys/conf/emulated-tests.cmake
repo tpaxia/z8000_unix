@@ -206,3 +206,11 @@ add_custom_target(test-services
     COMMENT "Testing public ABI, accounting, profiling and memory locking"
     VERBATIM
 )
+
+add_custom_target(test-object-formats
+    COMMAND python3 "${TOOLS_DIR}/test-object-formats.py" "${B}"
+    DEPENDS kernel test_driver disk_image
+    WORKING_DIRECTORY "${B}"
+    COMMENT "Accepting s.out and rejecting obsolete executable formats"
+    VERBATIM
+)

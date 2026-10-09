@@ -10,6 +10,7 @@ pcc = root / 'PCC-z8000/z8000'
 build = Path(sys.argv[1]).resolve()
 work = root / 'tests/build/fault'
 work.mkdir(parents=True, exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 
 def run(args, **kw):
     r = subprocess.run(list(map(str, args)), capture_output=True, **kw)
@@ -24,9 +25,9 @@ pre = run(['cpp','-nostdinc','-undef','-I'+str(root/'v7z8000/usr/include'),tools
 (work/'regs.az8').write_bytes((tools/'faultregs.az8').read_bytes())
 (work/'pad.az8').write_text('.text\n.zerow 20000\n.bss\n.comm _execpad,40000\n')
 for name in ['fault','regs','pad']:
-    run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=work)
+    run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c','-o',name+'.b',name+'.az8'],cwd=work)
 for name, flags, extra in [('faultn',[],[]),('faulti',['-i'],[]),('faultbig',['-i'],[work/'pad.b'])]:
-    run([pcc/'ldz8',*flags,'-x',tools/'libc/crt0.b',work/'fault.b',work/'regs.b',
+    run([tools.parent / 'tests/build/ldz8-host/ldz8',*flags,'-x',tools/'libc/crt0.b',work/'fault.b',work/'regs.b',
          *extra,tools/'libv7.a','-o',work/name])
 files='\n'.join(f'{n} ---755 0 0 {work/n}' for n in ['faultn','faulti','faultbig'])
 (work/'proto').write_text(f'''boot

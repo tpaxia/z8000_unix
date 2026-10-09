@@ -19,8 +19,7 @@ def main():
     shutil.copyfile(ROOT/'tools/asz8k/src/asz8k.pd',WORK/'asz8k.pd')
     source=ROOT/'v7z8000/usr/src/cmd/troff/term/tab300.c'
     compile_c(source,WORK/'tab300.b')
-    run([ROOT/'tests/build/asz8k-host/asz8k','-zc','tab300.az8'],cwd=WORK)
-    run([ROOT/'tests/build/ldz8-host/ldz8','-z','-r','tab300.so','-o','table.so'],cwd=WORK)
+    run([ROOT/'tests/build/ldz8-host/ldz8','-z','-r','tab300.b','-o','table.so'],cwd=WORK)
     host=ROOT/'tests/build/sout-utils-host/mktab'
     run(['cc','-std=gnu89','-O2','-w','-I'+str(ROOT/'tools/sout-utils'),
          '-I'+str(ROOT/'tools/asz8k/src'),ROOT/'tools/userland/mktab.c',
@@ -35,11 +34,11 @@ def main():
         files['usr/src/test/'+path.name]=path
     for name in ('table.so','wanttab'):files['usr/src/test/'+name]=WORK/name
     files['usr/lib/term/tab300']=WORK/'wanttab'
-    old=Filesystem(ROOT/'tests/build/userland-native/hd.img')
+    old=Filesystem(ROOT/'tests/build/userland-native-sout/hd.img')
     for name in ('runner','normal','nroff'):
         path=WORK/name;path.write_bytes(old.read('/bin/'+name));files['bin/'+name]=path
-    files['bin/cp']=ROOT/'tests/build/native-environment/native/bin/cp'
-    files['bin/cmp']=ROOT/'tests/build/native-environment/native/bin/cmp'
+    files['bin/cp']=ROOT/'tests/build/native-environment-sout/native/bin/cp'
+    files['bin/cmp']=ROOT/'tests/build/native-environment-sout/native/bin/cmp'
     for path in (ROOT/'v7z8000/usr/lib/tmac').rglob('*'):
         if path.is_file():files['usr/lib/tmac/'+str(path.relative_to(ROOT/'v7z8000/usr/lib/tmac'))]=path
     text=WORK/'text';text.write_text('Terminal resource test\n');files['tmp/text']=text

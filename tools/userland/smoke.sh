@@ -2,6 +2,7 @@ PATH=/bin
 export PATH || exit 1
 chmod 4755 /bin/mkdir /bin/rmdir /bin/mv || exit 1
 cd /tmp || exit 1
+rm -rf tree || exit 1
 sed 's/beta/BETA/' input > sed.out || exit 1
 grep 'BETA 2' sed.out || exit 1
 expr 7 + 5 > expr.out || exit 1

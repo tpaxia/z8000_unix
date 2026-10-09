@@ -1,10 +1,16 @@
 #include <stdio.h>
 char buf[32], hex[65];
 char digits[]="0123456789abcdef";
-main()
+main(argc,argv)
+int argc; char **argv;
 {
  int pid,status,fd,n,i,c,phase;
  char *args[2];
+ if(argc==3) {
+  pid=fork();if(pid<0)return 1;
+  if(!pid) {args[0]=argv[1];args[1]=0;execve(argv[1],args,0);exit(255);}
+  return wait(&status)!=pid || status!=(atoi(argv[2])<<8);
+ }
  for(phase=0;phase<2;phase++) {
  pid=fork();
  if(pid<0) return 1;

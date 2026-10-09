@@ -20,7 +20,7 @@ def main():
         raise SystemExit('usage: test.py [--resume]')
     resume = bool(sys.argv[1:])
     files = {}
-    native = ROOT/'tests/build/native-environment/native'
+    native = ROOT/'tests/build/native-environment-sout/native'
     for name in ('ar','make','cp','rm','cmp'):
         files['bin/'+name] = native/'bin'/name
     for name in ('front','back','oz8'):
@@ -30,7 +30,7 @@ def main():
     files['lib/crt0.b'] = WORK/'crt0.b'
     files['lib/libc.a'] = WORK/'libc.a'
     files['usr/lib/asz8k.pd'] = ROOT/'tools/asz8k/src/asz8k.pd'
-    old = Filesystem(ROOT/'tests/build/userland-native/hd.img')
+    old = Filesystem(ROOT/'tests/build/userland-native-sout/hd.img')
     for name in ('runner','sh'):
         path=WORK/name; path.write_bytes(old.read('/bin/'+name)); files['bin/'+name]=path
     steps=[]
@@ -79,16 +79,20 @@ def main():
     rules=['all: libc.a']
     for obj in objects+['crt0.b']:
         name=Path(obj).stem
-        if name in names or name=='softfp':
+        if name in names or name in ('softfp','object','soutfmt'):
             sources=[ROOT/'v7z8000/usr/src/libc'/p/(name+'.c') for p in ('gen','stdio')]
             sources += [ROOT/'tools/libc'/(name+'.c')]
             if name=='softfp': sources=[ROOT/'tools/fpe/glue.c']
+            if name in ('nlist','object'): sources=[ROOT/'tools/sout-utils'/(name+'.c')]
+            if name=='soutfmt': sources=[ROOT/'tools/asz8k/src/soutfmt.c']
             source=next(p for p in sources if p.exists())
             files['usr/src/libc/'+name+'.c']=source
-            rules += [obj+': '+name+'.c','\t/bin/cc -O -Dunix=1 -c '+name+'.c']
+            rules += [obj+': '+name+'.c','\t/bin/cc -O -Dunix=1 -I. -c '+name+'.c']
         else:
             files['usr/src/libc/'+name+'.az8']=WORK/(name+'.az8')
             rules += [obj+': '+name+'.az8','\t/bin/asz8k -zc -o '+obj+' '+name+'.az8']
+    for source in (ROOT/'tools/sout-utils/object.h',ROOT/'tools/asz8k/src/soutfmt.h'):
+        files['usr/src/libc/'+source.name]=source
     rules += ['libc.a: '+' '.join(objects),'\t/bin/rm -f libc.a']
     for i in range(0,len(objects),20): rules += ['\t/bin/ar qc libc.a '+' '.join(objects[i:i+20])]
     path=WORK/'libc.mk'; path.write_text('\n'.join(rules)+'\n'); files['usr/src/libc/makefile']=path
@@ -109,7 +113,7 @@ def main():
         step('as-'+p.stem,'/usr/src/asz8k',['/bin/cc -O -c '+p.name])
     step('assembler-link','/usr/src/asz8k',[
         '/bin/cc -i -s '+' '.join(asobjects)+' -o asz8k','/bin/cp asz8k /bin/asz8k'])
-    for p in [ROOT/'tools/ldz8'/n for n in ('dispatch.c','ldso.c')]+[ROOT/'PCC-z8000/z8000'/n for n in ('ldz8.c','b.out.h')]+[ROOT/'tools/asz8k/src'/n for n in ('soutfmt.c','soutfmt.h')]:
+    for p in [ROOT/'tools/ldz8'/n for n in ('dispatch.c','ldso.c')]+[ROOT/'tools/asz8k/src'/n for n in ('soutfmt.c','soutfmt.h')]:
         files['usr/src/ldz8/'+p.name]=p
     for name in ('dispatch','ldso','soutfmt'):
         step('ld-'+name,'/usr/src/ldz8',['/bin/cc -O -c '+name+'.c'])

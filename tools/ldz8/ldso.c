@@ -107,7 +107,7 @@ long off, len;
     get(f, off, h, 24);
     magic = so_get16(h); flags = so_get16(h+18);
     if (magic != SO_SMAG && magic != SO_NMAG && magic != SO_SID && magic != SO_NID)
-        die("input is not a Z8000 s.out object (use the legacy path for a.out)");
+        die("input is not a Z8000 s.out object");
     sb = so_get16(h+10); nb = so_get16(h+12);
     if (flags || so_get16(h+20) || so_get16(h+22) || !sb || sb%16 || nb%14)
         die("unsupported object header, stripped relocation or line records");

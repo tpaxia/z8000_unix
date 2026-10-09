@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run native az8/ldz8 in Unix; compare objects and executables with host tools."""
+"""Run native asz8k/ldz8 in Unix; compare objects and executables with host tools."""
 import json
 import argparse
 import sys
@@ -10,10 +10,12 @@ SYSBUILD = ROOT / 'v7z8000/usr/sys/build'
 
 
 def test(native_az8=None, native_ldz8=None):
-    native_az8 = native_az8 or WORK / 'az8/az8'
-    native_ldz8 = native_ldz8 or WORK / 'ldz8/ldz8'
+    native_az8 = native_az8 or ROOT/'tests/build/native-environment-sout/native/bin/asz8k'
+    native_ldz8 = native_ldz8 or ROOT/'tests/build/native-environment-sout/native/bin/ldz8'
+    WORK.mkdir(parents=True,exist_ok=True)
+    run(['make','-C',ROOT/'tools','libv7.a','libc/crt0.b','v7mkfs','sh','init'])
     compile_c(ROOT / 'tools/native-binutils/runner.c', WORK / 'runner.b')
-    run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'runner.b',
+    run([ROOT/'tests/build/ldz8-host/ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'runner.b',
          ROOT / 'tools/libv7.a', '-o', WORK / 'runner'])
     # The first archive member adds and then rolls back more than two blocks
     # of symbols; the selected member subsequently reuses these slots.
@@ -55,20 +57,20 @@ main() {
             compile_c(source, WORK / 'input.b')
         else:
             (WORK / 'input.az8').write_bytes(source.read_bytes())
-        # Exercise dot-assignment padding, whose count is a long in K&R C.
+        # Exercise initialized padding with the shared assembler directive.
         with (WORK / 'input.az8').open('a') as assembly:
-            assembly.write('\n\t.data\n\t.even\n\t. = . + 8\n\t.word 0x1234\n')
-        run([PCC / 'az8/az8', '-o', 'input.b', 'input.az8'], cwd=WORK)
-        for mode in ['0407', '0411']:
-            flag = '-i' if mode == '0411' else '-x'
-            run([PCC / 'ldz8', '-x', flag, ROOT / 'tools/libc/crt0.b', WORK / 'input.b',
+            assembly.write('\n\t.data\n\t.even\n\t.space 8\n\t.word 0x1234\n')
+        run([ROOT/'tests/build/asz8k-host/asz8k', '-c', '-o', 'input.b', 'input.az8'], cwd=WORK)
+        for mode in ['combined', 'split']:
+            flag = '-i' if mode == 'split' else '-x'
+            run([ROOT/'tests/build/ldz8-host/ldz8', '-x', flag, ROOT / 'tools/libc/crt0.b', WORK / 'input.b',
                  WORK / 'lib.a', ROOT / 'tools/libv7.a', '-o', WORK / 'expected'])
             (WORK / 'proto').write_text(f'''boot
 2400 96
 d--755 0 0
 bin d--755 0 0
  sh ---755 0 0 {ROOT}/tools/sh
- az8 ---755 0 0 {native_az8.resolve()}
+ asz8k ---755 0 0 {native_az8.resolve()}
  ldz8 ---755 0 0 {native_ldz8.resolve()}
  runner ---755 0 0 {WORK}/runner
  $
@@ -83,6 +85,11 @@ dev d--755 0 0
 etc d--755 0 0
  init ---755 0 0 {ROOT}/tools/init
  $
+usr d--755 0 0
+ lib d--755 0 0
+  asz8k.pd ---644 0 0 {ROOT}/tools/asz8k/src/asz8k.pd
+ $
+$
 tmp d--777 0 0
  input.az8 ---644 0 0 {WORK}/input.az8
  lib.a ---644 0 0 {WORK}/lib.a
@@ -113,7 +120,7 @@ $
 if __name__ == '__main__':
     from pathlib import Path
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--native-az8', type=Path)
+    parser.add_argument('--native-asz8k', type=Path)
     parser.add_argument('--native-ldz8', type=Path)
     args = parser.parse_args()
-    test(args.native_az8, args.native_ldz8)
+    test(args.native_asz8k, args.native_ldz8)

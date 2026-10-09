@@ -35,7 +35,11 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
         if name in ('hunt','inv','mkey','deliv'):destination='usr/lib/refer/'+name
         if name in ('spell','spellin','spellout'):destination='usr/lib/'+name
         if name in ('lint1','lint2'):destination='usr/lib/'+name
-        files[destination]=WORK/name/name
+        program=WORK/name/name
+        if not (name.startswith('tab') and name!='tabs'):
+            if program.read_bytes()[:2] not in (b'\xe7\x07',b'\xe7\x11'):
+                raise ValueError('obsolete cached executable: rebuild '+name+' with build.py')
+        files[destination]=program
         modes[destination]=0o755
     native=ROOT/'tests/build/native-environment-sout/native/bin'
     for name in ('make','yacc'):

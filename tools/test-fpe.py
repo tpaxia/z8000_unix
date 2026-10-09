@@ -8,6 +8,7 @@ root=Path(__file__).resolve().parents[1]
 tools=root/'tools';pcc=root/'PCC-z8000/z8000'
 build=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else root/'v7z8000/usr/sys/build'
 work=root/'tests/build/fpe';work.mkdir(parents=True,exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 def run(args,**kw):
     p=subprocess.run(list(map(str,args)),capture_output=True,**kw)
     if p.returncode: print((p.stdout+p.stderr).decode(errors='replace'))
@@ -17,16 +18,16 @@ cases=['float_add','float_general','float_storage','float_vectors',
        'float_ops_vectors','float_convert_vectors']
 sources=[pcc/'test/regress'/(n+'.c') for n in cases]+[tools/'fpetest.c']
 (work/'probe.az8').write_bytes((tools/'fpe/probe.az8').read_bytes())
-run([pcc/'az8/az8','-o','probe.b','probe.az8'],cwd=work)
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c','-o','probe.b','probe.az8'],cwd=work)
 names=[]
 for i,src in enumerate(sources):
     name='t'+str(i)
     pre=run(['cpp','-nostdinc','-undef','-I'+str(root/'v7z8000/usr/include'),src])
     (work/(name+'.az8')).write_bytes(run([pcc/'cz8/cz8'],input=pre))
-    run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=work)
+    run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c','-o',name+'.b',name+'.az8'],cwd=work)
     for split in [False,True]:
         exe=name+('i' if split else 'n');names.append(exe)
-        run([pcc/'ldz8',*(['-i'] if split else []),'-x',tools/'libc/crt0.b',
+        run([tools.parent / 'tests/build/ldz8-host/ldz8',*(['-i'] if split else []),'-x',tools/'libc/crt0.b',
              work/(name+'.b'),work/'probe.b',tools/'libv7.a','-o',work/exe])
 runner='''#include <stdio.h>
 char *names[]={NAMES,0};
@@ -38,8 +39,8 @@ printf("EPU RESULT %d\\n",bad);return bad;}
 (work/'runner.c').write_text(runner)
 pre=run(['cpp','-nostdinc','-I'+str(root/'v7z8000/usr/include'),work/'runner.c'])
 (work/'runner.az8').write_bytes(run([pcc/'cz8/cz8'],input=pre))
-run([pcc/'az8/az8','-o','runner.b','runner.az8'],cwd=work)
-run([pcc/'ldz8','-x',tools/'libc/crt0.b',work/'runner.b',tools/'libv7.a','-o',work/'runner'])
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c','-o','runner.b','runner.az8'],cwd=work)
+run([tools.parent / 'tests/build/ldz8-host/ldz8','-x',tools/'libc/crt0.b',work/'runner.b',tools/'libv7.a','-o',work/'runner'])
 files='\n'.join(n+' ---755 0 0 '+str(work/n) for n in names+['runner'])
 (work/'proto').write_text(f'''boot
 1600 96

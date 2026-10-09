@@ -7,8 +7,8 @@ kernel/boot builds use this assembler and the shared s.out linker.
 
 The separate host `make oracle` build selects `ASZ_LEGACY`, retaining the old
 Unidot/a.out writers for historical comparisons. It is not installed in Unix.
-The older native multi-format trial needs migration before it can test current
-production defaults.
+The native comparison trial produces s.out and verifies the production defaults;
+obsolete output options are negative tests.
 
 See the [assembler reference](../../doc/toolchain/asz8k.md) and
 [native rebuild procedure](../../doc/development/native-rebuild.md).

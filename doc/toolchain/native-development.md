@@ -26,7 +26,8 @@ see the reproduction procedure for inventory counts and current logs.
 
 ## Archives
 
-Native ar, make and ldz8 share portable ASCII archives. See the
+Native make's `.az8.b` rule invokes `asz8k -c`; its C and yacc rules use the
+same s.out compiler pipeline. Native ar, make and ldz8 share portable ASCII archives. See the
 [archive contract](abi.md#library-archives). The ar/make implementation supports
 short names within V7's 14-character filename limit, even-byte member padding
 and unindexed libraries. GNU/BSD long-name and index extensions are outside
@@ -67,8 +68,8 @@ startup and several machine-dependent ports remain unfinished.
 
 The default environment installs [shared nm/size/strip](object-utilities.md)
 and the NONSEG libc nlist adapter. Native make and prof use the same object
-reader; file recognizes s.out magic. The reader's a.out compatibility remains
-until legacy regression fixtures are migrated.
+reader; file recognizes s.out magic. The shared reader rejects obsolete a.out
+objects. Positive regression fixtures are produced as s.out.
 
 Native terminal tables preserve nroff's original data-resource layout. Their
 16-byte prefix is part of that resource contract; they are not executables or

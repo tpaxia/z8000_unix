@@ -51,13 +51,13 @@ See [native development](toolchain/native-development.md) for scope and
   ROM, trap, software EPU and disk-sector artifacts are raw images linked from
   s.out objects. GNU Z8000 tools are not bootstrap dependencies.
   All ten native compiler workloads, 45 unchanged essential V7 commands,
-  24 machine-assembly checks and 174 object-utility checks pass. MAME boots
+  24 machine-assembly checks and the strict object-utility trial pass. MAME boots
   the s.out disk image and compiles a native program. The default native
   environment passes all 127 stages, exports 17 executables and validates 147
   libc members, including the final 39-check libc test. The full userland
   rebuild passes all 194 stages, validates 192 installed outputs and passes
-  the full runtime smoke suite. Legacy regression producers and
-  a.out readers remain during the phaseout. See
+  the full runtime smoke suite. Positive regression producers now use s.out;
+  kernel exec and shared object utilities reject obsolete a.out formats. See
   [ABI and formats](toolchain/abi.md), [native rebuild](development/native-rebuild.md)
   and [linker support](toolchain/ldz8.md).
 - The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports

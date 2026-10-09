@@ -48,7 +48,7 @@ def audit(sout=True):
               'unchanged_essential_sources': len(COMMANDS),
               'original_bin': original_bin,
               'original_bin_names_not_installed': sorted(set(original_bin)-installed),
-              'z8000_tool_names': {'as': 'asz8k' if sout else 'az8', 'ld': 'ldz8'}}
+              'z8000_tool_names': {'as': 'asz8k', 'ld': 'ldz8'}}
     (WORK/'audit.json').write_text(json.dumps(report, indent=2)+'\n')
     return report
 
@@ -62,9 +62,8 @@ def setup(reuse=False,sout=True):
     run(['cmake', '--build', SYS, '--target', 'kernel', 'test_driver'])
     run(['make', '-C', ROOT/'tools', 'v7mkfs'])
     extra = {'bin/'+name: NATIVE/'bin'/name for name in SUPPORT}
-    if sout:
-        for path in NATIVE.rglob('*'):
-            if path.is_file():extra[str(path.relative_to(NATIVE))]=path
+    for path in NATIVE.rglob('*'):
+        if path.is_file():extra[str(path.relative_to(NATIVE))]=path
     modes = {}
     records = []
     if reuse:
@@ -74,8 +73,8 @@ def setup(reuse=False,sout=True):
             if record['name'] != name: break
             records.append(record)
         assert records, 'no completed command builds to reuse'
-        libc=NATIVE/'lib/libc.a' if sout else ROOT/'tools/libv7.a'
-        crt0=NATIVE/'lib/crt0.b' if sout else ROOT/'tools/libc/crt0.b'
+        libc=NATIVE/'lib/libc.a'
+        crt0=NATIVE/'lib/crt0.b'
         assert fs.read('/lib/libc.a') == libc.read_bytes(), 'libc changed: use --setup'
         assert fs.read('/lib/crt0.b') == crt0.read_bytes(), 'startup changed: use --setup'
         saved = WORK/'compiled'
@@ -273,9 +272,8 @@ def main():
     parser.add_argument('--sout',action='store_true',default=True,help=argparse.SUPPRESS)
     args = parser.parse_args()
     global WORK,NATIVE
-    if args.sout:
-        WORK=ROOT/'tests/build/userland-sout'
-        NATIVE=ROOT/'tests/build/native-environment-sout/native'
+    WORK=ROOT/'tests/build/userland-sout'
+    NATIVE=ROOT/'tests/build/native-environment-sout/native'
     WORK.mkdir(parents=True,exist_ok=True)
     if args.audit:
         audit(args.sout); print(WORK/'audit.json'); return
@@ -288,7 +286,7 @@ def main():
     for step in pending:
         name=step['name'];print('START',name,flush=True);start=time.monotonic()
         with (WORK/(name+'.log')).open('wb') as log:
-            r=subprocess.run(list(map(str,[SYS/'test_driver','-c','100000000000' if args.sout else '20000000000',
+            r=subprocess.run(list(map(str,[SYS/'test_driver','-c','100000000000',
                 '-d',WORK/'hd.img','-o',WORK/'next.img','-i',
                 'runner %s %s\\n'%(step['plan'],step['directory']),
                 '-w','NATIVE CC DONE','-I','exit\\n','-x','NATIVE CC DONE'])),

@@ -10,7 +10,7 @@ char *builtin[] =
 	"YACC=yacc",
 	"YFLAGS=",
 	"CC=cc",
-	"AS=az8",
+	"AS=asz8k -c",
 	"CFLAGS=",
 	"LOADLIBES=",
 	".c.b :",

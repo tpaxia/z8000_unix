@@ -12,7 +12,7 @@ allbuild=importlib.util.module_from_spec(spec);spec.loader.exec_module(allbuild)
 CMD,compile_source=allbuild.CMD,allbuild.compile_source
 
 work=WORK/'awk';work.mkdir(exist_ok=True)
-yacc=ROOT/'tests/build/native-cc/yacc/yacc'
+yacc=ROOT/'tests/build/native-cc-sout/yacc/yacc'
 subprocess.run([str(yacc),'-d',str(CMD/'awk/awk.g.y')],cwd=work,check=True)
 shutil.copyfile(work/'y.tab.h',work/'awk.h')
 objects=[]
@@ -20,7 +20,7 @@ for name in ['proc','token']:
     obj,error=compile_source(CMD/'awk'/(name+'.c'),work)
     if error:raise SystemExit(name+': '+error)
     objects.append(obj)
-subprocess.run(list(map(str,[PCC/'ldz8','-i','-x',ROOT/'tools/libc/crt0.b',*objects,ROOT/'tools/libv7.a','-o',work/'awkproc'])),check=True)
+subprocess.run(list(map(str,[ROOT/'tests/build/ldz8-host/ldz8','-i','-x',ROOT/'tools/libc/crt0.b',*objects,ROOT/'tools/libv7.a','-o',work/'awkproc'])),check=True)
 setup({'bin/awkproc':work/'awkproc'},
       '0 - /bin/lex /usr/src/cmd/awk/awk.lx.l\n'
       '0 - /bin/cp /tmp/lex.yy.c /tmp/awklex.c\n'

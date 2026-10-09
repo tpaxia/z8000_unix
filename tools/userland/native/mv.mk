@@ -7,7 +7,7 @@ mv.b: /usr/src/cmd/mv.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/mv.c
 install: all
 	/bin/cp mv /bin/ninstall
-	/bin/ln /bin/mv /bin/mv.$$$$ && /bin/mv /bin/ninstall /bin/mv </dev/null
+	/bin/rm -f /bin/mv.$$$$ && /bin/ln /bin/mv /bin/mv.$$$$ && /bin/mv /bin/ninstall /bin/mv </dev/null
 	/bin/chmod 4755 /bin/mv
 clean:
 	/bin/rm -f *.b mv

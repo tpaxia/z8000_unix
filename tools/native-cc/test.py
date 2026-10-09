@@ -80,15 +80,15 @@ main() {
     extra['tmp/opt.want'] = WORK / 'opt.want'
     options = '-I/tmp/include -DVALUE=2 -DREMOVE -UREMOVE'
     plans = {}
-    for mode in ['0407', '0411']:
-        flag = '-i ' if mode == '0411' else ''
+    for mode in ['combined','split']:
+        flag = '-i ' if mode == 'split' else ''
         plans['full-' + mode] = [
             '0 - /bin/cc ' + flag + options + ' -B/bin/ -t0 input.c helper.c -o result',
-            '0 - /tmp/result', '0 - /bin/check ' + mode + ' result',
+            '0 - /tmp/result', '0 - /bin/check ' + ('e711' if mode=='split' else 'e707') + ' result',
         ]
         plans['opt-' + mode] = [
             '0 - /bin/cc -O ' + flag + options + ' input.c helper.c -o result',
-            '0 - /tmp/result', '0 - /bin/check ' + mode + ' result',
+            '0 - /tmp/result', '0 - /bin/check ' + ('e711' if mode=='split' else 'e707') + ' result',
         ]
     plans['stages'] = [
         '0 pre.i /bin/cc -E ' + options + ' input.c',
@@ -98,17 +98,17 @@ main() {
         '0 - /bin/cc -O -S ' + options + ' input.c helper.c',
         '0 - /bin/check asm input.az8',
         '0 - /bin/cc -i input.az8 helper.az8 -o result',
-        '0 - /tmp/result', '0 - /bin/check 0411 result',
+        '0 - /tmp/result', '0 - /bin/check e711 result',
     ]
     plans['objects'] = [
         '0 - /bin/cc -O -c ' + options + ' input.c helper.c',
-        '0 - /bin/check 0407 input.b',
+        '0 - /bin/check e707 input.b',
         '0 - /bin/cc input.b helper.b -o result',
-        '0 - /tmp/result', '0 - /bin/check 0407 result',
+        '0 - /tmp/result', '0 - /bin/check e707 result',
     ]
     plans['default'] = [
         '0 - /bin/cc /usr/src/hello.c', '0 - /tmp/a.out',
-        '0 - /bin/check 0407 a.out', '0 - /bin/check absent hello.b',
+        '0 - /bin/check e707 a.out', '0 - /bin/check absent hello.b',
     ]
     # Feed assembly on stdin through the shell; runner redirects stdout.
     (WORK / 'opt.sh').write_text('/lib/oz8 < /tmp/opt.az8\n')
@@ -142,17 +142,15 @@ main() {
     for name, plan in plans.items():
         if selected and name not in selected:
             continue
-        if sout:
-            plan=[c.replace('/bin/check 0407','/bin/check e707').replace('/bin/check 0411','/bin/check e711') for c in plan]
         (WORK / 'plan').write_text('\n'.join(plan) + '\n')
         extra['tmp/plan'] = WORK / 'plan'
         image(extra,WORK/'hd.img',sout=sout)
         # Restored clock statistics push optimized split I/D just past 2B cycles.
-        cycles = '12000000000' if name == 'optimizer' or sout else '3000000000'
+        cycles = '12000000000'
         result = subprocess.run(list(map(str, [sysbuild / 'test_driver', '-c', cycles,
             '-d', WORK / 'hd.img', '-i', 'runner\\n', '-w', 'NATIVE CC DONE',
             '-I', 'exit\\n', '-x', 'NATIVE CC PASS'])), cwd=sysbuild, capture_output=True,
-            timeout=240 if name == 'optimizer' or sout else 60)
+            timeout=240)
         (WORK / (name + '.log')).write_bytes(result.stdout + result.stderr)
         if result.returncode or b'NATIVE CC PASS' not in result.stdout:
             print(result.stdout.decode(errors='replace')[-4000:])
@@ -170,5 +168,5 @@ main() {
 
 if __name__ == '__main__':
     sout=True
-    if sout: WORK=ROOT/'tests/build/native-cc-sout'
+    WORK=ROOT/'tests/build/native-cc-sout'
     test([a for a in sys.argv[1:] if a!='--sout'],sout)

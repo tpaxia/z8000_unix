@@ -50,6 +50,7 @@ def invoke(args, log, cwd, data=None):
 
 def compile_source(source, directory, flags=()):
     name = source.stem
+    (directory/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
     log = directory/(name+'.log')
     log.write_bytes(b'')
     r = invoke(['cc','-E','-x','c','-nostdinc','-undef','-Dz8000','-Dz8002','-Dunix=1',
@@ -62,7 +63,7 @@ def compile_source(source, directory, flags=()):
     (directory/(name+'.az8')).write_bytes(r.stdout)
     if r.returncode: return None,'compile'
     obj=directory/(name+'.b')
-    r=invoke([PCC/'az8/az8','-o',obj.name,name+'.az8'],log,directory)
+    r=invoke([ROOT/'tests/build/asz8k-host/asz8k','-c','-o',obj.name,name+'.az8'],log,directory)
     if r.returncode: return None,'assemble'
     return obj,None
 
@@ -72,6 +73,14 @@ def main():
     parser.add_argument('names',nargs='*')
     args=parser.parse_args()
     WORK.mkdir(parents=True,exist_ok=True)
+    subprocess.run(['make','-C',str(ROOT/'tools'),'libv7.a','libc/crt0.b'],check=True)
+    subprocess.run(['make','-C',str(ROOT/'tools/asz8k')],check=True)
+    subprocess.run(['make','-C',str(ROOT/'tools/ldz8')],check=True)
+    hosttab=WORK/'mktab'
+    subprocess.run(list(map(str,['cc','-std=gnu89','-O2','-w',
+        '-I'+str(ROOT/'tools/sout-utils'),'-I'+str(ROOT/'tools/asz8k/src'),
+        ROOT/'tools/userland/mktab.c',ROOT/'tools/sout-utils/object.c',
+        ROOT/'tools/asz8k/src/soutfmt.c','-o',hosttab])),check=True)
     report={}
     if (WORK/'report.json').exists(): report=json.loads((WORK/'report.json').read_text())
     specs = {p.stem: {'sources':[p]} for p in sorted(CMD.glob('*.c'))}
@@ -180,11 +189,16 @@ def main():
         sources=list(spec['sources']);error=None
         if 'grammar' in spec:
             log=directory/'yacc.log';log.write_bytes(b'')
-            r=invoke([ROOT/'tests/build/native-cc/yacc/yacc','-d',spec['grammar']],log,directory)
+            r=invoke([ROOT/'tests/build/native-cc-sout/yacc/yacc','-d',spec['grammar']],log,directory)
             if r.returncode:error='yacc'
             else:
                 sources.append(directory/'y.tab.c')
                 if 'header' in spec:shutil.copyfile(directory/'y.tab.h',directory/spec['header'])
+        if name in ('make','prof','nm','size','strip'):
+            spec['flags']=spec.get('flags',[])+['-DSOUT','-I'+str(ROOT/'tools/sout-utils'),'-I'+str(ROOT/'tools/asz8k/src')]
+            if name in ('nm','size','strip'):sources=[ROOT/'tools/sout-utils'/(name+'.c')]
+            sources += [ROOT/'tools/sout-utils/object.c',ROOT/'tools/asz8k/src/soutfmt.c']
+        if name=='file':spec['flags']=spec.get('flags',[])+['-DSOUT']
         record={'sources':[str(p.relative_to(ROOT)) for p in spec['sources']], 'status':error or 'compiled'}
         record['kind']='terminal-table' if spec.get('data_only') else ('game' if spec.get('game') else 'command')
         objects=[]
@@ -198,14 +212,18 @@ def main():
             libs=[WORK/('lib'+n)/('lib'+n+'.a') for n in spec.get('libs',[])]
             startup=[] if spec.get('data_only') else [ROOT/'tools/libc/crt0.b']
             runtime=[] if spec.get('data_only') else [ROOT/'tools/libv7.a']
-            r=invoke([PCC/'ldz8','-i','-x',*startup,*objects,*libs,
+            r=invoke([ROOT/'tests/build/ldz8-host/ldz8',*(['-r'] if spec.get('data_only') else ['-i']),'-x',*startup,*objects,*libs,
                       *runtime,'-o',output],log,directory)
             with log.open('ab') as f:f.write(r.stdout)
             error='link' if r.returncode else None
+            if not error and spec.get('data_only'):
+                intermediate=directory/'table.so';output.replace(intermediate)
+                r=invoke([hosttab,intermediate,output],log,directory)
+                error='resource' if r.returncode else None
         record['status']=error or 'built'
         if not error:
-            h=struct.unpack('>8H',output.read_bytes()[:16])
-            record['sizes']=dict(zip(['text','data','bss'],h[1:4]))
+            offset=2 if spec.get('data_only') else 28
+            record['sizes']=dict(zip(['text','data','bss'],struct.unpack_from('>3H',output.read_bytes(),offset)))
         report[name]=record
         print(name,record['status'],flush=True)
         (WORK/'report.json').write_text(json.dumps(report,indent=2)+'\n')

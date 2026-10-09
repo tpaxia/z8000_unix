@@ -18,7 +18,7 @@ def run(args, **kwargs):
     return result
 
 
-def compile_c(source, destination, flags=(), sout=False, compact=False):
+def compile_c(source, destination, flags=(), sout=True, compact=False):
     pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002', '-Dunix=1',
                '-I' + str(source.parent), '-I' + str(ROOT / 'v7z8000/usr/include'), *flags, source])
     compiled = run([PCC / 'cz8/cz8'], input=pre.stdout)
@@ -26,41 +26,33 @@ def compile_c(source, destination, flags=(), sout=False, compact=False):
         compiled = run([PCC/'oz8'], input=compiled.stdout)
     destination.with_suffix('.az8').write_bytes(compiled.stdout)
     destination.with_suffix('.log').write_bytes(pre.stderr + compiled.stderr)
-    assembler = ROOT / 'tests/build/asz8k-host/asz8k' if sout else PCC / 'az8/az8'
-    if sout:
-        (destination.parent/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
-    run([assembler, *(['-zc'] if sout else []), '-o', destination.name,
-         destination.with_suffix('.az8').name], cwd=destination.parent)
+    if not sout:
+        raise ValueError('obsolete object format: use s.out')
+    assembler = ROOT / 'tests/build/asz8k-host/asz8k'
+    (destination.parent/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
+    assembly=destination.with_suffix('.az8')
+    if len(assembly.name)>14:
+        assembly=destination.parent/'input.az8';assembly.write_bytes(compiled.stdout)
+    run([assembler, '-c', '-o', destination.name,
+         assembly.name], cwd=destination.parent)
 
 
 def build():
-    WORK.mkdir(parents=True, exist_ok=True)
-    for directory in ['cz8', 'az8']:
-        run(['make', '-C', PCC / directory])
-    run(['make', '-C', PCC / 'test', '../ldz8'])
-    run(['make', '-C', ROOT / 'tools', 'libv7.a', 'libc/crt0.b', 'v7mkfs', 'sh', 'init'])
+    """Publish target copies built by the common s.out bootstrap."""
+    import importlib.util
+    import shutil
+    path = ROOT/'tools/sout-cc/build.py'
+    spec = importlib.util.spec_from_file_location('sout_seed', path)
+    seed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+    seed.library(); seed.seeds()
     report = {}
-    for tool, sources in [
-        ('az8', [PCC / 'az8' / (n + '.c') for n in
-                 'error init ins ioz8 ps rel sdi sym scan'.split()]),
-        ('ldz8', [ROOT / 'tools/ldz8/dispatch.c', ROOT / 'tools/ldz8/ldso.c',
-                  ROOT / 'tools/asz8k/src/soutfmt.c']),
-    ]:
-        directory = WORK / tool
-        directory.mkdir(exist_ok=True)
-        objects = []
-        for source in sources:
-            obj = directory / (source.stem + '.b')
-            compile_c(source, obj, flags=('-I'+str(PCC),
-                '-I'+str(ROOT / 'tools/asz8k/src')))
-            objects.append(obj)
-        run([PCC / 'ldz8', '-i', '-x', ROOT / 'tools/libc/crt0.b', *objects,
-             ROOT / 'tools/libv7.a', '-o', directory / tool])
-        h = struct.unpack('>8H', (directory / tool).read_bytes()[:16])
-        assert h[0] == 0o411 and h[1] < 65536 and h[2] + h[3] < 65536
-        report[tool] = dict(zip(['text', 'data', 'bss'], h[1:4]))
-        print(tool, report[tool], flush=True)
-    (WORK / 'sizes.json').write_text(json.dumps(report, indent=2) + '\n')
+    for name in ('asz8k','ldz8'):
+        directory = WORK/name; directory.mkdir(parents=True,exist_ok=True)
+        target = directory/name
+        shutil.copyfile(seed.WORK/'seed'/(name+'.out'),target)
+        report[name] = dict(zip(('text','data','bss'),struct.unpack_from('>3H',target.read_bytes(),28)))
+    (WORK/'sizes.json').write_text(json.dumps(report,indent=2)+'\n')
 
 
 if __name__ == '__main__':

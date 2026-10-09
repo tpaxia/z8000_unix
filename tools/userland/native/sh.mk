@@ -45,6 +45,6 @@ macro.b: /usr/src/cmd/sh/macro.c
 	$(CC) $(CFLAGS) -c /usr/src/cmd/sh/macro.c
 install: all
 	/bin/cp sh /bin/ninstall
-	/bin/ln /bin/sh /bin/sh.$$$$ && /bin/mv /bin/ninstall /bin/sh </dev/null
+	/bin/rm -f /bin/sh.$$$$ && /bin/ln /bin/sh /bin/sh.$$$$ && /bin/mv /bin/ninstall /bin/sh </dev/null
 clean:
 	/bin/rm -f *.b sh

@@ -36,23 +36,32 @@ def main():
         run([LD, '-z', *options, '-e', 'entry', 'start.so', 'help.so', '-o', name], cwd=WORK)
     for name, options in [('segexec', []), ('segpart', ['-r']), ('segrev', ['-C','5','-D','3'])]:
         run([LD, '-z', *options, '-e', 'entry', 'seg.so', 'ext.so', '-o', name], cwd=WORK)
-    # Historical reader fixture; no legacy assembler/linker participates.
-    (WORK/'legacy.b').write_bytes(struct.pack('>8H',0o407,2,0,0,12,0,0,0)+
-        bytes.fromhex('9e08')+struct.pack('>8sHH',b'entry',0o42,0))
+    # Complete obsolete objects are negative fixtures, never build inputs.
+    obsolete = {}
+    for magic in (0o407,0o410,0o411,0o405):
+        name = 'old%04o' % magic
+        obsolete[name] = (struct.pack('>8H',magic,2,0,0,12,0,0,0)+
+            bytes.fromhex('9e08')+struct.pack('>8sHH',b'entry',0o42,0))
+        (WORK/name).write_bytes(obsolete[name])
     fs = Filesystem(ROOT/'tests/build/native-cc-sout/hd.img')
     shutil.copyfile(ROOT/'tests/build/sout-cc/seed/cc.out', WORK/'compiler')
     wide = bytearray((WORK/'combined').read_bytes())
     struct.pack_into('>H', wide, 12, struct.unpack_from('>H', wide, 12)[0]+14)
     wide += struct.pack('>IBB8s', 0xffffffff, 33, 0, b'wideabs')
     (WORK/'wideabs').write_bytes(wide)
-    # Mixed portable archive, odd non-object member and both object formats.
+    # Portable archive, odd non-object member and both s.out addressing modes.
     archive = bytearray(b'!<arch>\n')
-    for name in ('start.so', 'seg.so', 'legacy.b'):
+    for name in ('start.so', 'seg.so'):
         data = (WORK/name).read_bytes()
         archive += (('%-16s%-12s%-6s%-6s%-8s%-10s`\n' %
             (name+'/', 0, 0, 0, '644', len(data))).encode()+data+b'\n'*(len(data)&1))
     archive += b'notes/          0           0     0     644     3         `\nabc\n'
     (WORK/'mixed.a').write_bytes(archive)
+    for name,data in list(obsolete.items()):
+        member = (('%-16s%-12s%-6s%-6s%-8s%-10s`\n' %
+            (name+'/',0,0,0,'644',len(data))).encode()+data+b'\n'*(len(data)&1))
+        obsolete[name+'.a'] = b'!<arch>\n'+member
+        (WORK/(name+'.a')).write_bytes(obsolete[name+'.a'])
     corrupt = {}
     base = (WORK/'combined').read_bytes()
     for name, offset, value in [('badflags',18,2),('badtotals',28,254),
@@ -80,8 +89,8 @@ def main():
         ROOT/'tools/asz8k/src/soutfmt.c',ROOT/'tools/asz8k/src/soutfmt.h']
     for path in sources: files['usr/src/utils/'+path.name]=path
     fixtures=['start.so','help.so','seg.so','ext.so','combined','split','partial',
-              'segexec','segpart','segrev','legacy.b','compiler','wideabs','mixed.a']
-    for name in fixtures+list(corrupt): files['usr/src/utils/'+name]=WORK/name
+              'segexec','segpart','segrev','compiler','wideabs','mixed.a']
+    for name in fixtures+list(corrupt)+list(obsolete): files['usr/src/utils/'+name]=WORK/name
     build=[]
     for name in ('object','soutfmt','nlist','nm','size','strip'):
         build += ['/bin/cc -O -c '+name+'.c']
@@ -107,7 +116,7 @@ def main():
         dest='out%03d'%len(expected); expected[dest]=command([HOST/tool,*args])
         checks += ['0 '+dest+' ./'+tool+' '+' '.join(args)]
     strips=[]
-    for i,name in enumerate(['combined','split','partial','segexec','segpart','segrev','compiler','legacy.b','wideabs']):
+    for i,name in enumerate(['combined','split','partial','segexec','segpart','segrev','compiler','wideabs']):
         target='s%d'%i; shutil.copyfile(WORK/name,WORK/target)
         command([HOST/'strip',target]); first=(WORK/target).read_bytes()
         command([HOST/'strip',target]); assert (WORK/target).read_bytes()==first
@@ -115,11 +124,13 @@ def main():
         strips.append(target)
         checks += ['0 - ./strip '+target,'0 - ./strip '+target,'0 - ./size '+target]
     checks += ['0 - ./s0','0 - ./s1','0 - ./s6','0 - ./check']
-    for name in corrupt:
+    for name in list(corrupt)+list(obsolete):
         for tool in ('nm','size','strip'):
             if name == 'badseg' and tool == 'size': continue
+            (WORK/name).chmod(0o751)
             before=(WORK/name).read_bytes(); command([HOST/tool,name],True)
             assert (WORK/name).read_bytes()==before, name
+            assert (WORK/name).stat().st_mode & 0o777 == 0o751, name
             checks += ['1 - ./'+tool+' '+name]
     # Replace the libc entry only in this trial and verify archive extraction.
     checks += ['0 - /bin/ar r /lib/libc.a nlist.b object.b soutfmt.b',
@@ -128,6 +139,7 @@ def main():
         plan=WORK/(name+'.plan'); plan.write_text('\n'.join(commands)+'\n')
         files['tmp/'+plan.name]=plan
     modes={'usr/src/utils/'+name:0o755 for name in strips}
+    modes.update({'usr/src/utils/'+name:0o751 for name in obsolete})
     if reuse:
         saved=Filesystem(WORK/'hd.img')
         assert b'NATIVE CC PASS\r\n' in (WORK/'build.log').read_bytes()
@@ -157,13 +169,15 @@ def main():
     for dest,output in expected.items(): assert native.read('/usr/src/utils/'+dest)==output,dest
     for name in strips: assert native.read('/usr/src/utils/'+name)==(WORK/name).read_bytes(),name
     for name,data in corrupt.items(): assert native.read('/usr/src/utils/'+name)==data,name
+    for name,data in obsolete.items(): assert native.read('/usr/src/utils/'+name)==data,name
     for source in sources: assert native.read('/usr/src/utils/'+source.name)==source.read_bytes(),source
     sizes={}
     for name in ('nm','size','strip'):
         data=native.read('/usr/src/utils/'+name); (WORK/('native-'+name)).write_bytes(data)
         sizes[name]=dict(zip(('text','data','bss'),struct.unpack_from('>3H',data,28)))
     report={'output_comparisons':len(expected),'strip_comparisons':len(strips),
-            'native_commands':len(build)+len(checks),'native':sizes}
+            'native_commands':len(build)+len(checks),'obsolete_rejections':len(obsolete)*3,
+            'native':sizes}
     (WORK/'results.json').write_text(json.dumps(report,indent=2)+'\n')
     print('PASS',report)
 

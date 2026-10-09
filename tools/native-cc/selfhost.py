@@ -12,7 +12,9 @@ import time
 sys.dont_write_bytecode = True
 from build import ROOT, PCC, PASSES, WORK, compile_c, image, run
 
-HERE = ROOT / 'tests/build/selfhost'
+HERE = ROOT / 'tests/build/selfhost-sout'
+RUNTIME = ROOT/'tests/build/sout-cc'
+from object_format import sizes
 SYS = ROOT / 'v7z8000/usr/sys/build'
 SOURCES = {
     'front': 'cgram xdefs scan pftn trees optim code local comm1 frontglue'.split(),
@@ -84,11 +86,11 @@ def plans():
 
 def setup():
     HERE.mkdir(parents=True, exist_ok=True)
-    extra = {'lib/libc.a': PASSES / 'libv7.a'}
+    extra = {'lib/libc.a': RUNTIME / 'libc.a'}
     for name in ['runner', 'check']:
         compile_c(ROOT / 'tools/native-cc' / (name + '.c'), HERE / (name + '.b'))
-        run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', HERE / (name + '.b'),
-             ROOT / 'tools/libv7.a', '-o', HERE / name])
+        run([ROOT / 'tests/build/ldz8-host/ldz8', '-x', RUNTIME/'crt0.b', HERE / (name + '.b'),
+             RUNTIME/'libc.a', '-o', HERE / name])
         extra['bin/' + name] = HERE / name
     headers = ['manifest', 'macdefs', 'mac2defs', 'mfile1', 'mfile2', 'common']
     for name in headers + [s + '.c' for values in SOURCES.values() for s in values if s != 'oz8']:
@@ -112,9 +114,9 @@ def setup():
 def summarize():
     binaries = {'/lib/front': PASSES / 'target-front/front',
                 '/lib/back': PASSES / 'target-back/back', '/lib/oz8': WORK / 'oz8',
-                '/lib/cpp': WORK / 'cpp', '/bin/cc': WORK / 'cc',
-                '/bin/az8': ROOT / 'tests/build/native-binutils/az8/az8',
-                '/bin/ldz8': ROOT / 'tests/build/native-binutils/ldz8/ldz8'}
+                '/lib/cpp': WORK / 'cpp', '/bin/cc': RUNTIME/'seed/cc.out',
+                '/bin/asz8k': RUNTIME/'seed/asz8k.out',
+                '/bin/ldz8': RUNTIME/'seed/ldz8.out'}
     for stage in (1, 2):
         for tool in SOURCES:
             binaries[f'/tmp/s{stage}/{tool}'] = HERE / f's{stage}-link-{tool}.out'
@@ -126,8 +128,8 @@ def summarize():
                 path = row['path']
                 if path not in binaries or not binaries[path].exists():
                     continue
-                header = struct.unpack('>8H', binaries[path].read_bytes()[:16])
-                assert header[0] == 0o411
+                resources = sizes(binaries[path].read_bytes())
+                header = (0xe711, resources['text'], resources['data'], resources['bss'])
                 static_end = (header[2] + header[3] + 63) & ~63
                 peak = max(static_end, int(row['maximum_break']))
                 low = int(row['minimum_sp'])
@@ -198,9 +200,7 @@ def main():
             tool = name.split('-')[-1]
             data = Filesystem(HERE / 'hd.img').read(directory + '/' + tool)
             (HERE / (name + '.out')).write_bytes(data)
-            header = struct.unpack('>8H', data[:16])
-            assert header[0] == 0o411
-            record.update(zip(['text', 'data', 'bss'], header[1:4]))
+            record.update(sizes(data))
         records.append(record)
         (HERE / 'results.json').write_text(json.dumps(records, indent=2) + '\n')
         print('PASS', record, flush=True)

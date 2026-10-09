@@ -8,7 +8,7 @@ CMD = ROOT / 'v7z8000/usr/src/cmd'
 WORK = ROOT / 'tests/build/userland-all'
 report = json.loads((WORK / 'report.json').read_text())
 groups = {
-    'as': ['az8'], 'c': ['front', 'back'], 'cpp': ['cpp'],
+    'as': ['asz8k'], 'c': ['front', 'back'], 'cpp': ['cpp'],
     'pcc': ['front', 'back'], 'mip': ['lint1'], 'sh': ['sh'],
     'learn': ['learn', 'lcount', 'learntee'], 'lint': ['lint1', 'lint2'],
     'plot': ['t300', 't300s', 'tek', 't450', 'vplot'],
@@ -18,7 +18,7 @@ groups = {
     'uucp': ['uucp', 'uux', 'uuxqt', 'uucico', 'uulog', 'uuclean'],
     'xsend': ['enroll', 'xget', 'xsend'],
 }
-external = {'az8', 'front', 'back', 'cpp', 'sh'}
+external = {'asz8k', 'front', 'back', 'cpp', 'sh'}
 special = {
     'standalone': 'Boot and standalone machine programs; outside userland.',
     'cmake': 'Original build script; replaced by the Z8000 build recipes.',

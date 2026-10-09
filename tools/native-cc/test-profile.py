@@ -33,8 +33,8 @@ main() {
 }
 ''')
 compile_c(source, work / 'probe.b')
-run([PCC / 'ldz8', '-i', '-x', ROOT / 'tools/libc/crt0.b', work / 'probe.b',
-     ROOT / 'tools/libv7.a', '-o', work / 'probe'])
+run([ROOT/'tests/build/ldz8-host/ldz8', '-i', '-x', ROOT/'tests/build/sout-cc/crt0.b', work / 'probe.b',
+     ROOT/'tests/build/sout-cc/libc.a', '-o', work / 'probe'])
 image({'bin/probe': work / 'probe'}, work / 'hd.img')
 sys = ROOT / 'v7z8000/usr/sys/build'
 result = subprocess.run(list(map(str, [sys / 'test_driver', '-c', '300000000',

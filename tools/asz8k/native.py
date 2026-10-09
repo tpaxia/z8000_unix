@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and exercise the experimental assembler inside V7 Unix."""
+"""Build and exercise the s.out assembler inside V7 Unix."""
 from pathlib import Path
 import argparse
 import fcntl
@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools/native-cc'))
 from build import image
 from selfhost import Filesystem
-from compare import compare
 from soutcheck import check as check_sout
 from host import check as check_host
 WORK = ROOT / 'tests/build/asz8k'
@@ -22,13 +21,13 @@ SOURCE = ROOT / 'tools/asz8k'
 SYS = ROOT / 'v7z8000/usr/sys/build'
 
 
-def setup(preserve=False):
+def setup(preserve=False, reuse=False):
     WORK.mkdir(parents=True, exist_ok=True)
     files = {}
-    native = ROOT / 'tests/build/native-environment/native'
+    native = ROOT / 'tests/build/native-environment-sout/native'
     for p in native.rglob('*'):
         if p.is_file(): files[str(p.relative_to(native))] = p
-    fs = Filesystem(ROOT / 'tests/build/userland-native/hd.img')
+    fs = Filesystem(ROOT / 'tests/build/userland-native-sout/hd.img')
     for name in ('sh', 'make', 'rm', 'runner'):
         p = WORK / name
         p.write_bytes(fs.read('/bin/' + name))
@@ -40,6 +39,12 @@ def setup(preserve=False):
         files['usr/src/asz8k/' + p.name] = p
     for p in (SOURCE / 'tests/aout').iterdir():
         files['usr/src/asz8k/' + p.name] = p
+    badbyte=WORK/'badbyte.8kn';badbyte.write_text('__data .sect\n .global _abs\n .byte _abs\n .end\n')
+    files['usr/src/asz8k/badbyte.8kn']=badbyte
+    for name in ('probe.8kn','probe.az8'):
+        path=WORK/name
+        path.write_text((SOURCE/'tests/aout'/name).read_text().replace('.byte _abs','.byte 9').replace('.long _abs','.word 0,_abs'))
+        files['usr/src/asz8k/'+name]=path
     files['usr/src/asz8k/fpe.8kn'] = ROOT / 'v7z8000/usr/sys/fpe/fpe.z8k'
     if preserve:
         saved = Filesystem(WORK / 'hd.img')
@@ -71,11 +76,19 @@ def setup(preserve=False):
     for p in sorted((SOURCE / 'src').glob('*.c')):
         steps.append((p.stem, '/bin/make ' + p.stem + '.b'))
     steps += [('link', '/bin/make')]
+    if reuse:
+        verified=Filesystem(ROOT/'tests/build/native-environment-sout/hd.img')
+        for source in (SOURCE/'src').glob('*'):
+            if source.suffix in ('.c','.h','.pd'):
+                assert verified.read('/usr/src/asz8k/'+source.name)==source.read_bytes(),source
+        target=WORK/'verified-asz8k';target.write_bytes(verified.read('/bin/asz8k'))
+        files['usr/src/asz8k/asz8k']=target
+        steps=[]
     steps += [(p.stem, './asz8k ' + ('-s ' if p.suffix == '.8ks' else '') + '-l ' + p.name) for p in sorted((SOURCE / 'tests').glob('*.8k*'))]
     steps.append(('fpe', './asz8k -l fpe.8kn'))
-    steps += [('xref-fpe', './asz8k -x -o fpex.obj fpe.8kn'),
-              ('xref-macro', './asz8k -x -o macrox.obj macro.8kn')]
-    steps += [('format-build', '/bin/cc -I. -i fmtcheck.c soutfmt.b -o fmtcheck'),
+    steps += [('xref-fpe', './asz8k -x -o fpex.so fpe.8kn'),
+              ('xref-macro', './asz8k -x -o macrox.so macro.8kn')]
+    steps += [('format-build', '/bin/cc -I. -i fmtcheck.c soutfmt.c -o fmtcheck'),
               ('format-run', './fmtcheck'),
               ('sout-seg', './asz8k -z -s soutseg.8ks'),
               ('sout-non', './asz8k -z soutnon.8kn'),
@@ -83,19 +96,19 @@ def setup(preserve=False):
               ('sout-bad-short', './asz8k -z -s badshort.8ks'),
               ('sout-bad-entry', './asz8k -z badentry.8kn'),
               ('sout-bad-formats', './asz8k -az soutnon.8kn'),
-              ('sout-bad-long', './asz8k -z probe.8kn')]
-    steps += [('output', './asz8k -s -o custom.obj seg.8ks'),
+              ('sout-bad-byte', './asz8k badbyte.8kn')]
+    steps += [('output', './asz8k -s -o custom.so seg.8ks'),
               ('bad-mode', './asz8k seg.8ks'),
               ('bad-option', './asz8k -o'),
               ('overflow', './asz8k overflow.8kn')]
     steps += [
-        ('aout-fpe', './asz8k -a -o fpea.b fpe.8kn'),
-        ('aout-probe', './asz8k -a -o probe.b probe.8kn'),
-        ('aout-abs', './asz8k -a -o abs.b abs.8kn'),
-        ('aout-bounds', './asz8k -a -o bounds.b bounds.8kn'),
-        ('reference-probe', '/bin/az8 -o refprobe.b probe.az8'),
-        ('reference-abs', '/bin/az8 -o refabs.b abs.az8'),
-        ('aout-check', '/bin/cc -O -c check.c'),
+        ('probe', './asz8k -o probe.b probe.8kn'),
+        ('abs', './asz8k -o abs.b abs.8kn'),
+        ('bounds', './asz8k -o bounds.b bounds.8kn'),
+        ('reference-probe', './asz8k -c -o refprobe.b probe.az8'),
+        ('reference-abs', './asz8k -c -o refabs.b abs.az8'),
+        ('check', '/bin/cc -O -c check.c'),
+        ('bad-legacy-as', './asz8k -a seg.8ks'),
     ]
     for mode, flags in [('split', '-i -s'), ('combined', '-s')]:
         steps += [
@@ -106,13 +119,11 @@ def setup(preserve=False):
         ]
     steps += [('partial', '/bin/ldz8 -r probe.b abs.b -o partial.b'),
               ('partial-link', '/bin/cc -i -s check.b partial.b -o partial'),
-              ('partial-run', './partial'),
-              ('aout-bad-seg', './asz8k -a -s seg.8ks')]
-    steps += [('aout-'+p.stem, './asz8k -a '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
-    steps += [('sout-'+p.stem, './asz8k -z '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
+              ('partial-run', './partial')]
+    steps += [('sout-'+p.stem, './asz8k '+p.name) for p in sorted((SOURCE / 'tests/aout').glob('bad*.8kn'))]
     for i, (name, command) in enumerate(steps):
         p = WORK / ('p%03d' % i)
-        p.write_text(('1' if name.startswith(('aout-bad', 'sout-bad')) or name in ('bad-mode', 'bad-option', 'overflow') else '0') + ' - ' + command + '\n')
+        p.write_text(('1' if name.startswith(('bad', 'sout-bad')) or name in ('bad-mode', 'bad-option', 'overflow') else '0') + ' - ' + command + '\n')
         files['tmp/' + p.name] = p
     (WORK / 'steps.json').write_text(json.dumps(steps))
     (WORK / 'results.json').write_text('[]')
@@ -123,8 +134,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--setup', action='store_true')
     parser.add_argument('--refresh', action='store_true')
+    parser.add_argument('--reuse-tool',action='store_true',help='test the source-verified native environment assembler')
     args = parser.parse_args()
-    if args.setup: setup()
+    if args.setup or args.reuse_tool: setup(reuse=args.reuse_tool)
     elif args.refresh: setup(True)
     steps = json.loads((WORK / 'steps.json').read_text())
     records = json.loads((WORK / 'results.json').read_text())
@@ -148,27 +160,20 @@ def main():
     fs = Filesystem(WORK / 'hd.img')
     binary = fs.read('/usr/src/asz8k/asz8k')
     (WORK / 'asz8k').write_bytes(binary)
-    sizes = dict(zip(('text', 'data', 'bss'), struct.unpack('>8H', binary[:16])[1:4]))
+    sizes = dict(zip(('text', 'data', 'bss'), struct.unpack_from('>3H',binary,28)))
     (WORK / 'sizes.json').write_text(json.dumps(sizes, indent=2) + '\n')
-    for name in ['fpe.obj', 'fpe.lst', 'custom.obj'] + [p.stem + ext for p in (SOURCE / 'tests').glob('*.8k*') for ext in ('.obj', '.lst')]:
+    for name in ['fpe.so', 'fpe.lst', 'custom.so'] + [p.stem + ext for p in (SOURCE / 'tests').glob('*.8k*') if not p.name.startswith('bad') for ext in ('.so', '.lst')]:
         (WORK / name).write_bytes(fs.read('/usr/src/asz8k/' + name))
-    expected = json.loads((SOURCE / 'tests/expected.json').read_text())
-    for name, record in expected.items():
-        data = (WORK / (name + '.obj')).read_bytes()
-        assert len(data) == record['bytes'], name
-        assert hashlib.sha256(data).hexdigest() == record['sha256'], name
-    assert (WORK / 'custom.obj').read_bytes() == (WORK / 'seg.obj').read_bytes()
-    assert b'Assembler virtual storage exhausted' in (WORK / 'overflow.log').read_bytes()
-    print('PASS: five objects match original CP/M assembler; -o and error checks pass')
+    assert (WORK/'custom.so').read_bytes() == (WORK/'seg.so').read_bytes()
+    assert b'Assembler virtual storage exhausted' in (WORK/'overflow.log').read_bytes()
     for mode in ('split', 'combined'):
         data = fs.read('/usr/src/asz8k/' + mode)
         assert data == fs.read('/usr/src/asz8k/ref' + mode), mode
         (WORK / mode).write_bytes(data)
-    for name in ('probe.b', 'abs.b', 'partial.b', 'fpea.b'):
+    for name in ('probe.b', 'abs.b', 'partial.b'):
         (WORK / name).write_bytes(fs.read('/usr/src/asz8k/' + name))
-    compare((WORK / 'fpe.obj').read_bytes(), (WORK / 'fpea.b').read_bytes())
     assert fs.read('/usr/src/asz8k/partial') == fs.read('/usr/src/asz8k/split')
-    print('PASS: native a.out linking/execution and az8 comparison, 0407/0411 and ld -r')
+    print('PASS: native s.out linking/execution and assembly dialect comparison, combined/split and ld -r')
     for name in ('seg.so', 'soutseg.so', 'soutnon.so'):
         (WORK / name).write_bytes(fs.read('/usr/src/asz8k/' + name))
     (WORK / 'nativefmt.bin').write_bytes(fs.read('/usr/src/asz8k/format.bin'))

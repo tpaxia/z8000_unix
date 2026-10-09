@@ -8,7 +8,7 @@ Complete [bootstrap](bootstrap.md) first. Run from the repository root:
 cmake --build v7z8000/usr/sys/build --target \
   test test-libc test-signal test-preempt test-tty test-split test-fpe \
   test-copy test-fault test-v7-interfaces test-bio test-abi test-memory \
-  test-physio test-core test-ptrace test-exec test-services
+  test-physio test-core test-ptrace test-exec test-services test-object-formats
 python3 PCC-z8000/z8000/test/ratchet/run.py
 python3 tools/export-headers.py --check
 ```
@@ -22,7 +22,8 @@ not something to accept automatically after a failure.
 
 On the assembler branch, s.out linker/loader changes also need the
 [native linking and execution trial](native-rebuild.md#sout-linking-and-execution),
-alongside the existing a.out exec, split-I/D and tracing suites.
+alongside the s.out exec, split-I/D and tracing suites and obsolete-format
+rejection by `test-object-formats`.
 Machine assembler or raw-layout changes need
 `python3 tools/kernel-asm/test.py`, kernel boot/FPU/signal/preemption tests and
 disk boot in MAME. The machine trial compares real host/native outputs and
@@ -35,7 +36,7 @@ including SEG inspection and NONSEG execution after stripping.
 
 Rebuild every driver used by a test after harness changes. The native environment
 and full-userland runner use `v7z8000/usr/sys/build/test_driver`. The convergence
-runner can use its private `tests/build/selfhost/host/test_driver`; rebuilding
+runner can use its private `tests/build/selfhost-sout/host/test_driver`; rebuilding
 only the default kernel build directory does not update that executable.
 
 ### Running tests
@@ -57,7 +58,7 @@ only the default kernel build directory does not update that executable.
 The kernel build wraps these as `cmake --build build --target test`,
 `--target test-libc`, `--target test-preempt`, `--target test-signal`,
 `--target test-tty`, `--target test-split`, and `--target test-fpe`. The split-space target checks
-0411 loading, separate instruction/data mapping, fork/exec, and linker limits.
+e711 s.out loading, separate instruction/data mapping, fork/exec, and linker limits.
 The preemption target runs CPU-bound scheduling/default-signal checks and a
 console-wakeup check with delayed input. The signal target checks caught
 handlers and context restoration, waiting for its completion marker so idle
@@ -106,8 +107,9 @@ libc execve both produce records. These are workload observations, not memory
 bounds for arbitrary inputs.
 
 After changing the driver or profiler, rebuild each harness used for tests.
-In particular, native self-hosting prefers `tests/build/selfhost/host/test_driver`
-when present, and the development-environment runner uses that driver. See the
+In particular, native self-hosting prefers `tests/build/selfhost-sout/host/test_driver`
+when present. The development-environment runner uses
+`v7z8000/usr/sys/build/test_driver`. See the
 [ABI rebuild sequence](../kernel/processes-and-exec.md#user-program-startup).
 
 ### Swap scheduling fault probes

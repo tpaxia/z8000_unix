@@ -158,7 +158,7 @@ filesystem use. There is no automatic cache invalidation or partial-sector I/O.
 controlled delayed-completion fixture. It switches the current process during
 interrupt completion and checks pinning, special-buffer contention, prior-lock
 preservation, page crossings, rejected ranges and partial read/write errors.
-`test-physio` exercises real syscalls in 0407 and 0411 executables at 8 MiB and
+`test-physio` exercises real syscalls in e707 and e711 s.out executables at 8 MiB and
 320 KiB RAM, including eight concurrent workers and verified swap traffic.
 It uses appended scratch sectors outside the filesystem, tests data/stack
 buffers and alignment/bounds errors, and checks progress and recovery at disk end.

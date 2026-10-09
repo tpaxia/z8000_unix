@@ -12,6 +12,7 @@ policy_only = len(sys.argv) == 3
 build = Path(sys.argv[1]).resolve()
 work = root / 'tests/build/services'
 work.mkdir(parents=True, exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 def run(args, **kw):
     r = subprocess.run(list(map(str, args)), capture_output=True, **kw)
     if r.returncode:
@@ -22,7 +23,7 @@ run(['make', '-C', tools, 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'v7mkfs'])
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), tools / 'servicetest.c'])
 (work / 'exec.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'exec.b', 'exec.az8'], cwd=work)
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'exec.b', 'exec.az8'], cwd=work)
 kernel = root / 'v7z8000/usr/sys'
 headers = ''.join('#include <sys/%s.h>\n' % h for h in ['param', 'dir', 'user', 'proc', 'text'])
 headers += '#include <stdio.h>\nextern int coremap[], nswap, runin, runout;\n'
@@ -36,8 +37,8 @@ victims = (kernel / 'sys/slp.c').read_text().split('struct proc *\nswapvict(skip
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), work / 'policy.c'])
 (work / 'policy.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'policy.b', 'policy.az8'], cwd=work)
-run([pcc / 'ldz8', '-x', tools / 'libc/crt0.b', work / 'policy.b', tools / 'libv7.a', '-o', work / 'policy'])
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'policy.b', 'policy.az8'], cwd=work)
+run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', tools / 'libc/crt0.b', work / 'policy.b', tools / 'libv7.a', '-o', work / 'policy'])
 # Compile actual shared text/fork routines with deterministic failing storage.
 shared = (kernel / 'sys/text.c').read_text()
 shared = shared[shared.index('/* V7 inode-backed'):]
@@ -49,8 +50,8 @@ head += '#include <stdio.h>\n#define malloc tmalloc\n#define mfree tmfree\n#defi
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), work / 'proc.c'])
 (work / 'proc.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'proc.b', 'proc.az8'], cwd=work)
-run([pcc / 'ldz8', '-x', tools / 'libc/crt0.b', work / 'proc.b', tools / 'libv7.a', '-o', work / 'proc'])
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'proc.b', 'proc.az8'], cwd=work)
+run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', tools / 'libc/crt0.b', work / 'proc.b', tools / 'libv7.a', '-o', work / 'proc'])
 schedule = (kernel / 'sys/slp.c').read_text().split('\nsched()\n',1)[1].split('/*\n * V7 sched() victim policy',1)[0]
 head = ''.join('#include <sys/%s.h>\n' % h for h in ['param', 'dir', 'user', 'proc', 'text'])
 head += '#include <stdio.h>\n#include <setjmp.h>\n#define sleep schedsleep\nint runin, runout;\n'
@@ -58,10 +59,10 @@ head += '#include <stdio.h>\n#include <setjmp.h>\n#define sleep schedsleep\nint 
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), work / 'sched.c'])
 (work / 'sched.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'sched.b', 'sched.az8'], cwd=work)
-run([pcc / 'ldz8', '-x', tools / 'libc/crt0.b', work / 'sched.b', tools / 'libv7.a', '-o', work / 'sched'])
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'sched.b', 'sched.az8'], cwd=work)
+run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', tools / 'libc/crt0.b', work / 'sched.b', tools / 'libv7.a', '-o', work / 'sched'])
 for layout in ['combined', 'split']:
-    run([pcc / 'ldz8', '-x', *(['-i'] if layout == 'split' else []),
+    run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', *(['-i'] if layout == 'split' else []),
          tools / 'libc/crt0.b', work / 'exec.b', tools / 'libv7.a', '-o', work / 'exectest'])
     # mkfs represents the set-ID bits as the second and third mode characters.
     (work / 'proto').write_text(f'''boot

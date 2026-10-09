@@ -340,12 +340,13 @@ exece()
 	if (u.u_error)
 		goto bad;
 
-	imageoff = sizeof(u.u_exdata);
-	if ((unsigned)u.u_exdata.ux_mag == 0xe707 ||
-	    (unsigned)u.u_exdata.ux_mag == 0xe711) {
-		if (execsout(ip) < 0) goto bad;
-		imageoff = 40;
+	if ((unsigned)u.u_exdata.ux_mag != 0xe707 &&
+	    (unsigned)u.u_exdata.ux_mag != 0xe711) {
+		u.u_error = ENOEXEC;
+		goto bad;
 	}
+	if (execsout(ip) < 0) goto bad;
+	imageoff = 40;
 
 	/* Validate the entire layout before replacing the old image. */
 	sep = u.u_exdata.ux_mag == 0411;

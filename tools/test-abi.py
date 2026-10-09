@@ -9,6 +9,7 @@ pcc = root / 'PCC-z8000/z8000'
 build = Path(sys.argv[1]).resolve()
 work = root / 'tests/build/abi'
 work.mkdir(parents=True, exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 def run(args, **kw):
     r = subprocess.run(list(map(str, args)), capture_output=True, **kw)
     if r.returncode:
@@ -19,7 +20,7 @@ run(['make', '-C', tools, 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'v7mkfs'])
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), tools / 'abitest.c'])
 (work / 'abi.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'abi.b', 'abi.az8'], cwd=work)
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'abi.b', 'abi.az8'], cwd=work)
 asm = '.text\n.globl _errno\n'
 for name, number, nargs in [('rawex11', 11, 3), ('rawmask', 60, 1),
                              ('rawroot', 61, 1), ('oldphys', 52, 0)]:
@@ -28,10 +29,10 @@ for name, number, nargs in [('rawex11', 11, 3), ('rawmask', 60, 1),
         asm += f'ld r{arg},{arg * 2}(r15)\n'
     asm += f'sc #{number}\ncp r0,#0xffff\njr ne,.L{name}\nld _errno,r1\n.L{name}:\nret\n'
 (work / 'raw.az8').write_text(asm)
-run([pcc / 'az8/az8', '-o', 'raw.b', 'raw.az8'], cwd=work)
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'raw.b', 'raw.az8'], cwd=work)
 (work / 'empty').write_bytes(b'')
 for layout in ['combined', 'split']:
-    run([pcc / 'ldz8', '-x', *(['-i'] if layout == 'split' else []),
+    run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', *(['-i'] if layout == 'split' else []),
          tools / 'libc/crt0.b', work / 'abi.b', work / 'raw.b', tools / 'libv7.a',
          '-o', work / 'abitest'])
     (work / 'proto').write_text(f'''boot

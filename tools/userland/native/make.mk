@@ -21,6 +21,6 @@ y.tab.b: y.tab.c
 	$(CC) $(CFLAGS) -c y.tab.c
 install: all
 	/bin/cp make /bin/ninstall
-	/bin/ln /bin/make /bin/make.$$$$ && /bin/mv /bin/ninstall /bin/make </dev/null
+	/bin/rm -f /bin/make.$$$$ && /bin/ln /bin/make /bin/make.$$$$ && /bin/mv /bin/ninstall /bin/make </dev/null
 clean:
 	/bin/rm -f *.b make y.tab.c

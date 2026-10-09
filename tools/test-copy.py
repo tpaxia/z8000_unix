@@ -14,6 +14,7 @@ pcc = root / 'PCC-z8000/z8000'
 build = Path(sys.argv[1]).resolve()
 work = root / 'tests/build/copy'
 work.mkdir(parents=True, exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 
 def run(args, **kw):
     result = subprocess.run(list(map(str, args)), capture_output=True, **kw)
@@ -35,9 +36,9 @@ source += (tools / 'copytest.c').read_text()
 run(['make', '-C', tools, 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'v7mkfs'])
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002', work / 'policy.c'])
 (work / 'policy.az8').write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-run([pcc / 'az8/az8', '-o', 'policy.b', 'policy.az8'], cwd=work)
+run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'policy.b', 'policy.az8'], cwd=work)
 for name, flags in [('copyn', []), ('copyi', ['-i'])]:
-    run([pcc / 'ldz8', *flags, '-x', tools / 'libc/crt0.b', work / 'policy.b',
+    run([tools.parent / 'tests/build/ldz8-host/ldz8', *flags, '-x', tools / 'libc/crt0.b', work / 'policy.b',
          tools / 'libv7.a', '-o', work / name])
 (work / 'proto').write_text(f'''boot
 800 64

@@ -144,27 +144,25 @@ def main():
     files = {}
     for name in ('dispatch.c', 'ldso.c'):
         files['usr/src/ldz8/'+name] = SOURCE / name
-    for name in ('ldz8.c', 'b.out.h'):
-        files['usr/src/ldz8/'+name] = ROOT / 'PCC-z8000/z8000' / name
     for name in ('soutfmt.c', 'soutfmt.h'):
         files['usr/src/ldz8/'+name] = ROOT / 'tools/asz8k/src' / name
     for name in ('start.so', 'help.so', 'seg.so', 'ext.so', 'libhelp.a', 'corrupt.so', 'far.so', 'relative.so',
                  'root.so', 'libchain.a', 'abs.so', 'local.so', 'localref.so'):
         files['usr/src/ldz8/'+name] = WORK / name
-    fs = Filesystem(ROOT / 'tests/build/userland-native/hd.img')
+    fs = Filesystem(ROOT / 'tests/build/userland-native-sout/hd.img')
     for name in ('runner', 'sh'):
         p = WORK / name; p.write_bytes(fs.read('/bin/'+name)); files['bin/'+name] = p
-    for name, path in {'lib/front': ROOT/'tests/build/native-environment/native/lib/front',
-                       'lib/back': ROOT/'tests/build/native-environment/native/lib/back'}.items():
+    for name, path in {'lib/front': ROOT/'tests/build/native-environment-sout/native/lib/front',
+                       'lib/back': ROOT/'tests/build/native-environment-sout/native/lib/back'}.items():
         if path.exists(): files[name] = path
     commands = []
     saved = Filesystem(WORK/'hd.img') if (WORK/'hd.img').exists() else None
     for n in ('dispatch','ldso','soutfmt'):
-        deps = [n+'.c'] + (['ldz8.c','b.out.h'] if n=='dispatch' else ['soutfmt.h'])
+        deps = [n+'.c'] + (['soutfmt.h'] if n != 'dispatch' else [])
         cached = False
         if saved:
             try:
-                cached = all(saved.read('/usr/src/ldz8/'+d) == files['usr/src/ldz8/'+d].read_bytes() for d in deps)
+                cached = saved.read('/usr/src/ldz8/'+n+'.b')[:2]==b'\xe7\x07' and all(saved.read('/usr/src/ldz8/'+d) == files['usr/src/ldz8/'+d].read_bytes() for d in deps)
                 if cached:
                     p = WORK/('saved-'+n+'.b'); p.write_bytes(saved.read('/usr/src/ldz8/'+n+'.b'))
                     files['usr/src/ldz8/'+n+'.b'] = p
@@ -193,7 +191,7 @@ def main():
     # Loader malformed-image tests use a normal C caller to verify ENOEXEC and
     # that a failed exec preserves the calling process, then concurrent execs.
     compile_c(SOURCE / 'tests/check.c', WORK / 'check.b')
-    run([ROOT/'PCC-z8000/z8000/ldz8', '-i', '-x', ROOT/'tools/libc/crt0.b', WORK/'check.b',
+    run([LD, '-i', '-x', ROOT/'tools/libc/crt0.b', WORK/'check.b',
          ROOT/'tools/libv7.a', '-o', WORK/'check'])
     files['bin/check'] = WORK/'check'
     files['bin/combined'] = WORK/'combined'; files['bin/split'] = WORK/'split'
@@ -230,13 +228,13 @@ def main():
         (WORK/'next.img').replace(WORK/'hd.img'); records.append(name)
         print('PASS', name, flush=True)
     fs = Filesystem(WORK/'hd.img')
-    for name in ('dispatch.c','ldso.c','ldz8.c','b.out.h','soutfmt.c','soutfmt.h'):
+    for name in ('dispatch.c','ldso.c','soutfmt.c','soutfmt.h'):
         assert fs.read('/usr/src/ldz8/'+name) == files['usr/src/ldz8/'+name].read_bytes(), name
     for name in trials:
         assert fs.read('/usr/src/ldz8/'+name) == (WORK/name).read_bytes(), name
     native = fs.read('/usr/src/ldz8/ldz8')
     (WORK/'ldz8-native').write_bytes(native)
-    sizes = dict(zip(('text','data','bss'), struct.unpack('>8H', native[:16])[1:4]))
+    sizes = dict(zip(('text','data','bss'), struct.unpack_from('>3H',native,28)))
     (WORK/'results.json').write_text(json.dumps({'steps': records, 'identical': list(trials), 'native': sizes}, indent=2)+'\n')
     print('PASS: native source rebuild;', len(trials), 'identical host/native links; s.out execution and ENOEXEC checks', sizes)
 

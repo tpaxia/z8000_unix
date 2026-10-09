@@ -6,6 +6,7 @@ import sys
 root=Path(__file__).resolve().parents[1]
 tools=root/'tools';pcc=root/'PCC-z8000/z8000';kernel=root/'v7z8000/usr/sys'
 build=Path(sys.argv[1]).resolve();work=root/'tests/build/bio';work.mkdir(parents=True,exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 def run(args,**kw):
     r=subprocess.run(list(map(str,args)),capture_output=True,**kw)
     if r.returncode: sys.stdout.buffer.write(r.stdout+r.stderr);r.check_returncode()
@@ -24,8 +25,8 @@ mapping+=paged[paged.index('/* Opaque B_PHYS descriptor:'):paged.index('/* V7 co
 for name,src in [('cache',work/'cache.c'),('persist',tools/'biopersist.c')]:
     pre=run(['cpp','-nostdinc','-undef','-Dz8000','-Dz8002','-I'+str(root/'v7z8000/usr/include'),src])
     (work/(name+'.az8')).write_bytes(run([pcc/'cz8/cz8'],input=pre))
-    run([pcc/'az8/az8','-o',name+'.b',name+'.az8'],cwd=work)
-    run([pcc/'ldz8','-x',tools/'libc/crt0.b',work/(name+'.b'),tools/'libv7.a','-o',work/name])
+    run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c','-o',name+'.b',name+'.az8'],cwd=work)
+    run([tools.parent / 'tests/build/ldz8-host/ldz8','-x',tools/'libc/crt0.b',work/(name+'.b'),tools/'libv7.a','-o',work/name])
 (work/'proto').write_text(f'''boot
 1600 96
 d--755 0 0

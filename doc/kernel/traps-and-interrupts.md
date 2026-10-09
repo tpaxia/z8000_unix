@@ -176,7 +176,7 @@ text/data/BSS reaches the MMU copy window at 0xe000.
 Run `cmake --build build --target test-fpe` to test arithmetic vectors,
 integer/format conversions, I/D memory operands, fork inheritance, exec reset,
 concurrent arithmetic, signal preservation, and invalid-instruction/memory
-and arithmetic-exception delivery in both 0407 and 0411 programs.
+and arithmetic-exception delivery in both e707 and e711 s.out programs.
 
 ## Interrupt Levels
 

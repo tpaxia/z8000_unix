@@ -2,7 +2,7 @@
 
 char buf[32], hex[65];
 char digits[] = "0123456789abcdef";
-char *asargs[] = {"az8", "-o", "/tmp/input.b", "/tmp/input.az8", 0};
+char *asargs[] = {"asz8k", "-c", "-o", "/tmp/input.b", "/tmp/input.az8", 0};
 char *ldargs[] = {"ldz8", "-x", "-x", "/lib/crt0.b", "/tmp/input.b",
                  "/tmp/lib.a", "/lib/libv7.a", "-o", "/tmp/result", 0};
 char *program[] = {"result", 0};
@@ -51,7 +51,7 @@ int argc;
 char **argv;
 {
     if (argc > 1) ldargs[2] = argv[1];
-    execute("/bin/az8", asargs);
+    execute("/bin/asz8k", asargs);
     execute("/bin/ldz8", ldargs);
     chmod("/tmp/result", 0755);
     execute("/tmp/result", program);

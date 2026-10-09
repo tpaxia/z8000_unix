@@ -81,7 +81,7 @@ The kernel accepts the resulting NONSEG layouts; see the authoritative
 SEG user processes remain unsupported. Kernel C, standalone `/boot` and fixed
 raw machine images use the shared tools. Default bootstrap and native rebuild
 commands use s.out. [Object utilities](object-utilities.md) inspect the same
-contract; their legacy reader remains temporary compatibility support.
+contract; obsolete a.out objects are rejected.
 
 Reproduction and validation commands are in
 [native rebuild](../development/native-rebuild.md#sout-linking-and-execution).

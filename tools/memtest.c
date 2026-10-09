@@ -68,7 +68,7 @@ char **argv;
 		for (i = 0; i < n; i++)
 			if (wait(&status) < 0 || status != 0) failed = 1;
 		if (expected < 0 && (brk(old+2048) < 0 || brk(old) < 0)) {
-			printf("memory: FAIL growth after reclaim\n"); failed = 1;
+			printf("memory: FAIL growth after reclaim old %u now %u errno %d\n", old, brk(0), errno); failed = 1;
 		}
 	}
 	printf("memory: %s\n", failed ? "FAILED" : "passed");

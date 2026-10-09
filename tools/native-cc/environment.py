@@ -22,7 +22,6 @@ CMD = ROOT / 'v7z8000/usr/src/cmd'
 def setup(preserve=False, reset_compiler=False, sout=True):
     WORK.mkdir(parents=True, exist_ok=True)
     extra = {'usr/lib/yaccpar': PCC / 'yacc/yaccpar'}
-    if not sout: extra['lib/libc.a']=PASSES/'libv7.a'
     modes={}
     for tool in ['front', 'back', 'oz8']:
         extra['lib/' + tool] = (PASSES/('target-'+tool)/tool if tool in ('front','back')
@@ -73,17 +72,15 @@ def setup(preserve=False, reset_compiler=False, sout=True):
     step('yacc', '/usr/src/yacc', ['/bin/cc -i y1.b y2.b y3.b y4.b -o /bin/yacc'])
     for name in ['ident.c', 'main.c', 'doname.c', 'misc.c', 'files.c', 'dosys.c', 'defs', 'gram.y']:
         extra['usr/src/make/' + name] = CMD / 'make' / name
-    if sout:
-        for path in [ROOT/'tools/sout-utils'/n for n in ('object.c','object.h')]+[
-                ROOT/'tools/asz8k/src'/n for n in ('soutfmt.c','soutfmt.h')]:
-            extra['usr/src/make/'+path.name]=path
+    for path in [ROOT/'tools/sout-utils'/n for n in ('object.c','object.h')]+[
+            ROOT/'tools/asz8k/src'/n for n in ('soutfmt.c','soutfmt.h')]:
+        extra['usr/src/make/'+path.name]=path
     step('make-parser', '/usr/src/make', ['/bin/yacc gram.y'])
     for name in ['ident', 'main', 'doname', 'misc', 'files', 'dosys', 'y.tab']:
-        step('make-' + name, '/usr/src/make', ['/bin/cc -O -c -Dunix=1 '+('-DSOUT ' if sout else '') + name + '.c'])
-    if sout:
-        for name in ('object','soutfmt'):
-            step('make-'+name,'/usr/src/make',['/bin/cc -O -c '+name+'.c'])
-    makeobjects='ident.b main.b doname.b misc.b files.b dosys.b y.tab.b'+(' object.b soutfmt.b' if sout else '')
+        step('make-' + name, '/usr/src/make', ['/bin/cc -O -c -Dunix=1 '+'-DSOUT ' + name + '.c'])
+    for name in ('object','soutfmt'):
+        step('make-'+name,'/usr/src/make',['/bin/cc -O -c '+name+'.c'])
+    makeobjects='ident.b main.b doname.b misc.b files.b dosys.b y.tab.b object.b soutfmt.b'
     step('make', '/usr/src/make', ['/bin/cc -i '+makeobjects+' -o /bin/make'])
     extra['usr/src/pcc/cgram.y'] = PCC / 'cz8/cgram.y'
     step('pcc-parser', '/usr/src/pcc', ['/bin/yacc -v cgram.y'])
@@ -94,7 +91,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         output = output.rsplit('/',1)[-1]
         objects = [name.rsplit('.',1)[0]+'.b' for name in sources]
         rules = ['CC=/bin/cc', 'CFLAGS=-O -Dunix=1 ' + flags, 'all: ' + output]
-        headers = {'az8':'mical.h inst.h ../b.out.h', 'ldz8':'soutfmt.h',
+        headers = {'ldz8':'soutfmt.h',
                    'asz8k':'acom.h asz8k.h obj.h soutfmt.h',
                    'nm':'object.h soutfmt.h','size':'object.h soutfmt.h','strip':'object.h soutfmt.h',
                    'front':'manifest macdefs mac2defs mfile1 mfile2 common',
@@ -115,23 +112,17 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         if group not in ('front','back'):commands.append('/bin/cp ' + output + ' ' + install)
         step(group+'-link', directory, commands)
 
-    makegroup('cc', {'ccz8.c': PCC/'ccz8.c'}, '/bin/cc', '-DTWOPASS'+(' -DSOUT' if sout else ''))
-    if sout:
-        assembler=ROOT/'tools/asz8k/src'
-        for path in assembler.iterdir():
-            if path.suffix in ('.h','.pd'): extra['usr/src/asz8k/'+path.name]=path
-        makegroup('asz8k',{p.name:p for p in sorted(assembler.glob('*.c'))},'/bin/asz8k')
-        for tool in ('nm','size','strip'):
-            for path in (ROOT/'tools/sout-utils/object.h',assembler/'soutfmt.h'):
-                extra['usr/src/'+tool+'/'+path.name]=path
-            makegroup(tool,{tool+'.c':ROOT/'tools/sout-utils'/(tool+'.c'),
-                            'object.c':ROOT/'tools/sout-utils/object.c',
-                            'soutfmt.c':assembler/'soutfmt.c'},'/bin/'+tool)
-    else:
-        for name in ['mical.h','inst.h']:
-            extra['usr/src/az8/' + name] = PCC/'az8'/name
-        extra['usr/src/b.out.h'] = PCC/'b.out.h'
-        makegroup('az8', {n+'.c':PCC/'az8'/(n+'.c') for n in 'error init ins ioz8 ps rel sdi sym scan'.split()}, '/bin/az8')
+    makegroup('cc', {'ccz8.c': PCC/'ccz8.c'}, '/bin/cc', '-DTWOPASS -DSOUT')
+    assembler=ROOT/'tools/asz8k/src'
+    for path in assembler.iterdir():
+        if path.suffix in ('.h','.pd'): extra['usr/src/asz8k/'+path.name]=path
+    makegroup('asz8k',{p.name:p for p in sorted(assembler.glob('*.c'))},'/bin/asz8k')
+    for tool in ('nm','size','strip'):
+        for path in (ROOT/'tools/sout-utils/object.h',assembler/'soutfmt.h'):
+            extra['usr/src/'+tool+'/'+path.name]=path
+        makegroup(tool,{tool+'.c':ROOT/'tools/sout-utils'/(tool+'.c'),
+                        'object.c':ROOT/'tools/sout-utils/object.c',
+                        'soutfmt.c':assembler/'soutfmt.c'},'/bin/'+tool)
     extra['usr/src/ldz8/soutfmt.h'] = ROOT/'tools/asz8k/src/soutfmt.h'
     makegroup('ldz8', {n+'.c': ROOT/'tools/ldz8'/(n+'.c') for n in ['dispatch','ldso']}
               | {'soutfmt.c': ROOT/'tools/asz8k/src/soutfmt.c'}, '/bin/ldz8')
@@ -151,24 +142,22 @@ def setup(preserve=False, reset_compiler=False, sout=True):
     syscalls = run([sys.executable, ROOT/'tools/libc/split-syscalls.py', '--names']).stdout.decode().split()
     objects = [n+'.b' for n in names] + ['setjmp.b'] + [n+'.b' for n in syscalls] + ['float.b','softfp.b','epu.b','arith.b','csv.b']
     libobjects = objects[:]
-    if sout:
-        objects += ['object.b','soutfmt.b']; libobjects=objects[:]
-        first = ['nlist.b','object.b','soutfmt.b']
-        libobjects = first + [n for n in objects if n not in first]
-        for path in [ROOT/'tools/sout-utils'/n for n in ('object.h','object.c')]+[
-                ROOT/'tools/asz8k/src'/n for n in ('soutfmt.h','soutfmt.c')]:
-            extra['usr/src/libc/'+path.name]=path
+    objects += ['object.b','soutfmt.b']; libobjects=objects[:]
+    first = ['nlist.b','object.b','soutfmt.b']
+    libobjects = first + [n for n in objects if n not in first]
+    for path in [ROOT/'tools/sout-utils'/n for n in ('object.h','object.c')]+[
+            ROOT/'tools/asz8k/src'/n for n in ('soutfmt.h','soutfmt.c')]:
+        extra['usr/src/libc/'+path.name]=path
     rules = ['all: libc.a']
     for name in names:
         options = [ROOT/'v7z8000/usr/src/libc'/part/(name+'.c') for part in ['stdio','gen']]
         options.append(ROOT/'tools/libc'/(name+'.c'))
         source = next(p for p in options if p.exists())
-        if sout and name=='nlist': source=ROOT/'tools/sout-utils/nlist.c'
+        if name=='nlist': source=ROOT/'tools/sout-utils/nlist.c'
         extra['usr/src/libc/'+name+'.c'] = source
-        rules += [name+'.b: '+name+'.c'+(' object.h soutfmt.h' if sout and name=='nlist' else ''), '\t/bin/cc -O -Dunix=1 -c '+name+'.c']
-    if sout:
-        for name in ('object','soutfmt'):
-            rules += [name+'.b: '+name+'.c object.h soutfmt.h','\t/bin/cc -O -Dunix=1 -c '+name+'.c']
+        rules += [name+'.b: '+name+'.c'+(' object.h soutfmt.h' if name=='nlist' else ''), '\t/bin/cc -O -Dunix=1 -c '+name+'.c']
+    for name in ('object','soutfmt'):
+        rules += [name+'.b: '+name+'.c object.h soutfmt.h','\t/bin/cc -O -Dunix=1 -c '+name+'.c']
     for name in ['setjmp'] + syscalls + ['float','softfp','epu','arith','csv']:
         if name == 'setjmp': source=ROOT/'tools/libc'/(name+'.az8')
         elif name=='arith': source=ROOT/'tools/arith.az8'
@@ -178,7 +167,7 @@ def setup(preserve=False, reset_compiler=False, sout=True):
             continue
         else: source=ROOT/'tools/libv7'/(name+'.az8')
         extra['usr/src/libc/'+name+'.az8']=source
-        rules += [name+'.b: '+name+'.az8','\t/bin/'+('asz8k -zc' if sout else 'az8')+' -o '+name+'.b '+name+'.az8']
+        rules += [name+'.b: '+name+'.az8','\t/bin/asz8k -zc -o '+name+'.b '+name+'.az8']
     rules += ['libc.a: '+' '.join(objects),'\t/bin/rm -f libc.a']
     for i in range(0,len(objects),20):
         rules.append('\t/bin/ar qc libc.a '+' '.join(libobjects[i:i+20]))
@@ -187,10 +176,10 @@ def setup(preserve=False, reset_compiler=False, sout=True):
     step('libc-archive','/usr/src/libc',['/bin/rm -f libc.a','/bin/make libc.a'])
     extra['usr/src/libc/libctest.c']=ROOT/'tools/libctest.c'
     step('libc-test','/usr/src/libc',['/bin/cc -O -c libctest.c',
-        '/bin/ldz8 '+('-z ' if sout else '')+'-i -x /lib/crt0.b libctest.b libc.a -o libctest',
+        '/bin/ldz8 -z -i -x /lib/crt0.b libctest.b libc.a -o libctest',
         '/bin/cp libctest /bin/libctest','/bin/libctest'])
     extra['usr/src/libc/crt0.az8']=ROOT/'tools/libc/crt0.az8'
-    step('install-libc','/usr/src/libc',['/bin/'+('asz8k -zc' if sout else 'az8')+' -o crt0.b crt0.az8',
+    step('install-libc','/usr/src/libc',['/bin/asz8k -zc -o crt0.b crt0.az8',
         '/bin/cp crt0.b /lib/crt0.b','/bin/cp libc.a /lib/libc.a'])
     # Close the bootstrap loop using native make, cpp, assembler, linker,
     # archive and parser output. Two-pass glue is staged as C source.
@@ -234,12 +223,11 @@ def setup(preserve=False, reset_compiler=False, sout=True):
         ('make',makeobjects,'make')]:
         step('final-'+tool,'/usr/src/'+group,['/bin/cc -i '+objects+' -o '+tool,
                                              '/bin/cp '+tool+' /bin/'+tool])
-    asname='asz8k' if sout else 'az8'
+    asname='asz8k'
     finaltools=[('cc','/bin/cc'),(asname,'/bin/'+asname),('ldz8','/bin/ldz8'),('cpp','/lib/cpp')]
-    if sout: finaltools += [(n,'/bin/'+n) for n in ('nm','size','strip')]
+    finaltools += [(n,'/bin/'+n) for n in ('nm','size','strip')]
     for group, destination in finaltools:
         remove=group
-        if group=='az8':remove+=' error.b init.b ins.b ioz8.b ps.b rel.b sdi.b sym.b scan.b'
         if group=='asz8k':remove+=' '+' '.join(p.stem+'.b' for p in sorted((ROOT/'tools/asz8k/src').glob('*.c')))
         step('final-'+group,'/usr/src/'+group,['/bin/rm -f '+remove,'/bin/make',
                                               '/bin/cp '+group+' '+destination])
@@ -248,21 +236,20 @@ def setup(preserve=False, reset_compiler=False, sout=True):
             extra['usr/src/dc.h']=CMD/'dc/dc.h'
             step('native-assembler','/usr/src',
                  ['/bin/cc -O -Dunix=1 -Dz8000 -Dz8002 -S dc.c',
-                  '/bin/'+('asz8k -zc' if sout else 'az8')+' -o dc.b dc.az8'])
+                  '/bin/asz8k -zc -o dc.b dc.az8'])
     step('final-smoke','/tmp',['/bin/cc -O -i /usr/src/hello.c -o hello','/tmp/hello','/bin/libctest'])
     for group,names in [('yacc','y1 y2 y3 y4'),('make','ident main doname misc files dosys y.tab')]:
-        objects=[n+'.b' for n in names.split()]+(['object.b','soutfmt.b'] if sout and group=='make' else [])
+        objects=[n+'.b' for n in names.split()]+(['object.b','soutfmt.b'] if group=='make' else [])
         deps='dextern files' if group=='yacc' else 'defs'
-        rules=['CFLAGS=-O -Dunix=1'+(' -DSOUT' if sout and group=='make' else ''),'all: '+group,group+': '+' '.join(objects),
+        rules=['CFLAGS=-O -Dunix=1'+(' -DSOUT' if group=='make' else ''),'all: '+group,group+': '+' '.join(objects),
                '\t/bin/cc -i '+' '.join(objects)+' -o '+group]
         for name in names.split():
             rules += [name+'.b: '+name+'.c '+deps,'\t/bin/cc $(CFLAGS) -c '+name+'.c']
         if group=='make':
             rules += ['files.b: /usr/include/arport.h','y.tab.c: gram.y /bin/yacc /usr/lib/yaccpar','\t/bin/yacc gram.y']
-            if sout:
-                rules += ['files.b: object.h soutfmt.h']
-                for name in ('object','soutfmt'):
-                    rules += [name+'.b: '+name+'.c object.h soutfmt.h','\t/bin/cc $(CFLAGS) -c '+name+'.c']
+            rules += ['files.b: object.h soutfmt.h']
+            for name in ('object','soutfmt'):
+                rules += [name+'.b: '+name+'.c object.h soutfmt.h','\t/bin/cc $(CFLAGS) -c '+name+'.c']
         path=WORK/(group+'.mk'); path.write_text('\n'.join(rules)+'\n')
         extra['usr/src/'+group+'/makefile']=path
     rules=['all: ar cp rm mv cmp']
@@ -271,13 +258,12 @@ def setup(preserve=False, reset_compiler=False, sout=True):
                   '\t/bin/cc -O -Dunix=1 -i '+name+'.c -o '+name]
     path=WORK/'utils.mk';path.write_text('\n'.join(rules)+'\n');extra['usr/src/utils/makefile']=path
     rules=['all:']
-    for group in ['utils','yacc','make','cc','cpp',asname,'ldz8','libc','front','back','oz8']+(['nm','size','strip'] if sout else []):
+    for group in ['utils','yacc','make','cc','cpp',asname,'ldz8','libc','front','back','oz8']+['nm','size','strip']:
         rules.append('\tcd '+group+' && /bin/make all')
     path=WORK/'all.mk';path.write_text('\n'.join(rules)+'\n');extra['usr/src/makefile']=path
     step('make-all','/usr/src',['/bin/make all'])
     # The bootstrap compiler may predate code-generation changes. Rebuild
     # libc with the newly built compiler before validating its objects.
-    # The legacy profile also compares the current cross-built reference.
     for i in range(0,len(libobjects),20):
         batch=' '.join(libobjects[i:i+20])
         step('final-libc-'+str(i),'/usr/src/libc',
@@ -301,13 +287,13 @@ def setup(preserve=False, reset_compiler=False, sout=True):
 def summarize(sout=True):
     fs=Filesystem(WORK/'hd.img')
     manifest=WORK/'staged.json'
-    if sout: assert manifest.is_file(),'missing staged-source manifest'
+    assert manifest.is_file(),'missing staged-source manifest'
     if manifest.is_file():
         for target,digest in json.loads(manifest.read_text()).items():
             assert hashlib.sha256(fs.read('/'+target)).hexdigest()==digest,target
     report={}
-    tools=['cc','asz8k' if sout else 'az8','ldz8','make','ar','yacc','cp','rm','mv','cmp']
-    if sout: tools += ['nm','size','strip']
+    tools=['cc','asz8k','ldz8','make','ar','yacc','cp','rm','mv','cmp']
+    tools += ['nm','size','strip']
     for path in ['/bin/'+n for n in tools] + [
             '/lib/front','/lib/back','/lib/oz8','/lib/cpp']:
         data=fs.read(path)
@@ -327,18 +313,13 @@ def summarize(sout=True):
         assert offset==len(data)
         return out
     actual=members(data)
-    if sout:
-        expected=members((ROOT/'tests/build/sout-cc/libc.a').read_bytes())
-        assert set(actual)==set(expected)|{'object.b','soutfmt.b'}
-        assert list(actual)[:3]==['nlist.b','object.b','soutfmt.b']
-        for name,body in actual.items():
-            assert struct.unpack_from('>H',body)[0]==0xe707,name
-        report['format']='s.out'
-        report['libc_members_validated']=len(actual)
-    else:
-        expected=members((PASSES/'libv7.a').read_bytes())
-        assert list(actual)==list(expected) and actual==expected
-        report['libc_members_identical']=len(actual)
+    expected=members((ROOT/'tests/build/sout-cc/libc.a').read_bytes())
+    assert set(actual)==set(expected)|{'object.b','soutfmt.b'}
+    assert list(actual)[:3]==['nlist.b','object.b','soutfmt.b']
+    for name,body in actual.items():
+        assert struct.unpack_from('>H',body)[0]==0xe707,name
+    report['format']='s.out'
+    report['libc_members_validated']=len(actual)
     assert fs.read('/usr/src/pcc/y.tab.c')==(PCC/'cz8/cgram.c').read_bytes()
     report['native_parser_identical']=True
     (WORK/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -357,7 +338,7 @@ def main():
     parser.add_argument('--sout',action='store_true',default=True,help=argparse.SUPPRESS)
     args = parser.parse_args()
     global WORK
-    if args.sout: WORK=ROOT/'tests/build/native-environment-sout'
+    WORK=ROOT/'tests/build/native-environment-sout'
     if args.reset_compiler and not args.refresh:parser.error('--reset-compiler requires --refresh')
     if args.summary:
         summarize(args.sout); return

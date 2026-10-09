@@ -10,6 +10,7 @@ pcc = root / 'PCC-z8000/z8000'
 build = Path(sys.argv[1]).resolve()
 work = root / 'tests/build/exec'
 work.mkdir(parents=True, exist_ok=True)
+(work / 'asz8k.pd').write_bytes((tools / 'asz8k/src/asz8k.pd').read_bytes())
 def run(args, **kw):
     r = subprocess.run(list(map(str, args)), capture_output=True, **kw)
     if r.returncode:
@@ -21,12 +22,12 @@ for name, source in [('exec', 'exectest.c'), ('args', 'argtest.c')]:
     pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
                '-I' + str(root / 'v7z8000/usr/include'), tools / source])
     (work / (name + '.az8')).write_bytes(run([pcc / 'cz8/cz8'], input=pre))
-    run([pcc / 'az8/az8', '-o', name + '.b', name + '.az8'], cwd=work)
+    run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', name + '.b', name + '.az8'], cwd=work)
 (work / 'bad').write_bytes(b'not an executable\n')
 for layout in ['combined', 'split']:
-    run([pcc / 'ldz8', '-x', *(['-i'] if layout == 'split' else []),
+    run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', *(['-i'] if layout == 'split' else []),
          tools / 'libc/crt0.b', work / 'exec.b', tools / 'libv7.a', '-o', work / 'exectest'])
-    run([pcc / 'ldz8', '-x', *(['-i'] if layout == 'split' else []),
+    run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', *(['-i'] if layout == 'split' else []),
          tools / 'libc/crt0.b', work / 'args.b', tools / 'libv7.a', '-o', work / 'argtest'])
     # mkfs represents the set-ID bits as the second and third mode characters.
     (work / 'proto').write_text(f'''boot

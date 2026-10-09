@@ -50,8 +50,14 @@ discards retained compiler objects and resumes at their rebuild.
 The native environment rebuilds the compiler and libc through its guest
 makefiles. Earlier two-generation convergence measurements are recorded in
 [implementation history](../history/implementation-steps.md). The older
-standalone `selfhost.py` harness still needs its legacy fixture links migrated;
-it is not part of the default s.out bootstrap procedure.
+standalone harness now uses the same s.out assembler/linker and seed library:
+
+```sh
+python3 tools/native-cc/selfhost.py --setup
+```
+
+Its migrated setup has been checked. The two-generation measurements above
+are historical; they have not been rerun with this migrated harness.
 
 ## Essential userland
 
@@ -110,16 +116,20 @@ make install
 Native yacc/lex generate parsers and scanners; awk's procedure-table generator
 is built and run natively. Libraries use native portable ar. Installation uses
 temporary files and rename when replacing executing tools, and preserves extra
-links while their text inodes are busy. Parser packages may rebuild after yacc
-is replaced.
+links while their text inodes are busy. Repeated installation removes a stale
+backup name before creating the new link, since process IDs repeat across
+emulator boots. Parser packages may rebuild after yacc is replaced.
 
 Outputs are under `tests/build/userland-native-sout/`. `results.json` records
 completed packages; `summary.json` and `smoke.log` record inventory validation
 and runtime checks after installation.
 Running without options resumes. `--limit N` limits additional packages;
 `--refresh` restages recipes while retaining outputs. After rebuilding the
-native environment, `--refresh --update-toolchain` installs its exported tools
-on the retained disk. Changed flags or ABI need appropriate object rebuilding.
+native environment, `--refresh --update-toolchain` refreshes compiler tools,
+startup and libc while retaining completed full-userland programs. Changed
+packages, flags or ABI need appropriate object rebuilding. Native make's
+Z8000 `.az8.b` rule now invokes `asz8k -c`; the portable-archive trial checks
+C, yacc and assembly built-in rules together.
 
 Terminal-table conversion preserves nroff's original data-resource layout;
 these resources are neither executables nor linker inputs.
@@ -174,29 +184,53 @@ compiler controls and failure cleanup.
 python3 tools/sout-utils/test.py
 ```
 
-The shared reader still accepts legacy a.out for transitional inspection.
-Its historical trial includes legacy fixtures that require migration before
-reader retirement; see [object utilities](../toolchain/object-utilities.md).
-The default native environment already installs the s.out utilities and nlist
-adapter.
+The trial builds positive fixtures as s.out and verifies obsolete a.out
+rejection by nm, size, strip and nlist, including portable-archive members.
+Rejected strip inputs retain their bytes and permissions. See
+[object utilities](../toolchain/object-utilities.md) for coverage.
+
+Kernel exec rejection is tested separately with complete obsolete images and
+valid combined/split controls:
+
+```sh
+python3 tools/test-object-formats.py v7z8000/usr/sys/build
+```
+
+The native environment and full-userland disks install the strict reader.
+`formats-readers.json` under each output directory records the targeted native
+reader rebuilds. The environment retains per-step `formats-*.log` files; the
+full disk retains `formats-readers.log` and the subsequent `smoke.log`.
 
 ## s.out bootstrap and native environment
 
 Use the default bootstrap and environment commands above. No format-selection
-option is required. The remaining phaseout work is tracked in
+option is required. See the current
 [ABI and formats](../toolchain/abi.md).
 
-## Experimental Zilog assembler
+## Assembler host/native comparison
 
-The assembler is now the installed production assembler. Its separate historical
-host oracle can be built with `make -C tools/asz8k oracle`; that executable is
-not installed in Unix. The older native multi-format trial is historical and
-needs migration before it can test the current production defaults.
+```sh
+python3 tools/asz8k/native.py --reuse-tool
+python3 tools/asz8k/host.py
+```
+
+The trial uses the verified native assembler from the environment, produces
+s.out, and compares objects, listings and diagnostic cases with the host build.
+Omit `--reuse-tool` to rebuild the assembler for the trial. Its separate
+historical host oracle can be built with `make -C tools/asz8k oracle`; that
+executable is not installed in Unix.
 
 ## Complete cross-built userland
 
-The older cross-built package runner remains a legacy regression producer; the
-native procedure above is the production path. Package source coverage is
+The diagnostic cross-build runner also uses the shared s.out assembler/linker:
+
+```sh
+python3 tools/userland/build.py [command ...]
+```
+
+It compiles on the host and does not establish native build coverage. Old
+cached executables must be rebuilt; comparison-image staging rejects their
+obsolete headers. The native procedure above is the production path. Package source coverage is
 listed in [userland](../toolchain/userland.md).
 
 ## Scope

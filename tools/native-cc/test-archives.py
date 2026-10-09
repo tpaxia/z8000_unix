@@ -7,12 +7,13 @@ from build import ROOT, PCC, image, run
 from selfhost import Filesystem
 
 work = ROOT/'tests/build/portable-ar'
-env = ROOT/'tests/build/native-environment'
+env = ROOT/'tests/build/native-environment-sout'
+native = env/'native/bin'
 work.mkdir(parents=True,exist_ok=True)
-extra = {'lib/libc.a':ROOT/'tools/libv7.a', 'bin/runner':env/'runner',
-         'bin/check':env/'check', 'bin/make':env/'make.out',
-         'bin/cp':env/'cp.out', 'bin/rm':env/'rm.out',
-         'bin/mv':env/'mv.out', 'bin/yacc':env/'yacc.out',
+extra = {'lib/libc.a':ROOT/'tests/build/sout-cc/libc.a', 'bin/runner':env/'runner',
+         'bin/check':env/'check', 'bin/make':native/'make',
+         'bin/cp':native/'cp', 'bin/rm':native/'rm',
+         'bin/mv':native/'mv', 'bin/yacc':native/'yacc',
          'usr/lib/yaccpar':PCC/'yacc/yaccpar',
          'tmp/ar.c':ROOT/'v7z8000/usr/src/cmd/ar.c'}
 fixtures = {'odd':b'abcde', 'new':b'updated!', 'helper.c':b'helper() { return 42; }\n',
@@ -46,14 +47,14 @@ plan = [
     '0 - /bin/make -q -f archive.mk lib.a(helper.b)',
     '0 - /bin/make -q -f archive.mk lib.a((_helper))',
     '0 - /bin/rm helper.b', '0 - /bin/make -f empty.mk helper.b tiny.b plain.b',
-    '0 - /bin/check 0407 helper.b', '0 - /bin/check 0407 tiny.b',
-    '0 - /bin/check 0407 plain.b',
+    '0 - /bin/check e707 helper.b', '0 - /bin/check e707 tiny.b',
+    '0 - /bin/check e707 plain.b',
 ]
 (work/'plan').write_text('\n'.join(plan)+'\n');extra['tmp/plan']=work/'plan'
 image(extra,work/'hd.img')
 driver=ROOT/'v7z8000/usr/sys/build/test_driver'
-result=subprocess.run(list(map(str,[driver,'-c','30000000000','-d',work/'hd.img',
-    '-o',work/'saved.img','-i','runner\\n','-w','NATIVE CC DONE','-I','exit\\n',
+result=subprocess.run(list(map(str,[driver,'-c','100000000000','-d',work/'hd.img',
+    '-o',work/'saved.img','-i','runner /tmp/plan /tmp\\n','-w','NATIVE CC DONE','-I','exit\\n',
     '-x','NATIVE CC PASS'])),cwd=ROOT/'v7z8000/usr/sys/build',capture_output=True,timeout=900)
 (work/'run.log').write_bytes(result.stdout+result.stderr)
 result.check_returncode()

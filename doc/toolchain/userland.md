@@ -48,7 +48,8 @@ hangman, quiz and wump. Quiz and fortune data are installed with them.
 
 `nm`, `size`, `strip` and libc `nlist` use the shared s.out reader; `nm` also
 reads portable archives. `prof` uses the same reader, and `file` recognizes s.out
-and portable archives. Legacy a.out inspection remains during the phaseout.
+and portable archives. The shared reader rejects obsolete a.out objects; see
+[object utilities](object-utilities.md).
 Lint uses 16-bit alignment for long and floating types on Z8000.
 Cpp selects the original signed-character table layout for Z8000, as it does
 for PDP-11 and VAX; its preprocessing algorithm is unchanged.

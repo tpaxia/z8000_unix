@@ -13,6 +13,7 @@ tools/root.img
 tools/v7mkfs
 tools/*.b
 tools/*.az8
+tools/asz8k.pd
 !tools/sigregs.az8
 !tools/faultregs.az8
 !tools/stackregs.az8

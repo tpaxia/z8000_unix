@@ -75,13 +75,13 @@ root (with the cross-toolchain available):
 python3 tools/native-cc/build.py
 cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
-cmake -S v7z8000/usr/sys -B tests/build/selfhost/host -DCMAKE_BUILD_TYPE=Release
-cmake --build tests/build/selfhost/host --target test_driver
+cmake -S v7z8000/usr/sys -B tests/build/selfhost-sout/host -DCMAKE_BUILD_TYPE=Release
+cmake --build tests/build/selfhost-sout/host --target test_driver
 python3 tools/native-cc/selfhost.py --setup
 python3 tools/native-cc/environment.py --setup
 ```
 
-Rebuild the separate host driver as well: the native scripts prefer it when
+Rebuild the separate host driver as well: selfhost.py prefers it when
 present, and its profiler must recognize syscall 59. Refreshing an old disk is
 insufficient. `test-abi` verifies the raw slots and libc interfaces in combined
 and split I/D executables, including inherited/empty environments, file modes,
@@ -111,13 +111,14 @@ and `stime` (25); the latter loads the pointed-to time into R1:R2, high word fir
 
 ### s.out loading
 
-On `work/native-asz8k`, exec also accepts ZEUS NONSEG e707 combined and e711
-separate-I/D executables, alongside the transitional 0407/0411 a.out layouts.
+On `work/native-asz8k`, exec accepts only ZEUS NONSEG e707 combined and e711
+separate-I/D executables. Obsolete 0407/0410/0411/0405 a.out images return ENOEXEC.
 It decodes the 24-byte descriptor and one 16-byte segment entry explicitly,
 then normalizes sizes and entry into the existing exec state. The image starts
 at byte 40. Shared inode-backed text reads from this image offset; swapping,
-protection, argument staging, credentials and CPU startup use the same policy
-as the existing layouts.
+protection, argument staging, credentials and CPU startup retain the original
+V7 policy. Internal 0407/0411 image-kind values select combined/split policy;
+they do not authorize those on-disk headers.
 
 Relocation must be stripped (`SF_STRIP` alone). The segment must be number zero
 without bound/offset/stack attributes, and header image/BSS totals must match
@@ -126,6 +127,8 @@ must occupy complete 14-byte records. Truncated images, unsupported formats,
 invalid entry/alignment and layouts that leave insufficient stack space fail
 before replacing the caller's image. SEG user execution is not implemented.
 The [linker reference](../toolchain/ldz8.md) defines producer layout and limits.
+`test-object-formats` executes valid s.out controls in both layouts and requires
+ENOEXEC for eight complete obsolete images, using direct exec calls.
 
 ### Exec policy and CPU helpers
 
@@ -206,8 +209,8 @@ The format retains V7's u-area/data/stack ordering, using this port's sizes:
 | 4096 | u_dsize × 64 bytes from user data address 0 |
 | 4096 + u_dsize × 64 | u_ssize × 64 bytes from the top-of-address-space stack mapping |
 
-The unmapped gap and allocation padding are excluded. Shared 0411 instruction
-text is omitted; 0407 text already lies within its combined data image.
+The unmapped gap and allocation padding are excluded. Shared e711 instruction
+text is omitted; e707 text already lies within its combined data image.
 `machine/paged.c:coredump()` writes the sections through their existing mappings.
 It does not call estabur, allocate replacement memory, or reproduce the PDP-11's
 temporary contiguous remapping. Normal scheduling/swap-in restores the mappings
@@ -273,13 +276,13 @@ full saved frame. Arbitrary u-area writes are rejected.
 
 The shared protocol calls `traceword`, `traceuser` and `tracego` machine helpers.
 V7's instruction-write restriction is retained: shared or sticky pure text fails
-with EIO. An exclusive 0411 image is patched through the physical copy window;
+with EIO. An exclusive e711 image is patched through the physical copy window;
 its user instruction mapping remains read-only. Any older swap copy is freed so
 subsequent eviction writes the modified image. Unlike blindly reusing V7's
 ITEXT-clearing operation, this port retains inode write exclusion and marks the
 image XTRC; a fresh exec of that patched prototype returns ETXTBSY until its last
 reference exits. Other executing processes and the executable file are untouched.
-0407 instruction writes affect only that process's private combined image.
+e707 instruction writes affect only that process's private combined image.
 
 `SC #255` (word 0x7fff) is the breakpoint trap, outside the syscall table.
 It preserves general registers and reports SIGTRAP. As specified for SC, the
