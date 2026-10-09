@@ -148,3 +148,10 @@ copy faults and non-root rejection. It also runs native `ps` with resident and
 swapped processes on a 512 KiB machine. It requires the native compiler seed.
 The native boot packer is compiled and run in the same trial; its output must
 retain the complete matching kernel symbol table while installing the vectors.
+The final dump trial freezes a 512 KiB machine with resident/swapped processes,
+a traced stop and a zombie, captures RAM and swap, then runs native `ps k`
+after a separate boot. It checks default/explicit paths, PID filtering and
+missing/truncated input failures. To repeat only that trial after building the
+inspection tools, run `python3 tools/test-ps-dump.py`.
+It also injects a real kernel fault, captures the panic-halted machine and
+checks its process report after another boot.

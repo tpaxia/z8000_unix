@@ -45,8 +45,28 @@ physical window and restores its mapping with interrupts masked.
 The installed `/unix` retains global s.out symbols. V7 `ps`, `pstat`, `dmesg`
 and `iostat` resolve those symbols and read `/dev/kmem`; process u-areas and
 stack extents come from `/dev/mem` or `/dev/swap`. The live views are best-effort
-snapshots, not atomic debugger captures. `ps k` kernel-dump inspection remains
-unsupported. `pstat -u` takes a physical 2 KiB frame number in octal.
+snapshots, not atomic debugger captures. `pstat -u` takes a physical 2 KiB frame
+number in octal.
+
+`ps axlk [namelist [core [swap]]]` inspects a kernel RAM dump. Defaults are
+`/unix`, `/usr/sys/core` and `/dev/swap`, retaining V7's live-swap default.
+Use absolute pathnames because V7 `ps` changes directory to `/dev`. For a
+reliable historical view, pass a swap image captured with the RAM dump; live
+swap may already have been reused. The namelist must belong to the dumped
+kernel and contain its global symbols.
+
+The dump is raw installed physical RAM, starting at address zero, with no
+header or MMU translation. Kernel table symbols are offsets into physical bank
+1 (`0x10000`); resident u-areas and page extents use their physical frame
+addresses. Swapped u-areas/data/private text/stacks use the same offsets as live
+inspection. RAM length is checked against the dumped `physmem`; missing kernel
+tables or unreadable u-areas fail the command. A missing swap file is permitted
+when all selected processes are resident. Zombies need no u-area. Processes
+locked during a memory transition are skipped, as in live inspection.
+
+The standalone emulator's `-K` and `-W` options save physical RAM and swap at
+the same stopped CPU state. They also work after a panic halt. This is a host
+capture mechanism; the kernel does not yet write crash dumps to disk itself.
 
 The console keeps V7's diagnostic `msgbuf`/`msgbufp` ring for `dmesg`. Normal
 TTY transmission bypasses that ring. TTY input/output counters accompany the

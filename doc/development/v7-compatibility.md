@@ -149,7 +149,8 @@ installed inventory, runtime coverage and remaining command ports.
   accounts and terminal configuration are not integrated.
 - Memory-device translation uses the paged MMU instead of PDP-11 mapping
   registers; inspection tools follow the current physical extent layout.
-  Live snapshots can race process changes; kernel-dump inspection is unported.
+  Live snapshots can race process changes. Kernel-dump inspection adds bank-1
+  translation for raw physical RAM and optional saved RAM/swap pathnames.
 - Original disabled-multiplexor stubs are selected. There is no active channel
   device or UNIBUS map implementation.
 - Ptrace single-stepping requires hardware support. Automatic growth has the

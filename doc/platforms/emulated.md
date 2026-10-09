@@ -59,6 +59,12 @@ the root unit. Swap traffic never uses the root filesystem's blocks. Final
 statistics report swap sectors read/written, peak simultaneous read-only text
 mappings, protection faults and stack warnings.
 
+`-K physical-core` saves raw installed low RAM and `-W saved-swap` saves the
+secondary ATA unit when the run stops. Both capture the same stopped CPU state,
+including after a panic halt; `-o` remains the root-disk save. Keep the matching
+unstripped `/unix` namelist with these files. See
+[`ps k` dump inspection](../kernel/devices-and-io.md).
+
 The kernel now uses split I/D; rebuild `kernel.bin`, `handler.bin`,
 `handler-data.bin`, ROM and test_driver together. RAM below the 192 KiB fixed
 reservation is rejected before boot; the kernel also rejects RAM insufficient

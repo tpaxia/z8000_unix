@@ -12,12 +12,14 @@
 #include <sys/dir.h>
 #include <sys/user.h>
 #include <sys/memmap.h>
+#include <sys/stat.h>
 
 struct nlist nl[] = {
 	{ "_proc" },
 	{ "_swapdev" },
 	{ "_swplo" },
 	{ "_memory" },
+	{ "_physmem" },
 	{ "" },
 };
 
@@ -42,6 +44,10 @@ int	mem;
 int	swmem;
 int	swap;
 daddr_t	swplo;
+long kbase;
+unsigned dumpframes;
+int dumperror;
+char *swapf = "/dev/swap";
 
 int	ndev;
 struct devl {
@@ -106,45 +112,59 @@ bbreak:
 		exit(1);
 	}
 	nlist(argc>2? argv[2]:"/unix", nl);
-	if (nl[0].n_type==0) {
+	for(i=0; i<4; i++) if (nl[i].n_type==0) {
 		fprintf(stderr, "No namelist\n");
 		exit(1);
 	}
 	coref = "/dev/kmem";
-	if(kflg)
-		coref = "/usr/sys/core";
+	if(kflg) {
+		coref = argc>3? argv[3]:"/usr/sys/core";
+		swapf = argc>4? argv[4]:"/dev/swap";
+		kbase = 65536L;
+	}
 	if ((mem = open(coref, 0)) < 0) {
 		fprintf(stderr, "No mem\n");
 		exit(1);
 	}
-	swmem = open("/dev/mem", 0);
-	if(swmem < 0 || !nl[3].n_type || kflg) {
-		fprintf(stderr, "No physical memory/map (kernel dumps unsupported)\n");
+	swmem = open(kflg? coref:"/dev/mem", 0);
+	if(swmem < 0) {
+		fprintf(stderr, "No physical memory\n");
 		exit(1);
 	}
-	lseek(mem, (long)nl[3].n_value, 0);
-	if(read(mem, (char *)maps, sizeof maps) != sizeof maps) exit(1);
+	if(kflg) {
+		struct stat st;
+		if(!nl[4].n_type) {fprintf(stderr, "No RAM size in namelist\n");exit(1);}
+		kread(4, (char *)&dumpframes, sizeof dumpframes);
+		if(fstat(mem, &st)<0 || (st.st_mode&S_IFMT)!=S_IFREG ||
+		    dumpframes<96 || dumpframes>4096 || st.st_size!=(long)dumpframes*MEM_FRAME) {
+			fprintf(stderr, "Incomplete physical memory dump\n");exit(1);
+		}
+	}
+	kread(3, (char *)maps, sizeof maps);
 	/*
 	 * read mem to find swap dev.
 	 */
-	lseek(mem, (long)nl[1].n_value, 0);
-	read(mem, (char *)&nl[1].n_value, sizeof(nl[1].n_value));
+	kread(1, (char *)&nl[1].n_value, sizeof(nl[1].n_value));
 	/*
 	 * Find base of swap
 	 */
-	lseek(mem, (long)nl[2].n_value, 0);
-	read(mem, (char *)&swplo, sizeof(swplo));
+	kread(2, (char *)&swplo, sizeof(swplo));
 	/*
 	 * Locate proc table
 	 */
-	lseek(mem, (long)nl[0].n_value, 0);
+	lseek(mem, kbase+(long)nl[0].n_value, 0);
 	getdev();
 	uid = getuid();
 	if (lflg)
 	printf(" F S UID   PID  PPID CPU PRI NICE  ADDR  SZ  WCHAN TTY TIME CMD\n"); else
 		if (chkpid==0) printf("   PID TTY TIME CMD\n");
 	for (i=0; i<NPROC; i++) {
-		read(mem, (char *)&mproc, sizeof mproc);
+		if(read(mem, (char *)&mproc, sizeof mproc)!=sizeof mproc) {
+			fprintf(stderr, "Cannot read process table\n");exit(1);
+		}
+		if(kflg && (mproc.p_stat<0 || mproc.p_stat>SSTOP)) {
+			fprintf(stderr, "Invalid process table in dump\n");exit(1);
+		}
 		if (mproc.p_stat==0)
 			continue;
 		if (mproc.p_pgrp==0 && xflg==0 && mproc.p_uid==0)
@@ -159,12 +179,21 @@ bbreak:
 			retcode=0;
 		}
 	}
-	exit(retcode);
+	exit(dumperror? 1:retcode);
+}
+
+/* Kernel data symbols are NONSEG offsets; a physical dump starts at RAM 0. */
+kread(index, data, size)
+char *data;
+{
+	if(lseek(mem, kbase+(long)nl[index].n_value, 0)<0 ||
+	    read(mem, data, size)!=size) {
+		fprintf(stderr, "Cannot read kernel data\n");exit(1);
+	}
 }
 
 getdev()
 {
-#include <sys/stat.h>
 	register FILE *df;
 	struct stat sbuf;
 	struct direct dbuf;
@@ -186,7 +215,7 @@ getdev()
 		ndev++;
 	}
 	fclose(df);
-	if ((swap = open("/dev/swap", 0)) < 0) {
+	if ((swap = open(swapf, 0)) < 0 && !kflg) {
 		fprintf(stderr, "Can't open /dev/swap\n");
 		exit(1);
 	}
@@ -230,12 +259,21 @@ prcom(puid)
 		addr = (long)(unsigned)mproc.p_addr*MEM_FRAME;
 		file = swmem;
 	} else {
+		if(kflg && swap<0) {
+			fprintf(stderr, "No saved swap for pid %u\n", mproc.p_pid);
+			dumperror=1;return(0);
+		}
 		addr = ((long)(unsigned)mproc.p_addr+swplo)<<9;
 		file = swap;
 	}
 	lseek(file, addr, 0);
-	if (read(file, (char *)&u, sizeof(u)) != sizeof(u))
+	if (read(file, (char *)&u, sizeof(u)) != sizeof(u)) {
+		if(kflg) {
+			fprintf(stderr, "Cannot read dumped u-area for pid %u\n",mproc.p_pid);
+			dumperror=1;
+		}
 		return(0);
+	}
 
 	/* set up address maps for user pcs */
 	txtsiz = ctob(u.u_tsize);

@@ -17,7 +17,8 @@ text, low-memory swapping and native C compilation. Both environments can boot
 the same ROM and bootable disk; their filesystem and user executable formats are unchanged.
 
 Kernel inspection uses root-only physical/kernel memory devices and native
-V7 ps, pstat, dmesg and iostat, with paged process-image adaptations.
+V7 ps, pstat, dmesg and iostat, with paged process-image adaptations. `ps k`
+inspects saved physical RAM and swap images using the matching kernel namelist.
 
 Kernel coverage includes fork/exec/wait, pipes, signals and user preemption,
 V7 filesystem and TTY services, ordinary buffer-cache operation, raw I/O,
@@ -48,7 +49,8 @@ See [native development](toolchain/native-development.md) for scope and
   and their account/startup configuration are not integrated.
 - PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
   remain unported. Some original games are distributed without sources.
-  Adb needs its Z8000 machine layer; kernel-dump inspection remains unported. Device/site-dependent programs are built
+  Adb needs its Z8000 machine layer. Kernel crash-dump writing to disk is not
+  implemented; the emulator can capture RAM and swap for inspection. Device/site-dependent programs are built
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild

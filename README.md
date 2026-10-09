@@ -142,7 +142,7 @@ for verified scope and remaining work.
 | `v7z8000/usr/sys/sys/pipe.c` | Pipes: pipe syscall, readp/writep, plock/prele |
 | `v7z8000/usr/sys/sys/clock.c` | Clock interrupt handler and `timeout()` callouts |
 | `v7z8000/usr/sys/dev/md.c` | RAM disk driver (I/O port DMA) |
-| `v7z8000/usr/sys/dev/mem.c` | V7 `/dev/null`; other memory-device minors are unavailable |
+| `v7z8000/usr/sys/dev/mem.c` | V7 `/dev/null` and root-only physical/kernel memory access |
 | `v7z8000/usr/sys/dev/hd.c` | IDE hard drive driver (ATA PIO, interrupt-driven) |
 | `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
 | `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |

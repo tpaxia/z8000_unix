@@ -98,17 +98,31 @@ If the
 option is specified,
 the file
 .I /usr/sys/core
-is used in place of
-.IR /dev/mem .
+is used in place of the live memory devices.
 This is used for
 postmortem system debugging.
 If a second argument is given,
 it is taken to be the file containing the system's namelist.
+With
+.BR k ,
+a third argument selects the core file and a fourth selects the swap image.
+Use absolute pathnames.
+The core file contains raw installed physical RAM from address zero,
+and the namelist must match the dumped kernel.
+For reliable postmortem inspection, use a swap image saved with the RAM dump;
+the default
+.I /dev/swap
+may contain data from a newer running system.
+An incomplete RAM dump or unreadable selected process u-area causes failure.
 .SH FILES
 .ta \w'/usr/sys/core 'u
 /unix		system namelist
 .br
-/dev/mem	core memory
+/dev/kmem	kernel data (superuser only)
+.br
+/dev/mem	physical memory (superuser only)
+.br
+/dev/swap	swap device
 .br
 /usr/sys/core	alternate core file
 .br

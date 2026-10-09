@@ -371,6 +371,13 @@ public:
         return fclose(f) == 0 && ok;
     }
 
+    bool save_swap(const char *filename) {
+        FILE *f = fopen(filename, "wb");
+        if (!f) return false;
+        bool ok = fwrite(m_swap.data(), 1, m_swap.size(), f) == m_swap.size();
+        return fclose(f) == 0 && ok;
+    }
+
     // z8000_io_bus interface
     u8 read_byte(u16 addr, int mode) override {
         u8 val;
@@ -715,6 +722,7 @@ int main(int argc, char* argv[]) {
     const char *disk_image = "hd.img";
     const char *boot_rom = nullptr;
     const char *save_image = nullptr, *profile_file = nullptr;
+    const char *save_core = nullptr, *save_swap = nullptr;
     const char *console_input = "echo hello | cat\nexit\n";
     const char *expect = nullptr;
     const char *wait_output = nullptr;
@@ -731,7 +739,7 @@ int main(int argc, char* argv[]) {
     char swap_fail_kind = 0;
     unsigned swap_fail_nth = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:j:x:w:I:n:M:o:P:F:R:S:D:E:b:T:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:j:x:w:I:n:M:o:P:F:R:S:D:E:b:T:K:W:")) != -1) {
         switch (opt) {
             case 'T': {
                 char *end;
@@ -791,6 +799,8 @@ int main(int argc, char* argv[]) {
             case 'c': max_cycles = strtoull(optarg, nullptr, 10); break;
             case 'd': disk_image = optarg; break;
             case 'o': save_image = optarg; break;
+            case 'K': save_core = optarg; break;
+            case 'W': save_swap = optarg; break;
             case 'P': profile_file = optarg; break;
             case 'i': {
                 // "\n" written as two characters stands for a newline, so the
@@ -825,7 +835,7 @@ int main(int argc, char* argv[]) {
                         "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input|-j input-file] [-x expected-text] "
                         "[-w output-marker -I later-input] "
                         "[-n measured-ticks -M start-marker] "
-                        "[-o saved-hd-image] [-P user-memory.tsv] [-F r|w|u|k:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
+                        "[-o saved-hd-image] [-K physical-core] [-W saved-swap] [-P user-memory.tsv] [-F r|w|u|k:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
                 return 1;
         }
     }
@@ -1018,6 +1028,15 @@ int main(int argc, char* argv[]) {
 
     if (profile_output) { profile.flush(); fclose(profile_output); }
     if (save_image && !io.save_hd(save_image)) { perror(save_image); return 1; }
+    // Capture both at the stopped CPU state; use physical RAM, not MMU aliases.
+    if (save_core) {
+        FILE *f = fopen(save_core, "wb");
+        if (!f) { perror(save_core); return 1; }
+        size_t size = size_t(ram_kib) * 1024;
+        bool ok = fwrite(memory.data(), 1, size, f) == size;
+        if (fclose(f) != 0 || !ok) { perror(save_core); return 1; }
+    }
+    if (save_swap && !io.save_swap(save_swap)) { perror(save_swap); return 1; }
     if (trace) printf("---\n");
 
     // Dump final state

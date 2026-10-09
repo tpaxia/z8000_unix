@@ -88,3 +88,4 @@ with (WORK/'pressure.log').open('wb') as log:
 output=(WORK/'pressure.log').read_bytes()
 assert r.returncode==0 and b'inspection swap: passed' in output,output[-4000:]
 print('PASS native ps with resident and swapped processes on 512 KiB RAM')
+subprocess.run([sys.executable,ROOT/'tools/test-ps-dump.py',BUILD],check=True)
