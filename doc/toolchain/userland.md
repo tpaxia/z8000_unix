@@ -1,7 +1,8 @@
 # V7 Userland
 
-The full inventory accounts for all **158 top-level command source units**.
-The full native rebuild produces **161 command executables, seven games,
+The full inventory accounts for all **158 original top-level command source units**,
+plus four files implementing factor/primes and their shared integer support.
+The full native build recipes cover **164 command executables, seven games,
 12 libraries and 12 nroff terminal tables** inside Unix, including the Bourne
 shell. The command count includes support programs and tools that still
 need machine integration; it is not a claim that every command has been tested
@@ -9,13 +10,16 @@ in use. The separate essential-userland workload builds 45 unchanged commands
 inside Unix.
 
 Run the [full native rebuild](../development/native-rebuild.md#full-native-userland)
-to produce `tests/build/userland-native-sout/hd.img`. The default s.out rebuild
-and runtime suite pass. `summary.json` records output hashes and segment sizes;
+to produce `tests/build/userland-native-sout/hd.img`. The current full smoke
+sequence stops at the archive/native
+compilation/runtime-probe section, also with the unmodified script; standalone
+checks of those steps pass after a fresh boot. The numeric-port suite passes.
+`summary.json` records output hashes and segment sizes;
 the guest makefiles list sources and native generation steps. The native
 rebuild procedure records stage and output counts and the runtime proof.
 
 The [cross-build comparison](../development/native-rebuild.md#complete-cross-built-userland)
-produces `tests/build/userland-all/hd.img`, with 160 commands (excluding the
+produces `tests/build/userland-all/hd.img`, with 163 commands (excluding the
 separately built shell). Its `report.json` records source lists and sizes;
 `inventory.json` accounts for every source unit, replacement and unported program.
 
@@ -26,7 +30,7 @@ separately built shell). Its `report.json` records source lists and sizes;
 | Files and text | Original single-file C utilities, sed, diff helpers, find, tar, ed and awk |
 | Languages and generators | bc, dc, lex, yacc, make, m4, ratfor, structure/beautify and both lint passes |
 | Documents | nroff, troff, eqn, neqn, tbl, refer and its indexing/search helpers, spell and its hash-table generators |
-| Numeric and plotting | graph, spline, units, Tektronix and TI plotting filters, vplot |
+| Numeric and plotting | factor, primes, graph, spline, units, Tektronix and TI plotting filters, vplot |
 | Accounts and administration | init, getty, login, password/group tools, cron/at, accounting, filesystem creation/checking, dump/restoration tools |
 | Communications | mail, encrypted mail, cu and the UUCP programs |
 | Development inspection | nm, strip, size, file and prof |
@@ -73,6 +77,14 @@ The kernel has 64 in-core inode entries and 64 open-file entries so the original
 spell pipeline can run. Process capacity remains 16. These are configuration
 sizes; the V7 file and inode algorithms are unchanged.
 
+`factor.c` and `primes.c` replace the PDP-11 assembly implementations. They retain
+the 210-wheel, repeated factor division, 8000-number bit sieve, decimal output and
+argument/standard-input interfaces. Four 16-bit limbs and the Z8000 `num56.az8`
+division helper preserve the original range `1` through `72057594037927935`
+without rounding through IEEE doubles. Primes stops when that range is exhausted.
+The original `.s` files remain reference sources and are not assembled for Z8000.
+See [native numeric command checks](../development/native-rebuild.md#factor-and-primes).
+
 Kernel inspection tools `ps`, `pstat`, `dmesg` and `iostat` build and install
 natively. Their memory-device and live-kernel contracts are described in
 [devices and I/O](../kernel/devices-and-io.md). `ps k` inspects saved kernel RAM/swap. Native [adb](adb.md) provides Z8000
@@ -83,7 +95,7 @@ tracing and core inspection; the port-specific savecore utility recovers
 
 | Program | Remaining work |
 | --- | --- |
-| bas, roff, factor, primes | Original implementations are PDP-11 assembly. They require Z8000 implementations; nroff already provides the newer formatter. |
+| bas, roff | Original implementations are PDP-11 assembly. They require Z8000 implementations; nroff already provides the newer formatter. |
 | f77 | Original backend emits PDP-11 code and depends on the Ritchie compiler's second pass. It needs a Z8000 backend and runtime integration. The F77/I77 runtime libraries build and have C-driven runtime checks. |
 | chess | Move generation and control contain PDP-11 assembly and need porting. |
 | init/getty/login | Runtime disks use original V7 startup and account configuration; build fixtures keep console init and `/etc/init.v7`. See [multiuser startup](../development/multiuser.md). |

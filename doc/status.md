@@ -56,10 +56,15 @@ logout/relogin and persistence after reboot. Build fixtures retain console init.
 
 ## Limitations
 
-- PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
+- PDP-11 assembly bas/roff, parts of chess and the Fortran backend
   remain unported. Some original games are distributed without sources.
   Device/site-dependent programs are built
   but not all have been exercised.
+- The current full userland smoke sequence stops in its archive/native
+  compilation/runtime-probe section. The unmodified smoke script reproduces it
+  at both accelerated and normal clock rates; those steps pass individually
+  after a fresh boot. The factor/primes tests pass separately. See
+  [native rebuild](development/native-rebuild.md#full-native-userland).
 - Host preparation still stages compiler glue, sources and filesystem images.
   Kernel, FPU service, firmware, sector zero and standalone loader now rebuild
   and install inside Unix; the resulting disk boots and runs native C compilation.
@@ -73,8 +78,8 @@ logout/relogin and persistence after reboot. Build fixtures retain console init.
   the s.out disk image and compiles a native program. The default native
   environment passes all 127 stages, exports 17 executables and validates 147
   libc members, including the final 39-check libc test. The full userland
-  rebuild passes all 194 stages, validates 192 installed outputs and passes
-  the full runtime smoke suite. Positive regression producers now use s.out;
+  rebuild has full runtime smoke coverage. Factor and primes also build and
+  install natively, with exact-integer tests through the V7 56-bit range. Positive regression producers now use s.out;
   kernel exec and shared object utilities reject obsolete a.out formats. The
   historical assembler/linker writers are removed, and standalone PCC suites
   also use the shared s.out tools. See
@@ -98,6 +103,7 @@ logout/relogin and persistence after reboot. Build fixtures retain console init.
 
 ## Next work
 
-1. Complete the remaining machine-dependent userland ports and device/site
+1. Resolve the full userland smoke sequence failure.
+2. Complete the remaining machine-dependent userland ports and device/site
    integration described in the userland inventory.
-2. Bring up physical machines through the documented configuration interfaces.
+3. Bring up physical machines through the documented configuration interfaces.

@@ -1,0 +1,52 @@
+! Z8000 exact base-65536 division for factor/primes (PCC assembly syntax).
+! long ndiv(number *n, long divisor, number *quotient);
+! Divisor is positive and at most 2^28-1. Every partial dividend is
+! below 2^44 and its quotient below 65536, so signed DIVL cannot overflow.
+	.text
+	.globl _ndiv
+_ndiv:
+	push @sp,r13
+	ld r13,sp
+	push @sp,r4
+	push @sp,r5
+	ld r8,4(r13)
+	ld r4,6(r13)
+	ld r5,8(r13)
+	ld r9,10(r13)
+	clr r0
+	clr r1
+	! RR2 receives the quotient: use four unrolled steps.
+	ld r2,r1
+	ld r1,r0
+	clr r0
+	ld r3,@r8
+	divl rq0,rr4
+	ld @r9,r3
+	inc r8,#2
+	inc r9,#2
+	ld r2,r1
+	ld r1,r0
+	clr r0
+	ld r3,@r8
+	divl rq0,rr4
+	ld @r9,r3
+	inc r8,#2
+	inc r9,#2
+	ld r2,r1
+	ld r1,r0
+	clr r0
+	ld r3,@r8
+	divl rq0,rr4
+	ld @r9,r3
+	inc r8,#2
+	inc r9,#2
+	ld r2,r1
+	ld r1,r0
+	clr r0
+	ld r3,@r8
+	divl rq0,rr4
+	ld @r9,r3
+	pop r5,@sp
+	pop r4,@sp
+	pop r13,@sp
+	ret

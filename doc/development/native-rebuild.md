@@ -102,11 +102,16 @@ To rebuild userland from the completed native environment and essential disk:
 python3 tools/userland/native.py --setup
 ```
 
-The checked-in recipes cover 161 commands, seven games, 12 libraries and 12
-terminal tables. The s.out rebuild passes all 194 build/install stages,
-validates all 192 built and installed outputs, and passes the full runtime
-smoke suite. The smoke run reports zero absent or unmapped RAM accesses,
-protection faults and stack warnings. Its log is `smoke.log`.
+The checked-in recipes cover 164 commands, seven games, 12 libraries and 12
+terminal tables. The full plan has 197 build/install stages and validates
+195 built and installed outputs. The runtime smoke suite exercises the combined
+image; `smoke.log` records its result and memory-access counters.
+
+The current full smoke sequence stops in the archive/native compilation/runtime
+probe section after `nm obj.b`. The unmodified script reproduces the failure at
+both clock rates, while ar, compilation and the runtime probe pass individually
+after a fresh boot. This remains unresolved; do not count the full smoke run as
+passing. Factor/primes have the separate successful checks below.
 
 The seed uses the preceding native environment and essential commands. The
 host runner stages sources and data, saves the disk between packages and
@@ -132,6 +137,8 @@ Outputs are under `tests/build/userland-native-sout/`. `results.json` records
 completed packages; `summary.json` and `smoke.log` record inventory validation
 and runtime checks after installation.
 Running without options resumes. `--limit N` limits additional packages;
+`--names NAME ...` restricts pending work to those packages. Completion is tracked
+by stage name, so catalog additions do not skip new packages or repeat completed ones.
 `--refresh` restages recipes while retaining outputs. After rebuilding the
 native environment, `--refresh --update-toolchain` refreshes compiler tools,
 startup and libc while retaining completed full-userland programs. Changed
@@ -141,6 +148,26 @@ C, yacc and assembly built-in rules together.
 
 Terminal-table conversion preserves nroff's original data-resource layout;
 these resources are neither executables nor linker inputs.
+
+### Factor and primes
+
+With a completed native userland disk, build the new packages and run their
+dedicated installation and runtime checks:
+
+```sh
+python3 tools/userland/native.py --refresh --names factor primes
+python3 tools/userland/test-numeric.py
+```
+
+Compilation and assembly run inside Unix through native make, cc and asz8k.
+The test installs both programs into `/bin`, boots that disk again, and compares
+guest output against independent integer calculations. It covers repeated
+factors, `65537` squared, `2^55`, `2^56-1`, overflow diagnostics, streaming input,
+primes across an 8000-number sieve boundary and primes above `2^32`.
+V7 make's stack growth during installation is checked separately from the
+program run, which reports zero absent/unmapped accesses and protection faults.
+Logs and exported native executables are in `tests/build/userland-numeric/`.
+The checked disk replaces `tests/build/userland-native-sout/hd.img` after success.
 
 ## Machine assembly and raw images
 

@@ -117,7 +117,7 @@ instead of the historical static result buffer; see the
 ## Userland source comparison
 
 The original-command inventory covers 158 top-level units and 762 files in
-`usr/src/cmd`: none missing, 716 byte-identical and 46 changed. This includes
+`usr/src/cmd`: none missing, 697 byte-identical and 65 changed. This includes
 preserved PDP-11 implementations that are not built for Z8000. Recompute it with:
 
 ```sh
@@ -137,12 +137,12 @@ not installed command availability. Current changed groups are:
 | `yacc/dextern` | Generator configuration for the target's memory budget. |
 | `dc/dc.c` | Terminates the original free list without writing beyond its array. |
 | `lint/lint.c` | Target alignment for long and floating types. |
+| `factor.c`, `primes.c`, `num56.h`, `num56.az8` | Added C implementations retain the original assembly algorithms and interfaces. Integer limbs and Z8000 division preserve the PDP-11's 56-bit numeric range; IEEE doubles would lose precision. Original `.s` files remain references. |
 | `ps.c`, `pstat.c`, `dmesg.c`, `iostat.c` | Kernel-data symbols use `/dev/kmem`; paged physical/swap process extents replace PDP-11 contiguous images. Pstat reads Z8000 registers/console/u-area frames. Iostat resolves counters individually and uses configured buffers and emulated disk labels. |
 
-The full native userland builds 161 command executables, seven games,
-12 libraries and 12 terminal tables. This includes support programs and programs
-still needing machine integration; it does not imply all original commands
-are operational. The [userland reference](../toolchain/userland.md) owns the
+The native userland includes support programs and programs still needing
+machine integration; it does not imply all original commands are operational.
+The [userland reference](../toolchain/userland.md) owns the
 installed inventory, runtime coverage and remaining command ports.
 
 ## Remaining departures from the original system

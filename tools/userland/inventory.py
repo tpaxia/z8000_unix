@@ -25,6 +25,8 @@ special = {
     'in': 'Original build list; covered by the inventory.',
     'makeall': 'Original build script; replaced by tools/userland/run.py.',
     'prep.h': 'Header used by prep.',
+    'num56.h': 'Exact 56-bit arithmetic shared by factor and primes.',
+    'num56.az8': 'Z8000 limb division shared by factor and primes.',
 }
 rows = []
 for path in sorted(CMD.iterdir()):

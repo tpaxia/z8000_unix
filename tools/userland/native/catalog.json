@@ -1144,5 +1144,17 @@
     "output": "sh",
     "kind": "command",
     "destination": "bin/sh"
+  },
+  {
+    "name": "factor",
+    "output": "factor",
+    "kind": "command",
+    "destination": "bin/factor"
+  },
+  {
+    "name": "primes",
+    "output": "primes",
+    "kind": "command",
+    "destination": "bin/primes"
   }
 ]

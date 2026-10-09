@@ -23,8 +23,6 @@ REPLACED = {
 UNPORTED = {
     'bas':'PDP-11 assembly interpreter; needs a Z8000 implementation.',
     'roff':'PDP-11 assembly formatter; nroff is available.',
-    'factor':'PDP-11 assembly; needs a Z8000 implementation.',
-    'primes':'PDP-11 assembly; needs a Z8000 implementation.',
     'f77':'The original backend emits PDP-11 code and requires the Ritchie second pass.',
     'chess':'The move generators and game control include PDP-11 assembly.',
 }
@@ -53,6 +51,10 @@ def compile_source(source, directory, flags=()):
     (directory/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
     log = directory/(name+'.log')
     log.write_bytes(b'')
+    if source.suffix == '.az8':
+        obj = directory/(name+'.b')
+        r = invoke([ROOT/'tests/build/asz8k-host/asz8k', '-c', '-o', obj, source],log,directory)
+        return (None,'assemble') if r.returncode else (obj,None)
     r = invoke(['cc','-E','-x','c','-nostdinc','-undef','-Dz8000','-Dz8002','-Dunix=1',
         '-I'+str(directory),'-I'+str(source.parent),'-I'+str(ROOT/'v7z8000/usr/include'),*flags,source],log,directory)
     if r.returncode: return None,'preprocess'
@@ -85,6 +87,8 @@ def main():
     if (WORK/'report.json').exists(): report=json.loads((WORK/'report.json').read_text())
     specs = {p.stem: {'sources':[p]} for p in sorted(CMD.glob('*.c'))}
     specs['savecore']={'sources':[ROOT/'tools/savecore.c']}
+    for name in ('factor','primes'):
+        specs[name]={'sources':[CMD/(name+'.c'),CMD/'num56.az8']}
     for source in sorted((ROOT/'v7z8000/usr/src/games').glob('*.c')):
         specs[source.stem]={'sources':[source],'game':True}
     specs['make']={'sources':[CMD/'make'/(n+'.c') for n in ['ident','main','doname','misc','files','dosys']],

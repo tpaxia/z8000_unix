@@ -124,6 +124,15 @@ def setup(preserve=False, update_toolchain=False,sout=True):
     step('install','/bin/make install')
     (WORK/'steps.json').write_text(json.dumps(steps,indent=2)+'\n')
     if not preserve:(WORK/'results.json').write_text('[]\n')
+    else:
+        # Catalog additions do not invalidate independently built packages.
+        # The whole-tree install must run again when any package is missing.
+        records=json.loads((WORK/'results.json').read_text())
+        names={s['name'] for s in steps}
+        records=[r for r in records if r['name'] in names]
+        if names-{'install'}-{r['name'] for r in records}:
+            records=[r for r in records if r['name']!='install']
+        (WORK/'results.json').write_text(json.dumps(records,indent=2)+'\n')
     manifest={p:hashlib.sha256(s.read_bytes()).hexdigest() for p,s in files.items()}
     (WORK/'seed.json').write_text(json.dumps(manifest,indent=2)+'\n')
     packages.image(files,WORK/'hd.img',blocks=120000,inodes=16384,modes=modes,sout=sout)
@@ -150,6 +159,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--setup',action='store_true')
     parser.add_argument('--limit',type=int)
+    parser.add_argument('--names',nargs='+',help='build only the named packages')
     parser.add_argument('--refresh',action='store_true',help='restage recipes while retaining native outputs')
     parser.add_argument('--update-toolchain',action='store_true',
                         help='with --refresh, install the verified native environment tools')
@@ -166,7 +176,11 @@ def main():
     if args.summary:summarize(args.sout);return
     records=json.loads((WORK/'results.json').read_text())
     plan=json.loads((WORK/'steps.json').read_text())
-    steps=plan[len(records):]
+    if args.names:
+        unknown=set(args.names)-{s['name'] for s in plan}
+        if unknown:parser.error('unknown packages: '+', '.join(sorted(unknown)))
+    steps=[s for s in plan if s['name'] not in {r['name'] for r in records}
+           and (not args.names or s['name'] in args.names)]
     if args.limit is not None:steps=steps[:args.limit]
     for step in steps:
         name=step['name'];print('START',name,flush=True);start=time.monotonic()

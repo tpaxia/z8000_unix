@@ -31,6 +31,12 @@ echo '123456789 * 987654321' | bc > big.out || exit 1
 grep '^121932631112635269$' big.out || exit 1
 echo 'sqrt(81)' | bc > sqrt.out || exit 1
 grep '^9' sqrt.out || exit 1
+factor 90 > factor.out || exit 1
+grep '^     2$' factor.out || exit 1
+grep '^     3$' factor.out || exit 1
+grep '^     5$' factor.out || exit 1
+primes 72057594037927935 > primes.out || exit 1
+test ! -s primes.out || exit 1
 echo 'Hello formatter' | nroff -Tlp > nroff.out || exit 1
 grep 'Hello formatter' nroff.out || exit 1
 echo '.EQ' > equation || exit 1
