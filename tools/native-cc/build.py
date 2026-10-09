@@ -26,7 +26,7 @@ helpers = module('binutils_build', ROOT / 'tools/native-binutils/build.py')
 run, compile_c = helpers.run, helpers.compile_c
 
 
-def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None, sout=True):
+def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None, sout=True, owners=None):
     """Install target tools, V7 headers, and optional test fixtures."""
     run([sys.executable, ROOT / 'tools/export-headers.py', '--check'])
     seed=ROOT/'tests/build/sout-cc'
@@ -65,15 +65,21 @@ def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=Non
             'lib/cpp', 'lib/front', 'lib/back', 'lib/oz8') else '644'
         if modes and target in modes:
             mode = '%03o' % (modes[target] & 0o777)
-        node[parts[-1]] = '---' + mode + ' 0 0 ' + str(source)
+        permissions = (modes or {}).get(target, 0)
+        flags = '-' + ('u' if permissions & 0o4000 else '-') + ('g' if permissions & 0o2000 else '-')
+        uid, gid = (owners or {}).get(target, (0, 0))
+        node[parts[-1]] = flags + mode + ' %d %d ' % (uid, gid) + str(source)
 
-    def directory(node):
+    def directory(node, parent=""):
         lines = []
         for name, value in sorted(node.items()):
             assert len(name) <= 14, name
             if isinstance(value, dict):
-                lines.append(name + (' d--777' if name == 'tmp' else ' d--755') + ' 0 0')
-                lines.extend(directory(value))
+                target = parent + '/' + name if parent else name
+                mode = (modes or {}).get(target, 0o777 if name == 'tmp' else 0o755)
+                uid, gid = (owners or {}).get(target, (0, 0))
+                lines.append(name + ' d--%03o %d %d' % (mode & 0o777, uid, gid))
+                lines.extend(directory(value, target))
             else:
                 lines.append(name + ' ' + value)
         return lines + ['$']

@@ -12,6 +12,8 @@ p.add_argument('--chdman',type=Path,required=True)
 p.add_argument('--disk',type=Path,default=ROOT/'tests/build/z8001unix/full-userland.img')
 p.add_argument('--rompath',type=Path,default=ROOT/'tests/build/z8001unix/roms')
 p.add_argument('--input',default='cc -i /usr/src/hello.c -o /tmp/hello\n/tmp/hello\n')
+p.add_argument('--seven-bit',action='store_true',help='strip software parity in the captured terminal transcript')
+p.add_argument('--login',help='name to enter at the getty prompt after initial shell input')
 p.add_argument('--boot',default='\n',help='input at the standalone loader prompt')
 p.add_argument('--expect',default='Hello from native C')
 p.add_argument('--save-disk',type=Path,help='export the modified guest disk after success')
@@ -32,6 +34,8 @@ with tempfile.TemporaryDirectory(prefix='disk-',dir=a.output) as tmp:
              Z8001UNIX_INPUT=a.input,Z8001UNIX_BOOT=a.boot,
              Z8001UNIX_EXPECT=a.expect.replace('\r',''),
              Z8001UNIX_SETTLE=str(a.settle))
+    if a.seven_bit: env['Z8001UNIX_SEVEN_BIT']='1'
+    if a.login: env['Z8001UNIX_LOGIN']=a.login
     command=[str(a.mame.resolve()),'z8001unix','-window','-rompath',str(a.rompath.resolve()),
              '-hard',str(disk.resolve()),'-ram',a.ram.lower(),'-video','none','-sound','none','-nothrottle',
              '-skip_gameinfo','-seconds_to_run',str(a.seconds),'-autoboot_delay','0',

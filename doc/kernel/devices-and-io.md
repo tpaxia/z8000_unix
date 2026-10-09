@@ -24,10 +24,14 @@ bdevsw[0] = { mdopen, mdclose, mdstrategy, &mdtab }   — RAM disk
 bdevsw[1] = { hdopen, hdclose, hdstrategy, &hdtab }   — IDE hard disk (the root device)
 cdevsw[0] = { consopen, consclose, consread, conswrite } — console
 cdevsw[1] = the same entry, spare
-cdevsw[2] = { consopen, consclose, consread, conswrite } — /dev/tty alias
+cdevsw[2] = { syopen, nulldev, syread, sywrite, sysioctl } — controlling /dev/tty
 cdevsw[3] = raw IDE disk, block-device unit minors 0/1
 cdevsw[4] = memory: minors 0 physical, 1 kernel data, 2 /dev/null
 ```
+
+`dev/sys.c` is the unchanged V7 controlling-terminal driver. It forwards open,
+read, write and ioctl through the process’s controlling device; its switch-table
+close is `nulldev`, so closing `/dev/tty` does not tear down an active terminal.
 
 `dev/mem.c` retains V7's minor-2 EOF/rathole behavior: reads return zero
 bytes and writes consume the supplied count. The basic and native development

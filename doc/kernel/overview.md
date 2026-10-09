@@ -26,10 +26,10 @@ startup clears kernel BSS and calls `main()`.
 `main()` initializes process 0 and its MMU mapping, then calls `devinit()` and
 `swapinit()`. The emulated configuration selects disk minor 0 for root/pipes
 and minor 1 for swap. It starts the clock, initializes clists and buffers,
-mounts root, obtains the root directory and opens `/dev/console` as descriptors
-0, 1 and 2.
+mounts root and obtains the root directory. Process 0 holds no console descriptors.
 
 `newproc()` creates process 1. The child establishes its user mapping, copies
 `icode`, and returns through machine startup into user mode. `icode` executes
-`/etc/init`, which currently starts the console shell. Process 0 enters V7's
+`/etc/init`. Runtime disks use original V7 init; build fixtures use console init.
+See [multiuser startup](../development/multiuser.md). Process 0 enters V7's
 `sched()` swapper; its sleeps dispatch resident processes through `swtch()`.

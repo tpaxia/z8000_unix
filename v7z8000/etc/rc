@@ -1,0 +1,7 @@
+PATH=/bin:/usr/bin
+rm -f /etc/mtab
+cat /dev/null >/etc/utmp
+rm -f /tmp/* /usr/tmp/*
+/etc/update
+date >/dev/console
+/etc/cron

@@ -14,7 +14,7 @@
  * Character devices:
  *   Major 0: Console (cons)
  *   Major 1: console alias (spare)
- *   Major 2: TTY (alias to console)
+ *   Major 2: Controlling TTY (V7 indirect driver)
  *   Major 3: Raw IDE disk (same minors as block major 1)
  *   Major 4: Memory: /dev/mem, /dev/kmem and /dev/null
  */
@@ -32,6 +32,9 @@ extern struct buf hdtab;
 extern int consopen(), consclose(), consread(), conswrite(), consioctl();
 extern struct tty cons_tty[];
 
+/* Original V7 controlling-terminal indirection. */
+extern int syopen(), syread(), sywrite(), sysioctl();
+
 /* V7 EOF/rathole device; other memory minors are unavailable. */
 extern int mmopen(), mmread(), mmwrite();
 
@@ -47,7 +50,7 @@ struct bdevsw bdevsw[] = {
 struct cdevsw cdevsw[] = {
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 0 = console */
 	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 1 = spare */
-	{ consopen, consclose, consread, conswrite, consioctl, nulldev, &cons_tty[0] },  /* 2 = tty */
+	{ syopen, nulldev, syread, sywrite, sysioctl, nulldev, 0 }, /* 2 = tty */
 	{ hdrawopen, hdclose, hdread, hdwrite, nodev, nulldev, 0 }, /* 3 = raw hd */
 	{ mmopen, nulldev, mmread, mmwrite, nodev, nulldev, 0 }, /* 4 = memory */
 	{ 0 }

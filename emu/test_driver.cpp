@@ -2,9 +2,9 @@
 //
 // Loads ROM (segment 0), kernel (segment 1), and C handler into an 8MB
 // Z8001 address space, runs the CPU, and verifies that the kernel boots,
-// mounts the filesystem, opens /dev/console, prints "Z8000 Unix",
+// mounts the filesystem, prints "Z8000 Unix",
 // forks process 1 which exec's /etc/init from the filesystem, and
-// init writes "hello from exec" via syscall and exits.
+// init opens the terminal and starts the single-user shell.
 //
 // The I/O port space includes a DMA controller for the RAM disk driver.
 //
@@ -14,6 +14,7 @@
 //   -m  Enable memory tracing
 //   -j file  Type literal file bytes at 64 ticks/character, without -i decoding
 //   -w text -I input  Type a second input after text appears, plus 100 ticks
+//   -A file  Ordered marker<TAB>input lines (\n escapes), for interactive sessions
 //   -n ticks -M text  Measure clock delivery after text (default: shell prompt)
 
 #include <cstdio>
@@ -302,6 +303,7 @@ public:
         memset(m_ata_buf, 0, sizeof(m_ata_buf));
     }
 
+    bool seven_bit_terminal = false;
     const std::string& console_output() const { return m_console_buf; }
     void set_trace(bool enable) { m_trace = enable; }
 
@@ -479,6 +481,7 @@ public:
                 do_dma(val);
                 break;
             case 0x00F0:  // Console TX
+                if (seven_bit_terminal) val &= 0x7f;
                 putchar(val);
                 fflush(stdout);
                 m_console_buf += static_cast<char>(val);
@@ -714,6 +717,7 @@ static std::string decode_input(const char *arg) {
 
 int main(int argc, char* argv[]) {
     bool trace = false;
+    bool seven_bit_terminal = false;
     bool reg_trace = false;
     bool mem_trace = false;
     // The emulator counts cycles in 64 bits, so a run is not limited to 2^31.
@@ -729,10 +733,13 @@ int main(int argc, char* argv[]) {
     const char *save_core = nullptr, *save_swap = nullptr;
     const char *console_input = "echo hello | cat\nexit\n";
     const char *expect = nullptr;
+    const char *input_prompt = "# ";
     const char *wait_output = nullptr;
     std::string typed, later_input;
     unsigned console_ticks = 1, input_delay = 0;
     bool has_later_input = false;
+    struct ConsoleAction { std::string marker, input; };
+    std::vector<ConsoleAction> actions;
     uint64_t measure_ticks = 0;
     const char *measure_marker = "# ";
 
@@ -743,7 +750,7 @@ int main(int argc, char* argv[]) {
     char swap_fail_kind = 0;
     unsigned swap_fail_nth = 0;
     int opt;
-    while ((opt = getopt(argc, argv, "trmc:d:i:j:x:w:I:n:M:o:P:F:R:S:D:E:b:T:K:W:")) != -1) {
+    while ((opt = getopt(argc, argv, "trmc:d:i:j:x:w:I:n:M:o:P:F:R:S:D:E:b:T:K:W:A:7q:")) != -1) {
         switch (opt) {
             case 'T': {
                 char *end;
@@ -797,6 +804,8 @@ int main(int argc, char* argv[]) {
                 break;
             }
             case 't': trace = true; break;
+            case 'q': input_prompt = optarg; break;
+            case '7': seven_bit_terminal = true; break;
             case 'b': boot_rom = optarg; break;
             case 'r': reg_trace = true; break;
             case 'm': mem_trace = true; break;
@@ -829,6 +838,29 @@ int main(int argc, char* argv[]) {
                 console_ticks = 64;
                 break;
             }
+            case 'A': {
+                FILE *input = fopen(optarg, "rb");
+                if (!input) { perror(optarg); return 1; }
+                std::string line;
+                int ch;
+                do {
+                    ch = fgetc(input);
+                    if (ch != EOF && ch != '\n') { line += char(ch); continue; }
+                    if (!line.empty()) {
+                        size_t tab = line.find('\t');
+                        if (tab == std::string::npos || tab == 0) {
+                            fprintf(stderr, "-A requires marker<TAB>input lines\n"); fclose(input); return 1;
+                        }
+                        actions.push_back({decode_input(line.substr(0, tab).c_str()),
+                                           decode_input(line.substr(tab + 1).c_str())});
+                        line.clear();
+                    }
+                } while (ch != EOF);
+                bool failed = ferror(input);
+                fclose(input);
+                if (failed) { perror(optarg); return 1; }
+                break;
+            }
             case 'x': expect = optarg; break;
             case 'w': wait_output = optarg; break;
             case 'I': later_input = decode_input(optarg); has_later_input = true; break;
@@ -836,12 +868,15 @@ int main(int argc, char* argv[]) {
             case 'M': measure_marker = optarg; break;
             default:
                 fprintf(stderr, "Usage: %s [-t] [-r] [-m] [-c cycles] "
-                        "[-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input|-j input-file] [-x expected-text] "
-                        "[-w output-marker -I later-input] "
+                        "[-7] [-q initial-prompt] [-d hd-image] [-b boot-ROM] [-T cycles-per-tick] [-i console-input|-j input-file] [-x expected-text] "
+                        "[-w output-marker -I later-input | -A interaction-file] "
                         "[-n measured-ticks -M start-marker] "
                         "[-o saved-hd-image] [-K physical-core] [-W saved-swap] [-P user-memory.tsv] [-F r|w|u|k:hex] [-R ram-KiB] [-S swap-KiB] [-D swap-IRQ-cycles] [-E r|w:N]\n", argv[0]);
                 return 1;
         }
+    }
+    if (!actions.empty() && has_later_input) {
+        fprintf(stderr, "-A cannot be combined with -w/-I\n"); return 1;
     }
     if ((wait_output != nullptr) != has_later_input) {
         fprintf(stderr, "-w and -I must be supplied together\n");
@@ -941,6 +976,7 @@ int main(int argc, char* argv[]) {
     // Run CPU in chunks, delivering periodic NVI clock ticks
     // and delayed console input for testing read()
     const unsigned CYCLES_PER_TICK = cycles_per_tick;
+    io.seven_bit_terminal = seven_bit_terminal;
     uint64_t tick_count = 0, merged_ticks = 0;
     uint64_t start_ticks = 0, start_merged = 0, start_accepted = 0;
     bool measuring = false, measure_done = false, start_pending = false;
@@ -949,7 +985,8 @@ int main(int argc, char* argv[]) {
     bool input_started = false;
     bool boot_input_sent = false;
     int idle_after_input = 0;
-    bool waiting_for_output = has_later_input;
+    bool waiting_for_output = has_later_input || !actions.empty();
+    size_t action_index = 0, action_output_start = 0;
     int ticks_after_marker = 0;
 
     while (cpu.get_cycles() < max_cycles) {
@@ -998,9 +1035,9 @@ int main(int argc, char* argv[]) {
             io.queue_console_char('\n');
             boot_input_sent = true;
         }
-        // Deliver console input after shell prompt "# " appears
+        // Deliver initial input after the selected prompt (default "# ").
         if (console_input[input_idx]) {
-            if (!input_started && io.console_output().find("# ") != std::string::npos) {
+            if (!input_started && io.console_output().find(input_prompt) != std::string::npos) {
                 input_started = true;
             }
             if (input_started && ++input_delay >= console_ticks) {
@@ -1009,12 +1046,20 @@ int main(int argc, char* argv[]) {
             }
         }
         if (!console_input[input_idx] && waiting_for_output &&
-            io.console_output().find(wait_output) != std::string::npos) {
+            io.console_output().find(actions.empty() ? wait_output : actions[action_index].marker,
+                                     actions.empty() ? 0 : action_output_start) != std::string::npos) {
             // Give a CPU-bound child time to run after the marker's write.
             if (++ticks_after_marker >= 100) {
-                console_input = later_input.c_str();
+                if (actions.empty()) {
+                    console_input = later_input.c_str();
+                    waiting_for_output = false;
+                } else {
+                    console_input = actions[action_index++].input.c_str();
+                    action_output_start = io.console_output().size();
+                    waiting_for_output = action_index < actions.size();
+                }
                 input_idx = 0;
-                waiting_for_output = false;
+                ticks_after_marker = 0;
                 idle_after_input = 0;
             }
         }
@@ -1086,6 +1131,10 @@ int main(int argc, char* argv[]) {
     bool has_prompt_after = has_hello && output.find("# ", hello_at) != std::string::npos;
     bool settled = cpu.is_halted();
     bool has_panic = output.find("panic: ") != std::string::npos;
+    if (!actions.empty() && action_index != actions.size()) {
+        fprintf(stderr, "FAIL: console interaction stopped at stage %zu/%zu\n", action_index, actions.size());
+        return 1;
+    }
     if (measure_ticks) {
         bool ok = measure_done && has_kernel_msg && has_prompt && !has_panic &&
                   (!expect || output.find(expect) != std::string::npos) &&

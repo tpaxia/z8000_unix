@@ -15,20 +15,15 @@
 /*
  * V7 kernel main() for Z8000.
  *
- * V7 style with paged MMU: process 0 mounts root, opens /dev/console,
+ * V7 style with paged MMU: process 0 mounts root,
  * prints "Z8000 Unix", then forks process 1 which copies icode to
  * user space and enters user mode.
  */
-
-extern int schar();
-extern int open1();
 
 struct proc proc[NPROC];
 
 main()
 {
-	register struct inode *ip;
-	register struct file *fp;
 	register int i;
 
 	/*
@@ -62,28 +57,6 @@ main()
 	u.u_cdir = iget(rootdev, (ino_t)ROOTINO);
 	u.u_cdir->i_flag &= ~ILOCK;
 
-	/*
-	 * Open /dev/console as fd 0.
-	 * namei walks root -> dev -> console via bread/bmap/iget.
-	 * open1 calls falloc -> openi -> cdevsw[0].d_open.
-	 */
-	u.u_dirp = "/dev/console";
-	ip = namei(schar, 0);
-	if (ip == NULL)
-		panic("console");
-	open1(ip, FREAD|FWRITE, 0);
-	if (u.u_error)
-		panic("console open");
-
-	/*
-	 * Dup fd 0 to fd 1 and fd 2 (stdout, stderr).
-	 */
-	fp = u.u_ofile[0];
-	u.u_ofile[1] = fp;
-	fp->f_count++;
-	u.u_ofile[2] = fp;
-	fp->f_count++;
-
 	printf("Z8000 Unix\n");
 
 	/*
@@ -108,8 +81,6 @@ main()
 	 */
 	sched();
 }
-
-/* open1 is now provided by sys2.c */
 
 /*
  * iinit is called once (from main)

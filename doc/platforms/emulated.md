@@ -78,3 +78,17 @@ and temporary growth reservations, not only total free bytes.
 `test-memory` covers growth/backout, rejection of unsafe read-modify-write
 replay, shared text/inode write exclusion, low-RAM swapping and full swap.
 See the [MMU and swap contract](../kernel/memory-and-swapping.md#stack-faults-and-protection).
+
+## Terminal startup tests
+
+`-7` strips software parity in the displayed/captured console; the default
+eight-bit transport remains available for raw-mode tests. `-q text` selects the
+prompt at which initial input starts. `-A file` sends an ordered sequence of
+`marker<TAB>input` lines, recognizing `\n` escapes in both fields; later markers
+are searched only in output following the previous action. It waits 100 clock
+ticks after a marker before sending that stage’s input.
+
+For multiuser tests use a clock period near the MAME machine’s 4 MHz / 60 Hz
+ratio (`-T 66667`). The default accelerated 5000-cycle clock can expire original
+V7 login alarms during otherwise normal filesystem work. See
+[multiuser startup](../development/multiuser.md).

@@ -2,9 +2,10 @@
 
 Build the ordinary `emulated` kernel and a root filesystem using
 [bootstrap](bootstrap.md). The driver and bootstrap tools are in `mame/`.
-The tested MAME machine is commit `9119a0e7ad6` on
+The tested MAME CPU/worktree baseline is commit `9119a0e7ad6` on
 [tpaxia/mame's z8001_unix branch](https://github.com/tpaxia/mame/tree/z8001_unix),
-based on revision `e1b99a60ff5`. The base includes the Z8001
+based on revision `e1b99a60ff5`; `build.py` installs the current driver from
+`mame/z8001unix.cpp`. The base includes the Z8001
 CPU fixes, first-word instruction-fetch interface and normal/system output used
 by this machine. Compatibility with arbitrary upstream releases is not claimed.
 See the [machine reference](../platforms/z8001-unix.md#boot) for the boot sequence,
@@ -44,21 +45,25 @@ synchronize the source copy.
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
 python3 mame/build_rom.py
 python3 mame/build.py "$MAME_UNIX" -j 8
-python3 mame/install_boot.py tests/build/userland-native-sout/hd.img \
-  tests/build/z8001unix/full-userland.img --console-profile
+python3 tools/multiuser.py --rebuild-startup
+python3 mame/install_boot.py tests/build/multiuser/hd.img \
+  tests/build/z8001unix/full-userland.img
 ```
 
-The last command uses the complete native userland disk from
+The last command installs disk boot into the [multiuser runtime image](multiuser.md),
+which packages the complete native userland disk from
 [the native rebuild procedure](native-rebuild.md#full-native-userland).
 It includes the normal V7 commands, manuals, libraries and native compiler.
-`--console-profile` installs `/.profile` to set Backspace as the shell erase key
-using the original V7 `stty` command. The compiler seed at
+The runtime image already includes `/.profile` to configure Backspace.
+For a console-init build fixture, `--console-profile` installs that configuration.
+The compiler seed at
 `tests/build/native-cc-sout/hd.img` is suitable for compiler regressions but lacks
 normal commands such as `ls`; it is not the interactive testing disk.
 It creates a **new copy**, adds `/boot`, `/unix` and `/fpe` through the V7 free
 block/inode lists, then installs sector zero's `/boot` block list. The source
 image is unchanged. The destination must not exist and the source must not
-already contain these three filenames. Allow roughly 140 free disk blocks;
+already contain `/boot` or `/fpe`; a matching, unbooted development `/unix` is
+reused. The reserved crash-dump tail is preserved. Allow roughly 140 free disk blocks;
 the tiny kernel regression root image does not have room for these files.
 To verify preservation of existing files and free-list accounting:
 

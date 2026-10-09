@@ -155,7 +155,7 @@ u8 z8001unix_state::byte_r(u16 port)
 void z8001unix_state::byte_w(u16 port,u8 value)
 {
 	switch(port) {
-	case 0xf0: m_terminal->write(value); break;
+	case 0xf0: m_terminal->write(value & 0x7f); break;
 	case 0x1f2: m_sc=value; break;
 	case 0x1f3: m_sn=value; break;
 	case 0x1f4: m_cl=value; break;

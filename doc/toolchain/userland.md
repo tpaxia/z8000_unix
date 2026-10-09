@@ -86,7 +86,7 @@ tracing and core inspection; the port-specific savecore utility recovers
 | bas, roff, factor, primes | Original implementations are PDP-11 assembly. They require Z8000 implementations; nroff already provides the newer formatter. |
 | f77 | Original backend emits PDP-11 code and depends on the Ritchie compiler's second pass. It needs a Z8000 backend and runtime integration. The F77/I77 runtime libraries build and have C-driven runtime checks. |
 | chess | Move generation and control contain PDP-11 assembly and need porting. |
-| init/getty/login | Original init is installed as `/etc/init.v7`; boot still uses console init. Multiuser startup and account/device configuration remain. |
+| init/getty/login | Runtime disks use original V7 startup and account configuration; build fixtures keep console init and `/etc/init.v7`. See [multiuser startup](../development/multiuser.md). |
 | UUCP, tape/printer tools and device plotting | Built, but physical-device and site configuration have not been exercised. |
 
 The original cc, ld and binary-archive converter are replaced by the native

@@ -8,6 +8,7 @@ an explicit working directory is given.
 |---|---|
 | Bootstrap the existing system | [Bootstrap](development/bootstrap.md) |
 | Build and test an existing checkout | [Build and run](development/build-and-run.md), [testing](development/testing.md) |
+| Configure login startup | [Multiuser startup](development/multiuser.md) |
 | Rebuild tools inside Unix | [Native rebuild](development/native-rebuild.md) |
 | Port to a new machine | [Porting guide](platforms/porting-guide.md) |
 | Understand the kernel | [Kernel overview](kernel/overview.md) |

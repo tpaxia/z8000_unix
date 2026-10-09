@@ -1,6 +1,7 @@
 -- Capture the board console and exercise the ordinary V7 shell via its keyboard.
 local output = ''
 local sent = false
+local login_sent = false
 local booted = false
 local matched_at
 local settle = tonumber(os.getenv('Z8001UNIX_SETTLE') or '0')
@@ -10,7 +11,9 @@ do
     local space = manager.machine.devices[':maincpu'].spaces['io_std']
     console_tap = space:install_write_tap(0xf0, 0xf1, 'unix_console', function(offset, data, mask)
         if (mask & 0xff00) ~= 0 then
-            local c = string.char((data >> 8) & 255)
+            local byte = (data >> 8) & 255
+            if os.getenv('Z8001UNIX_SEVEN_BIT') == '1' then byte = byte & 127 end
+            local c = string.char(byte)
             output = output .. c
             log:write(c)
             log:flush()
@@ -25,6 +28,11 @@ emu.register_frame_done(function()
     if not sent and manager.machine.natkeyboard.empty and output:find('# ', 1, true) then
         sent = true
         manager.machine.natkeyboard:post(os.getenv('Z8001UNIX_INPUT') or 'echo hello | cat\nexit\n')
+    end
+    if sent and not login_sent and os.getenv('Z8001UNIX_LOGIN') and
+        manager.machine.natkeyboard.empty and output:find('login: ', 1, true) then
+        login_sent = true
+        manager.machine.natkeyboard:post(os.getenv('Z8001UNIX_LOGIN') .. '\n')
     end
     if output:gsub('\r', ''):find(os.getenv('Z8001UNIX_EXPECT') or '\nhello\n', 1, true) then
         if not matched_at then matched_at = emu.time() end

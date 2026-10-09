@@ -19,7 +19,8 @@ same file. Machine and device implementations are compared separately.
 
 Eight shared kernel files are byte-identical: `sys/alloc.c`, `sys/fakemx.c`,
 `sys/fio.c`, `sys/nami.c`, `sys/pipe.c`, `sys/prim.c`, `sys/sys3.c` and
-`sys/sys4.c`. The common character table `dev/partab.c` is also identical.
+`sys/sys4.c`. The common character table `dev/partab.c` and controlling-terminal driver
+`dev/sys.c` are also identical.
 These comparisons cover the files present in the port, not every facility
 in the original distribution.
 
@@ -30,7 +31,7 @@ in the original distribution.
 | `sys/physio.c` | Retains V7 exclusive-buffer, wait/completion and residency policy. MMU hooks validate and pin memory and describe transfers for drivers; the code does not simulate PDP-11 mapping registers. Zero-length requests, byte residual validation and completed-byte accounting are explicit. |
 | `sys/clock.c` | Original callout, CPU/time accounting, alarms, profiling and scheduler policy. The machine acknowledges the clock; CPU helpers interpret the saved PC/flags and idle state. Its entry signature and priority predicates replace PDP-11 trap arguments/macros. |
 | `sys/iget.c` | Converts inode addresses to/from big-endian three-byte disk fields instead of PDP-11 byte order. |
-| `sys/main.c` | Configured global tables and boot devices; MMU initializes real memory and process storage. Process 0 runs the swapper. Console initialization opens/duplicates the initial terminal; boot uses the small console init. |
+| `sys/main.c` | Configured global tables and boot devices; MMU initializes real memory and process storage. Process 0 runs the swapper. As in V7, process 0 holds no terminal descriptors; original init opens the runtime console. Build fixtures use the small console init. |
 | `sys/malloc.c` | First-fit allocation/free code is unchanged; its comment describes 2 KiB physical frames instead of 64-byte core-map units. |
 | `sys/prf.c` | Panic uses a bounded polled flush instead of V7's sleeping `update()`. The separate `sys/panic.c` writes coherent cache blocks, unlocked dirty inodes and unlocked superblocks, then invokes the machine disk-dump hook and halts with interrupts masked. |
 | `sys/rdwri.c` | Original read/write and `iomove()` policy. Differences are two explicit low-word offset casts, whitespace and comments; the casts are retained departures, not an established CPU requirement. |
@@ -146,8 +147,9 @@ installed inventory, runtime coverage and remaining command ports.
 
 ## Remaining departures from the original system
 
-- Boot uses console init. Original init/getty/login build, but multiuser startup,
-  accounts and terminal configuration are not integrated.
+- Original init/getty/login, update and cron are unchanged. Runtime account,
+  terminal and rc files configure the emulated machine; build fixtures retain
+  console init. See [multiuser startup](multiuser.md).
 - Memory-device translation uses the paged MMU instead of PDP-11 mapping
   registers; inspection tools follow the current physical extent layout.
   Live snapshots can race process changes. Kernel-dump inspection adds bank-1

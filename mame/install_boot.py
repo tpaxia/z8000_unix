@@ -14,13 +14,14 @@ class Installer:
     def __init__(self,path):
         self.disk=bytearray(path.read_bytes())
         fsize=self.u32(self.disk,514)
-        if not 2<fsize<=0x10000000 or len(self.disk)>fsize*512 or len(self.disk)%512:
+        if not 2<fsize<=0x10000000 or len(self.disk)%512:
             raise ValueError('invalid V7 filesystem size')
-        self.disk.extend(bytes(fsize*512-len(self.disk)))
+        # Sparse mkfs images are padded; a reserved panic-dump tail is retained.
+        self.disk.extend(bytes(max(0,fsize*512-len(self.disk))))
         self.sb=memoryview(self.disk)[512:1024]
         self.isize=self.u16(self.sb,0)
         self.fsize=self.u32(self.sb,2)
-        if not 2<self.isize<self.fsize<=0x10000000 or len(self.disk)!=self.fsize*512:
+        if not 2<self.isize<self.fsize<=0x10000000 or len(self.disk)<self.fsize*512:
             raise ValueError('expected V7 filesystem within the 28-bit LBA range')
         self.allocated=set()
     @staticmethod

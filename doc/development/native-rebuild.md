@@ -313,5 +313,5 @@ listed in [userland](../toolchain/userland.md).
 ## Scope
 
 Host Python remains responsible for source preparation, disk construction and
-emulator automation. It does not replace the native compile pipeline. Multiuser
-startup and full SEG user execution remain separate work.
+emulator automation. It does not replace the native compile pipeline. For the runtime login image, follow
+[multiuser startup](multiuser.md). Full SEG user execution remains separate work.

@@ -46,10 +46,14 @@ formatting, spelling, archive and filesystem workloads. See
 See [native development](toolchain/native-development.md) for scope and
 [compatibility](development/v7-compatibility.md) for source reuse.
 
+Runtime disks use unchanged V7 init/getty/login, update and cron, with account
+and startup files for the emulated machine. Native login tests cover password
+changes, setuid su, credentials, terminal ownership, getty respawn and session
+accounting. Build fixtures retain console init. See
+[multiuser startup](development/multiuser.md).
+
 ## Limitations
 
-- Startup still uses the small console init; original multiuser init/getty/login
-  and their account/startup configuration are not integrated.
 - PDP-11 assembly bas/roff/factor/primes, parts of chess and the Fortran backend
   remain unported. Some original games are distributed without sources.
   Device/site-dependent programs are built
@@ -94,6 +98,4 @@ See [native development](toolchain/native-development.md) for scope and
 
 1. Complete the remaining machine-dependent userland ports and device/site
    integration described in the userland inventory.
-2. Integrate original V7 multiuser startup: init, getty, login, account files and
-   startup scripts, retaining original shared policy wherever possible.
-3. Bring up physical machines through the documented configuration interfaces.
+2. Bring up physical machines through the documented configuration interfaces.

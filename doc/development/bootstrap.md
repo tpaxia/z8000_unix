@@ -53,5 +53,6 @@ After full userland, follow the native kernel and disk-bootstrap section of the
 [native rebuild procedure](native-rebuild.md#native-kernel-and-disk-bootstrap).
 It builds and installs kernel, FPU service and boot artifacts inside Unix, then
 boots the resulting disk. Host tools stage sources, prepare the initial source
-filesystem and launch/save emulator runs. The system still uses console init,
-not multiuser login.
+filesystem and launch/save emulator runs. Build fixtures use console init.
+For the runtime disk and original V7 login startup, follow
+[multiuser startup](multiuser.md).

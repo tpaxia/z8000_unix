@@ -1,0 +1,5 @@
+root::0:root
+daemon::1:daemon
+sys::2:sys
+bin::3:bin
+uucp::4:uucp
