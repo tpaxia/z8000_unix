@@ -14,18 +14,19 @@ from build import ROOT, PCC, PASSES, compile_c, image, run
 from selfhost import Filesystem
 from object_format import sizes
 
-WORK = ROOT / 'tests/build/native-environment'
+WORK = ROOT / 'tests/build/native-environment-sout'
 SYS = ROOT / 'v7z8000/usr/sys/build'
 CMD = ROOT / 'v7z8000/usr/src/cmd'
 
 
-def setup(preserve=False, reset_compiler=False, sout=False):
+def setup(preserve=False, reset_compiler=False, sout=True):
     WORK.mkdir(parents=True, exist_ok=True)
     extra = {'usr/lib/yaccpar': PCC / 'yacc/yaccpar'}
     if not sout: extra['lib/libc.a']=PASSES/'libv7.a'
     modes={}
     for tool in ['front', 'back', 'oz8']:
-        extra['lib/' + tool] = ROOT / ('tests/build/selfhost/s2-link-' + tool + '.out')
+        extra['lib/' + tool] = (PASSES/('target-'+tool)/tool if tool in ('front','back')
+                              else ROOT/'tests/build/native-cc-sout'/tool)
     if preserve:
         fs = Filesystem(WORK / 'hd.img')
         def walk(number, path):
@@ -49,11 +50,12 @@ def setup(preserve=False, reset_compiler=False, sout=False):
         walk(2,'')
     if reset_compiler:
         for tool in ['front', 'back', 'oz8']:
-            extra['lib/' + tool] = ROOT / ('tests/build/selfhost/s2-link-' + tool + '.out')
+            extra['lib/' + tool] = (PASSES/('target-'+tool)/tool if tool in ('front','back')
+                                  else ROOT/'tests/build/native-cc-sout'/tool)
     for name in ['runner', 'check']:
-        compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'))
-        run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / (name + '.b'),
-             ROOT / 'tools/libv7.a', '-o', WORK / name])
+        compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'),sout=sout)
+        run([ROOT/'tests/build/ldz8-host/ldz8', '-z', '-x', ROOT/'tests/build/sout-cc/crt0.b', WORK / (name + '.b'),
+             ROOT/'tests/build/sout-cc/libc.a', '-o', WORK / name])
         extra['bin/' + name] = WORK / name
     steps = []
     def step(name, directory, commands):
@@ -92,7 +94,7 @@ def setup(preserve=False, reset_compiler=False, sout=False):
         output = output.rsplit('/',1)[-1]
         objects = [name.rsplit('.',1)[0]+'.b' for name in sources]
         rules = ['CC=/bin/cc', 'CFLAGS=-O -Dunix=1 ' + flags, 'all: ' + output]
-        headers = {'az8':'mical.h inst.h ../b.out.h', 'ldz8':'b.out.h soutfmt.h ldz8.c',
+        headers = {'az8':'mical.h inst.h ../b.out.h', 'ldz8':'soutfmt.h',
                    'asz8k':'acom.h asz8k.h obj.h soutfmt.h',
                    'nm':'object.h soutfmt.h','size':'object.h soutfmt.h','strip':'object.h soutfmt.h',
                    'front':'manifest macdefs mac2defs mfile1 mfile2 common',
@@ -130,8 +132,6 @@ def setup(preserve=False, reset_compiler=False, sout=False):
             extra['usr/src/az8/' + name] = PCC/'az8'/name
         extra['usr/src/b.out.h'] = PCC/'b.out.h'
         makegroup('az8', {n+'.c':PCC/'az8'/(n+'.c') for n in 'error init ins ioz8 ps rel sdi sym scan'.split()}, '/bin/az8')
-    extra['usr/src/ldz8/b.out.h'] = PCC/'b.out.h'
-    extra['usr/src/ldz8/ldz8.c'] = PCC/'ldz8.c'
     extra['usr/src/ldz8/soutfmt.h'] = ROOT/'tools/asz8k/src/soutfmt.h'
     makegroup('ldz8', {n+'.c': ROOT/'tools/ldz8'/(n+'.c') for n in ['dispatch','ldso']}
               | {'soutfmt.c': ROOT/'tools/asz8k/src/soutfmt.c'}, '/bin/ldz8')
@@ -153,6 +153,8 @@ def setup(preserve=False, reset_compiler=False, sout=False):
     libobjects = objects[:]
     if sout:
         objects += ['object.b','soutfmt.b']; libobjects=objects[:]
+        first = ['nlist.b','object.b','soutfmt.b']
+        libobjects = first + [n for n in objects if n not in first]
         for path in [ROOT/'tools/sout-utils'/n for n in ('object.h','object.c')]+[
                 ROOT/'tools/asz8k/src'/n for n in ('soutfmt.h','soutfmt.c')]:
             extra['usr/src/libc/'+path.name]=path
@@ -179,7 +181,7 @@ def setup(preserve=False, reset_compiler=False, sout=False):
         rules += [name+'.b: '+name+'.az8','\t/bin/'+('asz8k -zc' if sout else 'az8')+' -o '+name+'.b '+name+'.az8']
     rules += ['libc.a: '+' '.join(objects),'\t/bin/rm -f libc.a']
     for i in range(0,len(objects),20):
-        rules.append('\t/bin/ar qc libc.a '+' '.join(objects[i:i+20]))
+        rules.append('\t/bin/ar qc libc.a '+' '.join(libobjects[i:i+20]))
         step('libc-'+str(i),'/usr/src/libc',['/bin/make '+' '.join(objects[i:i+20])])
     path=WORK/'libc.mk'; path.write_text('\n'.join(rules)+'\n'); extra['usr/src/libc/makefile']=path
     step('libc-archive','/usr/src/libc',['/bin/rm -f libc.a','/bin/make libc.a'])
@@ -206,9 +208,18 @@ def setup(preserve=False, reset_compiler=False, sout=False):
     makegroup('oz8',{'oz8.c':PCC/'oz8.c'},'/lib/oz8')
     step('native-smoke','/tmp',['/bin/cc -O -i /usr/src/hello.c -o hello','/tmp/hello'])
     extra['usr/src/largeoff.c']=PCC/'test/regress/large_offsets.c'
+    extra['usr/src/addrbyte.c']=PCC/'test/regress/address_bytes.c'
+    extra['usr/src/common.c']=ROOT/'tools/ldz8/tests/common.c'
+    extra['usr/src/nlprobe.c']=ROOT/'tools/ldz8/tests/nlist-only.c'
     extra['usr/src/pstat.c']=CMD/'pstat.c'
     step('native-offsets','/tmp',
          ['/bin/cc -O -i /usr/src/largeoff.c -o largeoff','/tmp/largeoff',
+          '/bin/cc -O /usr/src/addrbyte.c -o addrbyte','/tmp/addrbyte',
+          '/bin/cc -O -i /usr/src/addrbyte.c -o addrbyte','/tmp/addrbyte',
+          '/bin/cc -O /usr/src/common.c -o common','/tmp/common',
+          '/bin/cc -O -i /usr/src/common.c -o common','/tmp/common',
+          '/bin/cc -O /usr/src/nlprobe.c -o nlprobe','/tmp/nlprobe',
+          '/bin/cc -O -i /usr/src/nlprobe.c -o nlprobe','/tmp/nlprobe',
           '/bin/cc -O -Dunix=1 -Dz8000 -Dz8002 -c /usr/src/pstat.c'])
     step('native-libctest','/usr/src/libc',['/bin/rm -f libctest.b',
         '/bin/cc -O -i libctest.c -o /bin/libctest','/bin/libctest'])
@@ -287,7 +298,7 @@ def setup(preserve=False, reset_compiler=False, sout=False):
     if not preserve: (WORK / 'results.json').write_text('[]\n')
 
 
-def summarize(sout=False):
+def summarize(sout=True):
     fs=Filesystem(WORK/'hd.img')
     manifest=WORK/'staged.json'
     if sout: assert manifest.is_file(),'missing staged-source manifest'
@@ -319,6 +330,7 @@ def summarize(sout=False):
     if sout:
         expected=members((ROOT/'tests/build/sout-cc/libc.a').read_bytes())
         assert set(actual)==set(expected)|{'object.b','soutfmt.b'}
+        assert list(actual)[:3]==['nlist.b','object.b','soutfmt.b']
         for name,body in actual.items():
             assert struct.unpack_from('>H',body)[0]==0xe707,name
         report['format']='s.out'
@@ -342,7 +354,7 @@ def main():
                         help='with --refresh, restore bootstrap passes and discard their native objects')
     parser.add_argument('--from-step', type=int, help='resume at a zero-based step index')
     parser.add_argument('--summary', action='store_true')
-    parser.add_argument('--sout',action='store_true',help='use the s.out bootstrap and a separate output disk')
+    parser.add_argument('--sout',action='store_true',default=True,help=argparse.SUPPRESS)
     args = parser.parse_args()
     global WORK
     if args.sout: WORK=ROOT/'tests/build/native-environment-sout'

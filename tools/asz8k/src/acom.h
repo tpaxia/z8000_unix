@@ -36,7 +36,7 @@
 #define	SHSHLOG	9		/* log base 2 of symbol hash table size */
 #define	SLINSIZ	128		/* maximum source line length */
 #define	STRSIZ	128		/* maximum string length */
-#define	SYMSIZ	8		/* maximum symbol length */
+#define	SYMSIZ	32		/* internal symbol length; s.out names remain 8 bytes */
 #define	TITSIZ	47		/* maximum title string length */
 /*
  * Assembler directive numbers.
@@ -234,7 +234,7 @@ struct	octab {			/* opcode table entry */
 #endif
 	char	oc_typ;			/* type of opcode */
 	char	oc_arg;			/* highest formal number for macro */
-	char	oc_str[SYMSIZ];		/* opcode mnemonic string */
+	char	oc_str[8];		/* extended and NUL-terminated in PCC mode */
 };
 struct	operand {		/* operand descriptor */
 	long	op_cls;			/* set of classes (bit vector) */
@@ -269,7 +269,7 @@ struct	sytab {			/* symbol table entry */
 	uns	sy_rel;			/* relocation of symbol */
 	char	sy_typ;			/* type of symbol */
 	char	sy_atr;			/* attributes of symbol */
-	char	sy_str[SYMSIZ];		/* symbol mnemonic string */
+	char	sy_str[8];		/* extended and NUL-terminated in PCC mode */
 };
 struct	vmbuf {			/* virtual memory buffer */
 	struct	vmbuf	*vm_lnk;	/* lru link to next buffer */

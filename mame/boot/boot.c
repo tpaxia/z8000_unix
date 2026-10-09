@@ -46,7 +46,7 @@ unsigned seg,off,count;
 main()
 {
  int fd, n;
- unsigned h[8], off;
+ unsigned h[20], off;
  char kernel[80], fpu[20];
  printf("V7 Z8001 boot\n");
  for (;;) {
@@ -66,19 +66,22 @@ main()
   if(!n) strcpy(kernel,"hd(0,0)/unix");
   fd=open(kernel,0);
   if(fd<0) continue;
-  if(read(fd,(char *)h,16)!=16 || h[0]!=0411 || h[1]<512 ||
-     h[2]>0xe000 || h[3]>0xe000-h[2] || h[5]!=0x1f0) {
+  if(read(fd,(char *)h,40)!=40 || h[0]!=0xe711 || h[5]!=16 || h[6] ||
+     h[9]!=1 || h[7] || h[8]!=0x1f0 || h[14]<512 ||
+     h[15]>0xe000 || h[16]>0xe000-h[15] || h[12] || h[13] ||
+     h[17]!=7 || h[18] || h[19] || h[3] || h[4]!=h[16] ||
+     ((long)h[1]<<16)+h[2]!=(long)h[14]+h[15]) {
    printf("Bad kernel header\n"); close(fd); continue;
   }
-  load(fd,0x8200,0,h[1]); load(fd,0x8100,0,h[2]);
-  lseek(fd,16L,0);
+  load(fd,0x8200,0,h[14]); load(fd,0x8100,0,h[15]);
+  lseek(fd,40L,0);
   if(read(fd,buf,512)!=512) _stop("Missing vectors");
   copyseg(0x8000,0x1000,buf,512);
   close(fd);
   for(n=0;n<512;n++) buf[n]=0;
-  off=h[2];
-  while(h[3]) {
-   n=h[3]>512?512:h[3]; copyseg(0x8100,off,buf,n); off+=n; h[3]-=n;
+  off=h[15];
+  while(h[16]) {
+   n=h[16]>512?512:h[16]; copyseg(0x8100,off,buf,n); off+=n; h[16]-=n;
   }
   strcpy(fpu,"hd(0,0)/fpe"); fd=open(fpu,0);
   if(fd<0) _stop("Missing /fpe");

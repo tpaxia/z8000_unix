@@ -20,7 +20,6 @@ EXPECTED = {
     'kernel.bin': '90d2bfaf2f51be6a9867aa333a522f69556c10d858fcfb1207c11b928dc53046',
     'fpe.bin': 'c782219072e0ec137eefa88ef518f837a8775803ffe9307d846c8cb2084b93f4',
     'board.bin': '038e7b64c24cac3ac485506647efa459185005db6b18a03868db15c0d9b5614e',
-    'block.bin': '6a85a1a1e089a7d7027c71c9e4f0a2e2fab1a2367a467ba5c43dff8729fc8e3c',
 }
 
 
@@ -53,9 +52,16 @@ def main():
     (work/'mixed.s').write_text('.text\n.global entry,datum\nentry:\n.segm\n'
         'ld r2,datum\n.unsegm\nsrlb rh1,#4\n.word datum\n.data\n.word entry\n.bss\n.space 4\n')
     (work/'datum.s').write_text('.data\n.global datum\ndatum: .word 0x1234\n')
+    (work/'pcc.az8').write_text('.text\n.globl entry,target\nentry:\n'
+        'calr target\n.Llonglocal1:\noutb rl3,@r2\nout r0,#0xb0\n'
+        '.word .Llonglocal1,.Llonglocal2\n.Llonglocal2:\nret\n')
+    (work/'callee.az8').write_text('.text\n.globl target\ntarget:\nret\n')
+    (work/'legacy.b').write_bytes(struct.pack('>8H',0o407,2,0,0,0,0,0,0)+bytes.fromhex('9e08'))
     commands = []
     for name in ('rom', 'trap', 'unix', 'core', 'board', 'block', 'mixed', 'datum'):
-        commands.append((name+'-as', f'asz8k -zgs -o {name}.so {name}.s'))
+        commands.append((name+'-as', f'asz8k -gs -o {name}.so {name}.s'))
+    for name in ('pcc','callee'):
+        commands.append((name+'-as', f'asz8k -c -o {name}.so {name}.az8'))
     links = {
         'rom.bin': '-C 0 rom.so', 'kernel.bin': '-C 1 -M 512 trap.so',
         'fpe.bin': '-C 127 -M 61440 unix.so core.so',
@@ -64,13 +70,16 @@ def main():
         'mixed.bin': '-C 3 -T 256 mixed.so datum.so',
     }
     for name, options in links.items():
-        commands.append((name+'-ld', f'ldz8 -z -b {options} -o {name}'))
+        commands.append((name+'-ld', f'ldz8 -b {options} -o {name}'))
+    commands.append(('pcc-ld','ldz8 -i -s pcc.so callee.so -o pcc.out'))
     commands += [
         ('bad-limit', 'ldz8 -z -b -M 100 rom.so -o reject'),
         ('bad-origin', 'ldz8 -z -b -T 65534 rom.so -o reject'),
         ('bad-partial', 'ldz8 -z -b -r rom.so -o reject'),
         ('bad-split', 'ldz8 -z -b -i rom.so -o reject'),
         ('bad-undefined', 'ldz8 -z -b unix.so -o reject'),
+        ('bad-legacy-as', 'asz8k -a -o reject rom.s'),
+        ('bad-legacy-ld', 'ldz8 legacy.b -o reject'),
     ]
     for name, command in commands:
         argv = command.split()
@@ -83,8 +92,13 @@ def main():
         assert hashlib.sha256((work/name).read_bytes()).hexdigest()==digest, name
     mixed = (work/'mixed.bin').read_bytes()
     assert mixed == bytes.fromhex('61028300010eb21100fc010e01001234'), mixed.hex()
+    pcc = (work/'pcc.out').read_bytes()
+    assert pcc[:2] == bytes.fromhex('e711')
+    assert pcc[40:44] == bytes.fromhex('5f000010'), pcc[40:44].hex()
+    assert struct.unpack_from('>2H',pcc,50)==(4,14)
+    assert len((work/'block.bin').read_bytes())==512
     if args.host_only:
-        print('PASS: host machine assembly, five pre-migration image hashes and raw-link failures')
+        print('PASS: host machine assembly, four pre-migration image hashes and raw-link failures')
         return
 
     # Seed target binaries from the same C sources; then run them inside V7.
@@ -102,20 +116,19 @@ def main():
         objects = []
         for source in source_list:
             obj = directory/(source.stem+'.b')
-            compile_c(source, obj, flags)
+            compile_c(source, obj, flags,sout=True)
             objects.append(obj)
         target = directory/tool
-        run([ROOT/'PCC-z8000/z8000/ldz8', '-i', '-x', ROOT/'tools/libc/crt0.b',
-             *objects, ROOT/'tools/libv7.a', '-o', target])
-        sizes[tool] = struct.unpack('>8H', target.read_bytes()[:16])[1:4]
+        run([linker, '-z', '-i', '-s', ROOT/'tests/build/sout-cc/crt0.b',
+             *objects, ROOT/'tests/build/sout-cc/libc.a', '-o', target])
+        sizes[tool] = struct.unpack_from('>3H',target.read_bytes(),28)
         files['bin/'+tool] = target
-    seed = Filesystem(ROOT/'tests/build/userland-native/hd.img')
     for name in ('runner', 'sh'):
-        target = work/name
-        target.write_bytes(seed.read('/bin/'+name))
+        target = ROOT/'tests/build/native-cc-sout'/name
         files['bin/'+name] = target
-    for source in work.glob('*.s'):
+    for source in list(work.glob('*.s'))+list(work.glob('*.az8')):
         files['usr/src/machine/'+source.name] = source
+    files['usr/src/machine/legacy.b']=work/'legacy.b'
     for index, (name, command) in enumerate(commands):
         plan = work/('p%03d'%index)
         plan.write_text(('1' if name.startswith('bad-') else '0')+' - /bin/'+command+'\n')
@@ -134,7 +147,7 @@ def main():
         (work/'next.img').replace(work/'hd.img')
         print('PASS native', name, flush=True)
     fs = Filesystem(work/'hd.img')
-    identical = [name+'.so' for name in ('rom','trap','unix','core','board','block','mixed','datum')]+list(links)
+    identical = [name+'.so' for name in ('rom','trap','unix','core','board','block','mixed','datum','pcc','callee')]+list(links)+['pcc.out']
     for name in identical:
         assert fs.read('/usr/src/machine/'+name)==(work/name).read_bytes(), name
     (work/'results.json').write_text(json.dumps({'native_sizes': sizes,

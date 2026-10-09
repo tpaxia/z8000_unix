@@ -37,7 +37,7 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
         if name in ('lint1','lint2'):destination='usr/lib/'+name
         files[destination]=WORK/name/name
         modes[destination]=0o755
-    native=ROOT/'tests/build/native-environment/native/bin'
+    native=ROOT/'tests/build/native-environment-sout/native/bin'
     for name in ('make','yacc'):
         if 'bin/'+name not in files:files['bin/'+name]=native/name
     for name in ('m','mp','ln','plot','t300','t300s','t4014','t450','vt0','dbm','F77','I77'):
@@ -45,8 +45,10 @@ def setup(extra=None, plan=None, emit_image=True, prepare_helpers=True, report_o
         if p.exists():files['lib/lib'+name+'.a']=p
     for name in ('runner','normal','check'):
         if prepare_helpers:
-            compile_c(ROOT/'tools/native-cc'/(name+'.c'),WORK/(name+'.b'))
-            run([PCC/'ldz8','-x',ROOT/'tools/libc/crt0.b',WORK/(name+'.b'),ROOT/'tools/libv7.a','-o',WORK/name])
+            compile_c(ROOT/'tools/native-cc'/(name+'.c'),WORK/(name+'.b'),sout=True)
+            run([ROOT/'tests/build/ldz8-host/ldz8','-x',
+                 ROOT/'tests/build/sout-cc/crt0.b',WORK/(name+'.b'),
+                 ROOT/'tests/build/sout-cc/libc.a','-o',WORK/name])
         files['bin/'+name]=WORK/name
     files['usr/lib/yaccpar']=PCC/'yacc/yaccpar'
     files['usr/lib/lex/ncform']=ROOT/'v7z8000/usr/lib/lex/ncform'

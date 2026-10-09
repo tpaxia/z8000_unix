@@ -1,11 +1,9 @@
 # s.out linker
 
-On `work/native-asz8k`, `tools/ldz8` builds a shared host/native linker.
-`dispatch.c` includes the existing PCC linker unchanged for the transitional
-a.out path. An explicit `-z` selects the s.out backend in `ldso.c`, using the
-same byte serializer as [asz8k](asz8k.md). The installed compiler driver still
-uses az8 and a.out in the standard images. The s.out C trial installs a driver
-that invokes asz8k and this backend; see [native development](native-development.md).
+`tools/ldz8` builds the same s.out linker sources on the host and inside V7.
+The installed linker accepts only s.out input; the old PCC a.out dispatcher has
+been removed. `-z` remains an accepted compatibility spelling, with no format
+switch. It uses the byte serializer shared with [asz8k](asz8k.md).
 
 ## Supported layouts and options
 
@@ -18,7 +16,7 @@ ZEUS; partial links retain word-aligned sizes and relocation.
 
 | Option | Effect |
 |---|---|
-| `-z` | Select s.out input/output |
+| `-z` | Accepted compatibility spelling; s.out is always selected |
 | `-o file` | Output filename; default `a.out` |
 | `-i` | Separate instruction/data layout |
 | `-r` | Partial link; retain unresolved externals and relocation |
@@ -37,8 +35,7 @@ Raw output retains word alignment without executable clique padding. `-T`
 changes relocation addresses but does not prepend bytes to the file: a boot
 block linked at offset 65024 is still a 512-byte image loaded at that offset.
 `-b` rejects partial and split-I/D output. Its data follows text in the same
-segment; `-D` has no separate placement effect. Kernel C continues through
-the transitional a.out path, including its split-I/D link.
+segment; `-D` has no separate placement effect. Kernel C links as e711 s.out.
 
 The kernel and disk-boot builders use raw linking for ROM, PSA/trap stubs,
 the FPU service, board firmware and the primary disk bootstrap. FPU linking
@@ -58,7 +55,10 @@ supported. Short offsets must fit 0–255 after placement. Portable archives are
 rescanned until no additional member satisfies an unresolved external; rejected
 members cannot modify global symbols or section placement. Undefined symbols
 with a nonzero value declare common storage: final links allocate the largest
-declaration in word-aligned BSS, while a strong definition takes precedence.
+declaration in word-aligned BSS, while a data/BSS definition takes precedence.
+As in original V7 `ld`, a text definition cannot replace a common variable or
+cause its library member to be selected. This preserves nroff's common
+`nlist` array despite libc also exporting the `nlist()` function.
 Partial links retain common sizes. Referenced `_etext`, `_edata` and `_end`
 symbols are supplied at the padded section boundaries. Undefined symbols
 are allowed only with `-r`. Duplicate definitions, malformed/truncated inputs,
@@ -78,12 +78,10 @@ its relative branches during assembly and does not emit those actions yet.
 
 The kernel accepts the resulting NONSEG layouts; see the authoritative
 [exec loader contract](../kernel/processes-and-exec.md#sout-loading).
-SEG user processes remain unsupported. Machine assembly and fixed raw images
-use the shared tools; migration of the kernel C executable and standalone
-loader from a.out remains pending. Shared host/native
-[nm/size/strip and a nlist adapter](object-utilities.md) are available on this
-branch. The existing image builders provide an explicit s.out profile;
-changing their default format remains pending.
+SEG user processes remain unsupported. Kernel C, standalone `/boot` and fixed
+raw machine images use the shared tools. Default bootstrap and native rebuild
+commands use s.out. [Object utilities](object-utilities.md) inspect the same
+contract; their legacy reader remains temporary compatibility support.
 
 Reproduction and validation commands are in
 [native rebuild](../development/native-rebuild.md#sout-linking-and-execution).

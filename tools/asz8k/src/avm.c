@@ -84,9 +84,19 @@ long blklim, next;
  * vinit - Opens the virtual memory file.
  */
 vinit() {
+char name[30];
+int fd;
 
-	close(creat("VM.TMP",0666));
-	if((vmfd=open("VM.TMP",2)) == -1) {
+	/* Parallel host builds and concurrent native users need private storage. */
+	sprintf(name,"/tmp/asvm%d",getpid());
+	fd = creat(name,0600);
+	if (fd < 0) {
+		fprintf(ERROR,"Cannot create vm file\n"); exit(1);
+	}
+	close(fd);
+	vmfd = open(name,2);
+	unlink(name);
+	if(vmfd == -1) {
 		fprintf(ERROR,"Cannot reopen vm file\n");
 		exit(1);
 	}

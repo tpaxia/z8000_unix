@@ -43,11 +43,11 @@ standalone loader, and kernel:
    `3:fe00`, checks its signature and executes it. It contains no kernel or FPU
    image and knows nothing about the filesystem.
 2. Sector zero loads `/boot` into bank 3 using an installer-generated sector
-   list. It strips the ordinary 0407 header and enters the standalone program.
+   list. It strips the e707 s.out header and segment descriptor and enters the standalone program.
 3. `/boot` uses the original V7 `standalone/SYS.c` filesystem routines to open
    the selected kernel. Press Return at `: ` for `hd(0,0)/unix`, or enter another
    pathname such as `hd(0,0)/ounix`.
-4. The Z8001 loader accepts the current 0411 kernel layout, loads instruction
+4. The Z8001 loader accepts the e711 s.out kernel layout, loads instruction
    bytes into physical bank 2, data/BSS into bank 1, and copies its vectors to
    RAM at `0:1000`. It reads the software EPU image from `/fpe` into bank 127,
    then establishes the normal kernel mappings and enters at `1:01f0`.

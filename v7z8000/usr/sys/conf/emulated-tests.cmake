@@ -5,10 +5,9 @@ target_link_libraries(test_driver PRIVATE z8000)
 target_include_directories(test_driver PRIVATE "${EMU_DIR}/src")
 
 add_custom_target(disk_image
-    COMMAND make -C "${TOOLS_DIR}" v7mkfs init
-    COMMAND "${TOOLS_DIR}/v7mkfs" root.img proto.small
-    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root.img" "${B}/root.img"
-    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/root.img" "${B}/hd.img"
+    COMMAND python3 "${TOOLS_DIR}/native-cc/build.py" --image
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/../tests/build/native-cc-sout/hd.img" "${B}/root.img"
+    COMMAND ${CMAKE_COMMAND} -E copy "${TOOLS_DIR}/../tests/build/native-cc-sout/hd.img" "${B}/hd.img"
     WORKING_DIRECTORY "${TOOLS_DIR}"
     COMMENT "Building disk image"
 )
@@ -75,7 +74,7 @@ set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     rom.so rom.bin
     trap.so kernel.bin
     krt.az8 krt.b arith.az8 arith.b
-    handler.bout handler.bin handler-data.bin
+    handler.sout handler.bin handler-data.bin
     root.img hd.img
 )
 

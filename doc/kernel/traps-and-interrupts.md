@@ -170,7 +170,7 @@ conversion, without implementing finite arithmetic itself.
 engine in Unix `libv7.a`; PCC's existing `float.az8` calling convention remains.
 The standalone compiler CPU tests retain `PCC-z8000/z8000/lib/softfp.c`, because
 their machine has no Unix service. Kernel C now uses the native C `oz8`
-compaction pass and shared csv/cret. `bout2bin.py` rejects a kernel whose
+compaction pass and shared csv/cret. `sout2bin.py` rejects a kernel whose
 text/data/BSS reaches the MMU copy window at 0xe000.
 
 Run `cmake --build build --target test-fpe` to test arithmetic vectors,

@@ -18,13 +18,18 @@ def run(args, **kwargs):
     return result
 
 
-def compile_c(source, destination, flags=()):
+def compile_c(source, destination, flags=(), sout=False, compact=False):
     pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002', '-Dunix=1',
                '-I' + str(source.parent), '-I' + str(ROOT / 'v7z8000/usr/include'), *flags, source])
     compiled = run([PCC / 'cz8/cz8'], input=pre.stdout)
+    if compact:
+        compiled = run([PCC/'oz8'], input=compiled.stdout)
     destination.with_suffix('.az8').write_bytes(compiled.stdout)
     destination.with_suffix('.log').write_bytes(pre.stderr + compiled.stderr)
-    run([PCC / 'az8/az8', '-o', destination.name,
+    assembler = ROOT / 'tests/build/asz8k-host/asz8k' if sout else PCC / 'az8/az8'
+    if sout:
+        (destination.parent/'asz8k.pd').write_bytes((ROOT/'tools/asz8k/src/asz8k.pd').read_bytes())
+    run([assembler, *(['-zc'] if sout else []), '-o', destination.name,
          destination.with_suffix('.az8').name], cwd=destination.parent)
 
 

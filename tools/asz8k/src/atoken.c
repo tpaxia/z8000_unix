@@ -96,7 +96,7 @@ char	*strp;
 	if('a'<=ch&&ch<='z' || 'A'<=ch&&ch<='Z' || ch=='$' || ch=='_'
 	 || ch=='.') {  /* symbol */
 		do {
-			if(strp < tokstr+SYMSIZ) *strp++ = ch;
+			if(strp < tokstr+(pccflg ? SYMSIZ : 8)) *strp++ = ch;
 			scanc();
 		} while('a'<=ch&&ch<='z' || 'A'<=ch&&ch<='Z' ||
 		 '0'<=ch&&ch<='9' || ch=='$' || ch=='_' || ch=='.');

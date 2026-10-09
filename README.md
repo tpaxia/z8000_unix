@@ -24,7 +24,7 @@ See [compiler research](doc/history/pcc-research.md) for the full compiler resea
 
 The kernel and user processes run in NONSEG mode (16-bit pointers). The Z8001 CPU automatically maps non-segmented 16-bit addresses using the current PC's segment, so C code compiled for Z8002 works correctly without modification. This avoids the complexity of 32-bit segmented pointers, where `sizeof(char *) = 4` but `sizeof(int) = 2` — a mismatch that would require extensive changes to V7 code that conflates ints and pointers.
 
-The emulated machine also supports separate instruction/data spaces: `ldz8 -i` produces 0411 executables with up to 64 KB of instruction addresses and 64 KB for data, BSS, heap, and stack. Pointers remain 16-bit. Existing 0407 combined-space programs continue to work. See [the kernel reference](doc/kernel/memory-and-swapping.md#separate-instruction-and-data-spaces).
+The emulated machine also supports separate instruction/data spaces: `ldz8 -i` produces e711 s.out executables with up to 64 KB of instruction addresses and 64 KB for data, BSS, heap, and stack. Pointers remain 16-bit. e707 s.out provides combined-space programs. See [the kernel reference](doc/kernel/memory-and-swapping.md#separate-instruction-and-data-spaces).
 
 Floating-point arithmetic uses the historical Zilog software EPU engine from
 CP/M-8000, in reserved segment 127. User programs execute EPA instructions
@@ -34,7 +34,7 @@ See [software EPU service](doc/kernel/traps-and-interrupts.md#software-epu-servi
 Trap handlers must briefly enter SEG+SYS mode (forced by CPU hardware on trap entry) to access the segmented system stack pointer (RR14), then switch to NONSEG+SYS for C code execution.
 
 The kernel also uses split I/D. The emulated board supports shared read-only
-0411 text with sticky swap caching, conservative stack-fault backout and automatic growth, and whole-process
+split-I/D text with sticky swap caching, conservative stack-fault backout and automatic growth, and whole-process
 swapping through a separate V7 swapper process to a dedicated ATA unit. Raw disk I/O uses V7 buffer locking with
 MMU-owned validation and process pinning. Fatal signals can write
 [V7-layout core files](doc/kernel/processes-and-exec.md#core-dumps) with a full
@@ -61,7 +61,7 @@ must be rebuilt with the matching libc and kernel. See the
 
 ### Compiler: PCC
 
-The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. The PCC-z8000 toolchain consists of cz8 (code generator), az8 (assembler), and ldz8 (linker), producing V7 a.out object files natively.
+The Portable C Compiler is the historical V7 Unix compiler and was designed to be self-hosting — making it the natural choice for a V7 port. PCC supplies code generation; shared host/native asz8k and ldz8 produce s.out objects and executables. The default bootstrap and native rebuild use this single format.
 
 Steps 1-10 used ACK (Amsterdam Compiler Kit); the switch to PCC happened in Step 11, and ACK has since been removed from the tree. See [compiler research](doc/history/pcc-research.md) for the compiler research that motivated the switch.
 
@@ -151,9 +151,10 @@ for verified scope and remaining work.
 | `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
 | `emu/test_driver.cpp` | Emulated machine: MMU, IDE/ATA, console, RAM disk DMA, interrupt injection |
 | `tools/v7mkfs.c` | V7 filesystem image builder |
-| `tools/proto.small` | Filesystem prototype (/dev/console, /dev/tty, /etc/init, /bin/sh, /bin/echo, /bin/cat, /tmp) |
+| `tools/native-cc/build.py` | s.out bootstrap tools and filesystem seed |
+| `tools/proto.small` | Filesystem prototype retained for older regression fixtures |
 | `tools/libc/` | User-space C library: crt0, syscalls, setjmp, sbrk |
-| `tools/bout2bin.py` | a.out → flat binary converter (for kernel handler.bin) |
+| `tools/sout2bin.py` | Extract split s.out kernel instruction/data boot images |
 | `v7z8000/` | V7 source tree adapted for Z8000 (kernel, libc, commands, man pages) |
 | `v7unix/` | V7 Unix source tree (from TUHS, pristine reference) |
 | `PCC-z8000/` | PCC compiler submodule with Z8000 backend (cz8/az8/ldz8) |

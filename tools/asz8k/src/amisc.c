@@ -55,7 +55,7 @@ reg	char	*llp;
 			macarg(ch);
 			continue;
 		}
-		if (machineflg && ch>=0200) ch = '?';
+		if (pccflg && ch>=0200) ch = '?';
 		else ch &= 0177;
 		if(ch == '\n')  /* we have a line */
 			break;
@@ -63,13 +63,15 @@ reg	char	*llp;
 		else if(slp < &sline[SLINSIZ]) *slp++ = *llp++ = ch;
 	}
 	*slp++ = *llp++ = '\n';  *slp = *llp = '\0';
-	/* Machine sources permit instructions/directives in column one. */
-	if (machineflg && reading && sline[0]!=' ' && sline[0]!='\t' && sline[0]!='!' && sline[0]!=';') {
+	/* PCC and machine sources permit instructions/directives in column one. */
+	if (pccflg && reading &&
+	    (sline[0]=='.' || sline[0]=='_' ||
+	     sline[0]>='a' && sline[0]<='z' || sline[0]>='A' && sline[0]<='Z')) {
 		char *p, *q;
 		p = sline;
 		while (*p && *p!=' ' && *p!='\t' && *p!='\n' && *p!=':') p++;
 		while (*p==' ' || *p=='\t') p++;
-		if (*p!=':' && strncmp(p,".equ",4) && strncmp(p,".sect",5) && strncmp(p,".macro",6) && strncmp(p,".MACRO",6)) {
+		if (*p!=':' && *p!='=' && strncmp(p,".equ",4) && strncmp(p,".sect",5) && strncmp(p,".macro",6) && strncmp(p,".MACRO",6)) {
 			for (q=slp+1; q>sline; q--) *q = q[-1];
 			sline[0] = ' ';
 		}
@@ -190,7 +192,7 @@ symcmp(a,b) reg char *a, *b; {
 
 reg	int	i;
 
-	i = SYMSIZ;
+	i = pccflg ? SYMSIZ : 8;
 	while(--i>=0 && *a==*b++) {
 		if(*a++ == '\0') return(0);
 	}
@@ -204,7 +206,7 @@ symcpy(d,s) reg char *d, *s; {
 
 reg	char	i;
 
-	i = SYMSIZ;
+	i = pccflg ? SYMSIZ : 8;
 	do {
 		if((*d++ = *s++) == '\0') return;
 	} while(--i > 0);

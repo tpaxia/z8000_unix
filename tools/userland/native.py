@@ -14,13 +14,13 @@ import test as packages
 from assets import oldmembers
 from object_format import sizes
 ROOT=packages.ROOT
-WORK=ROOT/'tests/build/userland-native'
+WORK=ROOT/'tests/build/userland-native-sout'
 RECIPES=ROOT/'tools/userland/native'
-NATIVE=ROOT/'tests/build/native-environment/native'
+NATIVE=ROOT/'tests/build/native-environment-sout/native'
 SYS=packages.SYS
 
 
-def setup(preserve=False, update_toolchain=False,sout=False):
+def setup(preserve=False, update_toolchain=False,sout=True):
     WORK.mkdir(parents=True,exist_ok=True)
     catalog=json.loads((RECIPES/'catalog.json').read_text())
     files,modes=packages.setup(emit_image=False,prepare_helpers=False,report_override={})
@@ -56,6 +56,10 @@ def setup(preserve=False, update_toolchain=False,sout=False):
     if update_toolchain:
         for path in NATIVE.rglob('*'):
             if path.is_file():files[str(path.relative_to(NATIVE))]=path
+    # A refresh retains completed packages, but always replaces the harness
+    # with the helpers from the verified essential-command image.
+    for name in ('runner','normal','check'):
+        files['bin/'+name]=seed_dir/name
     # Extract the original source-only plot archives. No target objects enter
     # the build directories; this is source staging, like unpacking a tape.
     for name in ('plot','t300','t300s','t4014','t450','vt0'):
@@ -116,7 +120,7 @@ def setup(preserve=False, update_toolchain=False,sout=False):
     packages.image(files,WORK/'hd.img',blocks=120000,inodes=16384,modes=modes,sout=sout)
 
 
-def summarize(sout=False):
+def summarize(sout=True):
     fs=packages.Filesystem(WORK/'hd.img');report={}
     for row in json.loads((RECIPES/'catalog.json').read_text()):
         name=row['name'];data=fs.read('/usr/src/build/'+name+'/'+row['output'])
@@ -141,7 +145,7 @@ def main():
     parser.add_argument('--update-toolchain',action='store_true',
                         help='with --refresh, install the verified native environment tools')
     parser.add_argument('--summary',action='store_true')
-    parser.add_argument('--sout',action='store_true',help='build with the native s.out environment on a separate disk')
+    parser.add_argument('--sout',action='store_true',default=True,help=argparse.SUPPRESS)
     args=parser.parse_args()
     global WORK,NATIVE
     if args.sout:
@@ -161,7 +165,9 @@ def main():
         logpath=WORK/(name+'.log')
         # Installing yacc makes generated-source dependencies newer. Native
         # make may rebuild those packages while installing the whole tree.
-        cycles='2000000000000' if name=='install' else '200000000000'
+        # The complete lint front-end compile/link takes more than 200B
+        # cycles with the shared assembler; do not cut off a valid link.
+        cycles='2000000000000' if name=='install' else '400000000000'
         with logpath.open('wb') as log:
             result=subprocess.run(list(map(str,[SYS/'test_driver','-c',cycles,
                 '-d',WORK/'hd.img','-o',WORK/'next.img',
@@ -183,7 +189,7 @@ def main():
 
 
 if __name__=='__main__':
-    if '--sout' in sys.argv[1:]:WORK=ROOT/'tests/build/userland-native-sout'
+    WORK=ROOT/'tests/build/userland-native-sout'
     WORK.mkdir(parents=True,exist_ok=True)
     with (WORK/'run.lock').open('w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -2,14 +2,22 @@
 
 ## Execution and object model
 
-Kernel and user C use NONSEG 16-bit pointers. Port a.out executables support
-0407 combined code/data and 0411 separate instruction/data spaces; the latter
-provides distinct 64 KiB address spaces for code and data/BSS/heap/stack.
-On `work/native-asz8k`, kernel exec also accepts NONSEG s.out e707/e711,
-with the same process ABI; see [the loader contract](../kernel/processes-and-exec.md#sout-loading).
-The experimental [s.out linker](ldz8.md) places initial SEG objects, but full
-SEG compilation/user loading and the kernel/boot pipeline remain unfinished. Object relocations
-and executable layouts are independent of the archive container format.
+Kernel and user C use NONSEG 16-bit pointers. **s.out is the sole production
+object and executable format.** e707 combines code and data; e711 provides
+separate 64 KiB instruction and data/BSS/heap/stack spaces. The same format
+family represents SEG objects, without changing the NONSEG C ABI.
+
+The kernel C executable, standalone `/boot`, installed `/unix`, bootstrap
+compiler tools and default native rebuilds use s.out. ROM, trap veneers,
+primary disk sectors and the software EPU bank are raw machine images produced
+from s.out objects. They have no Unix executable header.
+
+SEG user processes remain unsupported. The kernel exec loader and shared
+inspection utilities still read legacy a.out during the phaseout. Remaining
+legacy regression producers/readers will be retired after the default native
+environment and full-userland rebuilds pass. Unidot is confined to the separate
+historical assembler oracle, not the installed toolchain. `.b` object filenames
+and the default output name `a.out` do not specify the file's format.
 
 See [split-I/D mappings](../kernel/memory-and-swapping.md#separate-instruction-and-data-spaces),
 [syscall convention](../kernel/traps-and-interrupts.md#syscall-calling-convention),
@@ -23,9 +31,7 @@ eight-byte `!<arch>\n` signature and 60-byte member headers. Native libraries
 use unindexed members with names of at most 14 characters. The archive
 container does not determine CPU addressing mode: object headers and
 relocations, followed by the linker and loader, determine that. Current
-executable support is NONSEG combined space and separate I/D; a.out remains
-the standard image pipeline. The assembler branch also has an opt-in
-[s.out C pipeline](native-development.md) using the same calling convention.
+executable support is NONSEG combined space and separate I/D in s.out.
 Full segmented user executables require further ABI and loader work.
 
 ## PCC Calling Convention (Z8002)

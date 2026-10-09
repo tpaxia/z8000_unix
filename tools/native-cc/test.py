@@ -7,14 +7,14 @@ sys.dont_write_bytecode = True
 from build import ROOT, PCC, WORK, BINUTILS, run, compile_c, image, module
 
 
-def test(selected=(), sout=False):
+def test(selected=(), sout=True):
     run(['cmake', '--build', ROOT / 'v7z8000/usr/sys/build',
          '--target', 'kernel', 'test_driver'])
     extra = {}
     for name in ['runner', 'check']:
-        compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'))
-        run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / (name + '.b'),
-             ROOT / 'tools/libv7.a', '-o', WORK / name])
+        compile_c(ROOT / 'tools/native-cc' / (name + '.c'), WORK / (name + '.b'),sout=sout)
+        run([ROOT/'tests/build/ldz8-host/ldz8', '-z', '-x', ROOT/'tests/build/sout-cc/crt0.b', WORK / (name + '.b'),
+             ROOT/'tests/build/sout-cc/libc.a', '-o', WORK / name])
         extra['bin/' + name] = WORK / name
     fixtures = {
         'input.c': '''#include <stdio.h>
@@ -55,19 +55,24 @@ main() {
     for name, source in fixtures.items():
         (WORK / name).write_text(source)
         extra['tmp/' + ('include/' if name == 'probe.h' else '') + name] = WORK / name
-    compile_c(WORK / 'front.c', WORK / 'front.b')
-    run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'front.b',
-         ROOT / 'tools/libv7.a', '-o', WORK / 'front'])
+    compile_c(WORK / 'front.c', WORK / 'front.b',sout=sout)
+    run([ROOT/'tests/build/ldz8-host/ldz8', '-z', '-x', ROOT/'tests/build/sout-cc/crt0.b', WORK / 'front.b',
+         ROOT/'tests/build/sout-cc/libc.a', '-o', WORK / 'front'])
     # Install the environment-checking front-end wrapper as an executable.
     extra['bin/front'] = WORK / 'front'
     # A substitute optimizer makes driver failure propagation observable.
     (WORK / 'failopt.c').write_text('main() { return 1; }\n')
-    compile_c(WORK / 'failopt.c', WORK / 'failopt.b')
-    run([PCC / 'ldz8', '-x', ROOT / 'tools/libc/crt0.b', WORK / 'failopt.b',
-         ROOT / 'tools/libv7.a', '-o', WORK / 'failopt'])
+    compile_c(WORK / 'failopt.c', WORK / 'failopt.b',sout=sout)
+    run([ROOT/'tests/build/ldz8-host/ldz8', '-z', '-x', ROOT/'tests/build/sout-cc/crt0.b', WORK / 'failopt.b',
+         ROOT/'tests/build/sout-cc/libc.a', '-o', WORK / 'failopt'])
     extra['bin/oz8'] = WORK / 'failopt'
     reference = module('c2_reference', PCC / 'c2z8.py')
-    assembly = (BINUTILS / 'az8/ins.az8').read_text()
+    # Generate the large optimizer fixture from source, without depending on
+    # an earlier legacy assembler bootstrap's build directory.
+    source=PCC/'az8/ins.c'
+    pre=run(['cpp','-nostdinc','-undef','-Dz8000','-Dz8002','-Dunix=1',
+             '-I'+str(source.parent),'-I'+str(ROOT/'v7z8000/usr/include'),source])
+    assembly=run([PCC/'cz8/cz8'],input=pre.stdout).stdout.decode()
     assert len(assembly) > 65536
     (WORK / 'opt.az8').write_text(assembly)
     (WORK / 'opt.want').write_text(reference.compact(assembly))
@@ -164,6 +169,6 @@ main() {
 
 
 if __name__ == '__main__':
-    sout='--sout' in sys.argv[1:]
+    sout=True
     if sout: WORK=ROOT/'tests/build/native-cc-sout'
     test([a for a in sys.argv[1:] if a!='--sout'],sout)

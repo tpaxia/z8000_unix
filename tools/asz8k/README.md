@@ -1,20 +1,17 @@
-# Experimental Unix asz8k port
+# Unix asz8k port
 
-The original CP/M-8000 assembler builds from the same C sources on the host
-and inside V7 Unix. Both independently assemble the same test sources.
-It emits Unidot relocatable objects, including Z8001 segmented relocations.
-The new `-a` backend emits NONSEG a.out objects directly for ldz8.
-The `-z` backend writes ZEUS s.out relocatable objects for NONSEG and SEG.
-The `-zc` mode reads PCC/az8 assembly directly. The s.out C trial installs it
-in the compiler pipeline; the standard bootstrap images retain az8 for now.
-Machine sources use `-zg` (add `-s` for SEG objects), including mixed
-`.segm`/`.unsegm` encoding. Kernel and disk-boot machine images now use these
-shared sources on the host and raw linking in ldz8. See
-[machine assembly](../../doc/toolchain/asz8k.md#machine-assembly).
+Host and V7 builds compile the same C sources. The production assembler writes
+s.out by default for NONSEG and SEG code. PCC assembly uses `-c`; machine
+assembly uses `-g` and optionally `-s`. The default compiler bootstrap and
+kernel/boot builds use this assembler and the shared s.out linker.
 
-See [the assessment](../../doc/toolchain/asz8k.md) for results and remaining
-integration work, and [native rebuild](../../doc/development/native-rebuild.md#experimental-zilog-assembler)
-for the build procedure.
+The separate host `make oracle` build selects `ASZ_LEGACY`, retaining the old
+Unidot/a.out writers for historical comparisons. It is not installed in Unix.
+The older native multi-format trial needs migration before it can test current
+production defaults.
+
+See the [assembler reference](../../doc/toolchain/asz8k.md) and
+[native rebuild procedure](../../doc/development/native-rebuild.md).
 
 ## Source provenance
 
@@ -28,7 +25,7 @@ notices are retained. CRLF and terminal CP/M padding were normalized.
 `src/aout.c`, `src/sout.c`, `src/soutfmt.c` and `src/pcc.c` are new port code. The imported
 assembler calls the selected backend at the pass boundary, byte emission and
 finalization. Outside PCC mode instruction selection is unchanged; PCC mode
-also relaxes out-of-range JR branches to JP. s.out short-address output
+also relaxes external/out-of-range JR and CALR transfers to JP and CALL. s.out short-address output
 additionally rejects offsets above 255 before the encoder truncates them.
 The host `Makefile` and native `src/makefile` build the complete assembler.
 `host.py` compares independent host/native assembly, including object files,

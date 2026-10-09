@@ -21,7 +21,11 @@ SHELL_OBJS = $(SHELL_SRCS:.c=.b)
 
 .PHONY: all clean
 
-all: v7mkfs init echo cat sh root.img
+# Production bootstrap uses s.out. The explicit rules below remain fixtures
+# for regression producers that have not yet been migrated.
+all: v7mkfs
+	python3 native-cc/build.py
+	cp ../tests/build/native-cc-sout/hd.img root.img
 
 # =============================================================================
 # Host tools

@@ -19,13 +19,30 @@ ldl rr0,@rr8
 inc r9,#4
 call @rr12
 djnz r10,next
-! Strip the 16-byte 0407 header; BSS is cleared by /boot's startup.
+! Strip the 24-byte s.out header and 16-byte NONSEG segment descriptor.
+! BSS is cleared by /boot's startup.
 ld r2,#0x8300
 ld r3,#0
 ld r0,@rr2
-cp r0,#0x107
+cp r0,#0xe707
 jr nz,bad
-ld r3,#2
+ld r3,#10
+ld r0,@rr2
+cp r0,#16
+jr nz,bad
+ld r3,#12
+ld r0,@rr2
+test r0
+jr nz,bad
+ld r3,#14
+ldl rr0,@rr2
+testl rr0
+jr nz,bad
+ld r3,#18
+ld r0,@rr2
+cp r0,#1
+jr nz,bad
+ld r3,#28
 ld r6,@rr2
 inc r3,#2
 ld r0,@rr2
@@ -35,7 +52,7 @@ cp r6,#0xe000
 jr ugt,bad
 test r6
 jr z,bad
-ld r3,#16
+ld r3,#40
 ld r4,#0x8300
 ld r5,#0
 ldirb @rr4,@rr2,r6

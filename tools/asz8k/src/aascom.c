@@ -62,7 +62,6 @@ int	index;
 		pgcheck();  fprintf(LIST,errfmt,errct,warnct);
 		if(xflag) putxref();
 	}
-	unlink("VM.TMP");
 	if(errct) {
 		fprintf(ERROR,errfmt,errct,warnct);
 		if (lflag) fclose(LIST);
@@ -70,7 +69,9 @@ int	index;
 		exit(1);
 	}
 	/* Unix port: retain the native Unidot object; no CP/M xcon chaining. */
+#ifdef ASZ_LEGACY
 	if (aflag) aofinish();
+#endif
 	if (zflag) sofinish();
 	if (fclose(OBJECT) == EOF) exit(1);
 	if (lflag && fclose(LIST) == EOF) exit(1);
@@ -257,8 +258,10 @@ dopass() {
 emitb(value,reloc) uns value, reloc; {
 
 	if(pass2) {
-		if (aflag) aobyte(value,reloc);
-		else if (zflag) sobyte(value,reloc);
+#ifdef ASZ_LEGACY
+		if (aflag) aobyte(value,reloc); else
+#endif
+		if (zflag) sobyte(value,reloc);
 		else {
 		/*
 		 * Check whether relocation is needed.
@@ -347,11 +350,13 @@ uns	h;
 uns	rel;
 char	type;
 
+#ifdef ASZ_LEGACY
 	if (aflag) { aobegin(); return; }
+#endif
 	if (zflag) { sobegin(); return; }
 	objtyp = OBOST;  oflush();
 	for(rel=RBSEC ; rel<secct ; rel++) {  /* output sections blocks */
-		if(objtyp!=OBSEC || relbot-objtop<SYMSIZ+7) {
+		if(objtyp!=OBSEC || relbot-objtop<8+7) {
 			oflush();  objtyp = OBSEC;
 		}
 		syp = (struct sytab *)rfetch(sectab[rel].se_sym);
@@ -369,7 +374,7 @@ char	type;
 				type = OBGLO;
 			else
 				type = OBLOC;
-			if(objtyp!=type || relbot-objtop<SYMSIZ+7) {
+			if(objtyp!=type || relbot-objtop<8+7) {
 				oflush();  objtyp = type;
 			}
 			if(syp->sy_typ == STUND) {
@@ -580,7 +585,7 @@ oputs(s) char *s; {
 
 char	i;
 
-	i = SYMSIZ;
+	i = 8;
 	do {
 		if(*s == '\0') break;
 		oputb(*s++);
@@ -658,7 +663,9 @@ setorg() {
  */
 setsec(sec) uns sec; {
 
+#ifdef ASZ_LEGACY
 	aocheck();
+#endif
 	socheck();
 	sectab[cursec].se_aln = curaln;
 	sectab[cursec].se_ext = curext;

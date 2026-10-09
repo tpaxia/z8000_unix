@@ -1,12 +1,12 @@
 # Current Status
 
-Status as of 2026-10-08.
+Status as of 2026-10-09.
 See the [documentation index](README.md) for procedures and subsystem references.
 
 ## Implemented and tested
 
 The emulated Z8001 machine boots V7 to a Bourne shell. Kernel and user C use
-16-bit NONSEG pointers; 0407 combined-space and 0411 split-I/D executables work.
+16-bit NONSEG pointers; s.out e707 combined-space and e711 split-I/D executables work.
 The kernel also uses split I/D. Floating arithmetic uses the separate Zilog
 software EPU engine in segment 127.
 
@@ -45,26 +45,21 @@ See [native development](toolchain/native-development.md) for scope and
   but not all have been exercised.
 - Host preparation still stages compiler glue, sources and filesystem images.
   A complete native kernel/boot/system rebuild has not been established.
-  On `work/native-asz8k`, the experimental assembler writes SEG/NONSEG s.out
-  objects, with independent host/native assembler byte comparisons. The shared
-  opt-in linker supports initial segment placement, relocations, partial links
-  and archives; kernel exec accepts both NONSEG s.out layouts. The experimental
-  C pipeline invokes asz8k directly on PCC output and has rebuilt startup/libc,
-  asz8k, ldz8 and the cc driver in s.out inside V7, with runtime checks.
-  Shared host/native [object utilities and a nlist adapter](toolchain/object-utilities.md)
-  support both port formats in an isolated trial. Existing bootstrap and
-  native image builders now have an explicit `--sout` profile. Its bootstrap
-  tests, terminal-resource conversion and make/file/prof format checks pass.
-  Native cpp now selects V7's signed-character table layout for Z8000 and
-  passes a macro-expansion runtime check. The s.out native environment passes
-  all 127 stages, exports 17 s.out tools and validates 147 libc members;
-  its final libc test passes all 39 checks. Essential/full userland profile
-  rebuild validation remains pending. Reset/trap, FPU and disk-boot assembly
-  now use host builds of the shared native assembler/linker, with matching
-  host/native machine objects and raw images. GNU Z8000 tools are no longer
-  bootstrap dependencies. Kernel C/standalone executable migration and
-  changing the default image format remain pending. See
-  [the linker reference](toolchain/ldz8.md) and [assembler assessment](toolchain/asz8k.md).
+  On `work/native-asz8k`, s.out is now the sole production object/executable
+  format. The shared host/native assembler and linker build the kernel,
+  standalone bootloader, bootstrap tools and default native development image.
+  ROM, trap, software EPU and disk-sector artifacts are raw images linked from
+  s.out objects. GNU Z8000 tools are not bootstrap dependencies.
+  All ten native compiler workloads, 45 unchanged essential V7 commands,
+  24 machine-assembly checks and 174 object-utility checks pass. MAME boots
+  the s.out disk image and compiles a native program. The default native
+  environment passes all 127 stages, exports 17 executables and validates 147
+  libc members, including the final 39-check libc test. The full userland
+  rebuild passes all 194 stages, validates 192 installed outputs and passes
+  the full runtime smoke suite. Legacy regression producers and
+  a.out readers remain during the phaseout. See
+  [ABI and formats](toolchain/abi.md), [native rebuild](development/native-rebuild.md)
+  and [linker support](toolchain/ldz8.md).
 - The standalone emulator and MAME use the same emulated kernel configuration. Physical machine ports
   need their own boot, interrupt, device and memory implementations.
 - Fault restart accepts a conservative instruction whitelist. Memory sections

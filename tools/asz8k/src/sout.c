@@ -7,7 +7,11 @@
 #include "obj.h"
 #include "soutfmt.h"
 
+#ifdef ASZ_LEGACY
 int zflag;
+#else
+int zflag = 1;
+#endif
 static int kinds[SECSIZ], segments[3], nseg, symbols, symfd, relfd;
 static int present[3];
 static long lengths[SECSIZ], sizes[3], bases[3], files[3], nextbyte[3];

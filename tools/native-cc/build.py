@@ -10,7 +10,7 @@ sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
 PCC = ROOT / 'PCC-z8000/z8000'
-WORK = ROOT / 'tests/build/native-cc'
+WORK = ROOT / 'tests/build/native-cc-sout'
 PASSES = ROOT / 'tests/build/native-pcc'
 BINUTILS = ROOT / 'tests/build/native-binutils'
 
@@ -26,28 +26,27 @@ helpers = module('binutils_build', ROOT / 'tools/native-binutils/build.py')
 run, compile_c = helpers.run, helpers.compile_c
 
 
-def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None, sout=False):
+def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=None, sout=True):
     """Install target tools, V7 headers, and optional test fixtures."""
     run([sys.executable, ROOT / 'tools/export-headers.py', '--check'])
+    seed=ROOT/'tests/build/sout-cc'
+    toolwork=ROOT/'tests/build/native-cc-sout'
     files = {
-        'bin/cc': WORK / 'cc', 'bin/az8': BINUTILS / 'az8/az8',
-        'bin/ldz8': BINUTILS / 'ldz8/ldz8', 'bin/sh': ROOT / 'tools/sh',
-        'etc/init': ROOT / 'tools/init', 'lib/cpp': WORK / 'cpp',
-        'lib/front': PASSES / 'target-front/front',
-        'lib/back': PASSES / 'target-back/back',
-        'lib/oz8': WORK / 'oz8',
-        'lib/crt0.b': ROOT / 'tools/libc/crt0.b',
-        'lib/libc.a': ROOT / 'tools/libv7.a',
-        'usr/src/hello.c': ROOT / 'tools/native-cc/hello.c',
+        'bin/cc':seed/'seed/cc.out',
+        'bin/asz8k':seed/'seed/asz8k.out',
+        'bin/ldz8':seed/'seed/ldz8.out',
+        'bin/sh':toolwork/'sh', 'etc/init':toolwork/'init',
+        'bin/echo':toolwork/'echo', 'bin/cat':toolwork/'cat',
+        'lib/cpp':toolwork/'cpp', 'lib/oz8':toolwork/'oz8',
+        'lib/front':PASSES/'target-front/front', 'lib/back':PASSES/'target-back/back',
+        'lib/crt0.b':seed/'crt0.b', 'lib/libc.a':seed/'libc.a',
+        'usr/lib/asz8k.pd':ROOT/'tools/asz8k/src/asz8k.pd',
+        'usr/src/hello.c':ROOT/'tools/native-cc/hello.c',
     }
-    if sout:
-        seed=ROOT/'tests/build/sout-cc'
-        toolwork=ROOT/'tests/build/native-cc-sout'
-        files.update({'lib/'+name:toolwork/name for name in ('cpp','oz8')})
-        files.update({'bin/'+name:seed/'seed'/(name+'.out')
-                      for name in ('cc','asz8k','ldz8')})
-        files.update({'lib/crt0.b':seed/'crt0.b','lib/libc.a':seed/'libc.a',
-                      'usr/lib/asz8k.pd':ROOT/'tools/asz8k/src/asz8k.pd'})
+    for target, source in files.items():
+        if target.startswith(('bin/','etc/')) or target in ('lib/cpp','lib/front','lib/back','lib/oz8'):
+            if source.read_bytes()[:2] not in (b'\xe7\x07',b'\xe7\x11'):
+                raise ValueError('bootstrap executable is not NONSEG s.out: '+str(source))
     includes = ROOT / 'v7z8000/usr/include'
     for path in includes.rglob('*'):
         if path.is_file():
@@ -83,45 +82,69 @@ def image(extra_files=None, destination=None, blocks=6000, inodes=512, modes=Non
     run([ROOT / 'tools/v7mkfs', destination, proto])
 
 
-def build(no_compact=False, sout=False):
-    WORK.mkdir(parents=True, exist_ok=True)
-    run([sys.executable, ROOT / 'tools/pcc-native/build.py',
-         *(['--no-compact'] if no_compact else [])])
-    run([sys.executable, ROOT / 'tools/native-binutils/build.py'])
-    regen = module('regen', PCC / 'cz8/regen_cgram.py')
-    yaccdir = WORK / 'yacc'
-    yaccdir.mkdir(exist_ok=True)
-    yacc = regen.build_yacc(yaccdir)
-    cppsrc = ROOT / 'v7z8000/usr/src/cmd/cpp'
-    shutil.copyfile(cppsrc / 'cpy.y', yaccdir / 'cpy.y')
-    run([yacc, 'cpy.y'], cwd=yaccdir)
-    report = {}
-    for name, sources, flags in [
-        ('cpp', [cppsrc / 'cpp.c', yaccdir / 'y.tab.c'], ['-I' + str(cppsrc)]),
-        ('cc', [PCC / 'ccz8.c'], ['-DTWOPASS']+(['-DSOUT'] if sout else [])),
-        ('oz8', [PCC / 'oz8.c'], []),
-    ]:
-        objects = []
+def build(no_compact=False):
+    """Cross-compile the minimum native environment without legacy objects."""
+    from object_format import sizes
+    WORK.mkdir(parents=True,exist_ok=True)
+    seed=module('sout_seed',ROOT/'tools/sout-cc/build.py')
+    seed.library(); seed.seeds()
+    run(['make','-C',PCC/'test','../oz8'])
+    run([sys.executable,ROOT/'tools/pcc-native/prepare.py',PASSES])
+    linker=ROOT/'tests/build/ldz8-host/ldz8'
+    runtime=ROOT/'tests/build/sout-cc'
+    report={}
+    def program(name,sources,flags=(),directory=None,split=True):
+        directory=Path(directory or WORK/(name+'-objects'))
+        directory.mkdir(parents=True,exist_ok=True)
+        objects=[]
         for source in sources:
-            obj = WORK / (source.stem + '.b')
-            compile_c(source, obj, flags)
+            obj=directory/(source.stem+'.b')
+            compile_c(source,obj,flags,sout=True,compact=not no_compact)
             objects.append(obj)
-        run([PCC / 'ldz8', '-i', '-x', ROOT / 'tools/libc/crt0.b', *objects,
-             ROOT / 'tools/libv7.a', '-o', WORK / name])
-        h = struct.unpack('>8H', (WORK / name).read_bytes()[:16])
-        report[name] = dict(zip(['text', 'data', 'bss'], h[1:4]))
-        print(name, report[name], flush=True)
-    (WORK / 'sizes.json').write_text(json.dumps(report, indent=2) + '\n')
-    if sout:
-        seed=module('sout_seed',ROOT/'tools/sout-cc/build.py')
-        seed.library(); seed.seeds()
-    image(sout=sout)
-    print('Native compiler disk:', WORK / 'hd.img', flush=True)
+        output=WORK/name
+        run([linker,'-z',*(['-i'] if split else []),'-s',runtime/'crt0.b',
+             *objects,runtime/'libc.a','-o',output])
+        if split: report[name]=sizes(output.read_bytes(),True)
+        else: report[name]=dict(zip(('text','data','bss'),struct.unpack_from('>3H',output.read_bytes(),28)))
+        print('SEED',name,report[name],flush=True)
+        return output
+    for phase,names in [
+        ('front','cgram xdefs scan pftn trees optim code local comm1 frontglue'),
+        ('back','reader local2 order match allo comm2 table backglue')]:
+        directory=PASSES/('sout-'+phase)
+        output=program(phase,[PASSES/(n+'.c') for n in names.split()],
+            ['-DBUG1','-DBUG2','-DBUG3','-DBUG4','-I'+str(PASSES)],directory)
+        destination=PASSES/('target-'+phase)/phase
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(output,destination)
+    regen=module('regen',PCC/'cz8/regen_cgram.py')
+    yaccdir=WORK/'yacc';yaccdir.mkdir(exist_ok=True)
+    yacc=regen.build_yacc(yaccdir)
+    cppsrc=ROOT/'v7z8000/usr/src/cmd/cpp'
+    shutil.copyfile(cppsrc/'cpy.y',yaccdir/'cpy.y')
+    run([yacc,'cpy.y'],cwd=yaccdir)
+    program('cpp',[cppsrc/'cpp.c',yaccdir/'y.tab.c'],['-I'+str(cppsrc)])
+    program('oz8',[PCC/'oz8.c'])
+    program('init',[ROOT/'tools/init.c'],split=False)
+    for name in ('echo','cat'):
+        program(name,[ROOT/'tools'/(name+'.c')],split=False)
+    shell=ROOT/'v7z8000/usr/src/cmd/sh'
+    program('sh',[shell/(n+'.c') for n in
+        'args blok builtin cmd ctype error expand fault io macro main msg name print service setbrk stak string word xec'.split()],
+        ['-I'+str(shell)],split=False)
+    for name in ('runner','check','normal'):
+        program(name,[ROOT/'tools/native-cc'/(name+'.c')],split=False)
+    run(['make','-C',ROOT/'tools','v7mkfs'])
+    (WORK/'sizes.json').write_text(json.dumps(report,indent=2)+'\n')
+    image(sout=True)
+    print('Native s.out compiler disk:',WORK/'hd.img',flush=True)
 
 
 if __name__ == '__main__':
-    if any(arg not in ('--no-compact','--sout') for arg in sys.argv[1:]):
-        raise SystemExit('usage: build.py [--no-compact] [--sout]')
-    sout='--sout' in sys.argv[1:]
-    if sout: WORK=ROOT/'tests/build/native-cc-sout'
-    build('--no-compact' in sys.argv[1:],sout)
+    if any(arg not in ('--no-compact','--sout','--image') for arg in sys.argv[1:]):
+        raise SystemExit('usage: build.py [--no-compact] [--image]')
+    WORK=ROOT/'tests/build/native-cc-sout'
+    if '--image' in sys.argv[1:] and all((WORK/name).exists() for name in ('sh','init','echo','cat')):
+        image(destination=WORK/'hd.img')
+    else:
+        build('--no-compact' in sys.argv[1:])

@@ -17,9 +17,7 @@ not required. The disk-boot builder uses the same shared tools.
 ```sh
 git submodule update --init --recursive
 make -C PCC-z8000/z8000/cz8
-make -C PCC-z8000/z8000/az8
-make -C PCC-z8000/z8000/test ../ldz8
-make -C tools
+python3 tools/native-cc/build.py
 cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release -DKERNEL_CONFIG=emulated
 cmake --build v7z8000/usr/sys/build
 cmake --build v7z8000/usr/sys/build --target test
@@ -37,9 +35,9 @@ python3 tools/native-cc/build.py
 python3 tools/native-cc/test.py
 ```
 
-This host build prepares the native compiler passes, optimizer, preprocessor,
+This direct s.out host build prepares the native compiler passes, optimizer, preprocessor,
 assembler, linker, cc driver, headers and runtime library. The bootable seed is
-`tests/build/native-cc/hd.img`. Passing these tests establishes that the seeded
+`tests/build/native-cc-sout/hd.img`. Passing these tests establishes that the seeded
 compiler runs inside Unix; self-hosting is checked in the next stage.
 For disk boot in the dedicated MAME branch, follow [the MAME procedure](mame.md)
 to install `/boot`, `/unix` and `/fpe` into a copy of this seed.

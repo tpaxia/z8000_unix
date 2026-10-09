@@ -9,9 +9,10 @@ in use. The separate essential-userland workload builds 45 unchanged commands
 inside Unix.
 
 Run the [full native rebuild](../development/native-rebuild.md#full-native-userland)
-to produce `tests/build/userland-native/hd.img`. All 193 build/install steps and
-the combined runtime checks pass. `summary.json` records output hashes and
-segment sizes; the guest makefiles list sources and native generation steps.
+to produce `tests/build/userland-native-sout/hd.img`. The default s.out rebuild
+and runtime suite pass. `summary.json` records output hashes and segment sizes;
+the guest makefiles list sources and native generation steps. The native
+rebuild procedure records stage and output counts and the runtime proof.
 
 The [cross-build comparison](../development/native-rebuild.md#complete-cross-built-userland)
 produces `tests/build/userland-all/hd.img`, with 160 commands (excluding the
@@ -45,9 +46,10 @@ hangman, quiz and wump. Quiz and fortune data are installed with them.
 
 ## Format and runtime adaptations
 
-`nm` reads portable archives and the Z8000 relocation sizes. `strip`, `prof`
-and libc `nlist` use the port's executable header. `file` recognizes portable
-archives. Lint uses 16-bit alignment for long and floating types on Z8000.
+`nm`, `size`, `strip` and libc `nlist` use the shared s.out reader; `nm` also
+reads portable archives. `prof` uses the same reader, and `file` recognizes s.out
+and portable archives. Legacy a.out inspection remains during the phaseout.
+Lint uses 16-bit alignment for long and floating types on Z8000.
 Cpp selects the original signed-character table layout for Z8000, as it does
 for PDP-11 and VAX; its preprocessing algorithm is unchanged.
 An original dc initialization loop now terminates its symbol free list at the

@@ -292,7 +292,7 @@ CPU/board support; an external STOP pin alone is not a kernel trace exception.
 
 Entry wrappers use nearby NONSEG veneers to preserve the six fixed two-byte
 jumps at 0x0200–0x020a. The SEGTRAP/EPU entries retain direct relative jumps.
-`bout2bin.py` rejects a kernel whose assembler relaxed those table entries into
+`sout2bin.py` rejects a kernel whose assembler relaxed those table entries into
 longer instructions and displaced the entry addresses.
 
 `test-ptrace` covers both layouts at 8 MiB and 320 KiB: stopped wait statuses,

@@ -187,8 +187,10 @@ struct lobj *o;
     for (i = 0; i < o->nsym; i++) {
         s = o->sym[i]; if (!s) continue;
         g = find(s->name);
+        /* V7 does not pull a library function to satisfy a common array. */
         if (s->index && g && !g->kind &&
-            (s->kind || (s->value && !g->value))) return 1;
+            ((s->kind && !(g->value && s->kind == SO_TEXTSYM)) ||
+             (s->value && !g->value))) return 1;
     }
     return 0;
 }
@@ -216,7 +218,11 @@ struct lobj *o;
         if (!s) continue;
         g = enter(s->name);
         if (s->kind) {
-            if (g->kind) die("multiply defined external symbol");
+            /* V7 keeps a common variable from being replaced by text. */
+            if (g->kind || (g->value && s->kind == SO_TEXTSYM)) {
+                fprintf(stderr, "ldz8 s.out: symbol %s in %s\n", s->name, o->path);
+                die("multiply defined external symbol");
+            }
             g->kind = s->kind; g->value = s->value;
             g->owner = o; g->section = s->section;
         } else if (!g->kind && s->value > g->value) g->value = s->value;

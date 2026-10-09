@@ -44,7 +44,7 @@ synchronize the source copy.
 cmake --build v7z8000/usr/sys/build --target kernel test_driver
 python3 mame/build_rom.py
 python3 mame/build.py "$MAME_UNIX" -j 8
-python3 mame/install_boot.py tests/build/userland-native/hd.img \
+python3 mame/install_boot.py tests/build/userland-native-sout/hd.img \
   tests/build/z8001unix/full-userland.img --console-profile
 ```
 
@@ -53,7 +53,7 @@ The last command uses the complete native userland disk from
 It includes the normal V7 commands, manuals, libraries and native compiler.
 `--console-profile` installs `/.profile` to set Backspace as the shell erase key
 using the original V7 `stty` command. The compiler seed at
-`tests/build/native-cc/hd.img` is suitable for compiler regressions but lacks
+`tests/build/native-cc-sout/hd.img` is suitable for compiler regressions but lacks
 normal commands such as `ls`; it is not the interactive testing disk.
 It creates a **new copy**, adds `/boot`, `/unix` and `/fpe` through the V7 free
 block/inode lists, then installs sector zero's `/boot` block list. The source
@@ -63,7 +63,7 @@ the tiny kernel regression root image does not have room for these files.
 To verify preservation of existing files and free-list accounting:
 
 ```sh
-python3 mame/check_disk.py tests/build/userland-native/hd.img \
+python3 mame/check_disk.py tests/build/userland-native-sout/hd.img \
   tests/build/z8001unix/full-userland.img
 ```
 
@@ -76,7 +76,7 @@ MAME reports `NO GOOD DUMP KNOWN` for this locally built firmware.
 `build_rom.py` also produces the standalone loader, disk boot block and disk
 files. Firmware and the primary block use host builds of the shared native
 asz8k/ldz8 sources, without GNU Z8000 tools. The standalone loader uses PCC
-and the transitional a.out tools. These are host bootstrap builds; the native
+and the shared s.out assembler/linker. These are host bootstrap builds; the native
 compiler subsequently runs inside Unix.
 
 ## Run

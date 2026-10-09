@@ -81,18 +81,20 @@ pccbranch(fmp)
 struct format *fmp;
 {
     unsigned slot, mask;
-    int k;
+    int k, call;
     long span;
-    if (strcmp(opcstr,"jr")) return fmp;
+    call = !strcmp(opcstr,"calr");
+    if (!call && strcmp(opcstr,"jr")) return fmp;
     if (branch >= 8192) { fprintf(ERROR,"PCC branch table overflow\n"); exit(1); }
     slot = branch>>3; mask = 1<<(branch++&7);
-    k = optab[1].op_cls & (1L<<OCNULL) ? 0 : 1;
+    k = call || optab[1].op_cls & (1L<<OCNULL) ? 0 : 1;
     span = (long)optab[k].op_val-curloc-2;
     if (pccpass == 2 && !(longjr[slot]&mask) &&
-        (optab[k].op_rel != cursec || (span&1) || span < -256 || span > 254)) {
+        (optab[k].op_rel != cursec || (span&1) ||
+         span < (call ? -4094 : -256) || span > (call ? 4096 : 254))) {
         pending[slot] |= mask; changed = 1;
     }
-    if (longjr[slot]&mask) return (struct format *)oclook("jp")->oc_val;
+    if (longjr[slot]&mask) return (struct format *)oclook(call ? "call" : "jp")->oc_val;
     return fmp;
 }
 

@@ -11,7 +11,6 @@ set(B "${CMAKE_CURRENT_BINARY_DIR}")
 
 set(PCC_ROOT "${CMAKE_SOURCE_DIR}/../../../PCC-z8000/z8000" CACHE PATH "PCC toolchain root")
 set(CZ8 "${PCC_ROOT}/cz8/cz8")
-set(AZ8 "${PCC_ROOT}/az8/az8")
 set(PORT_TOOLS "${CMAKE_SOURCE_DIR}/../../../tools")
 set(HOST_CC "cc" CACHE STRING "Host C compiler for shared assembler/linker")
 set(ASZ8K "${B}/asz8k")
@@ -30,7 +29,6 @@ add_custom_command(OUTPUT "${LDZ8}"
         ${PORT_TOOLS}/ldz8/dispatch.c ${PORT_TOOLS}/ldz8/ldso.c
         ${PORT_TOOLS}/asz8k/src/soutfmt.c -o "${LDZ8}"
     DEPENDS ${PORT_TOOLS}/ldz8/dispatch.c ${PORT_TOOLS}/ldz8/ldso.c
-        ${PCC_ROOT}/ldz8.c ${PCC_ROOT}/b.out.h
         ${PORT_TOOLS}/asz8k/src/soutfmt.c ${PORT_TOOLS}/asz8k/src/soutfmt.h
     COMMENT "Building host copy of native linker")
 set(OZ8 "${B}/oz8")
@@ -115,17 +113,16 @@ add_custom_command(OUTPUT ${B}/kernel.bin
 # =============================================================================
 
 # pcc_compile_c(<subdir> <name>)
-# Compiles <subdir>/<name>.c → <subdir>/<name>.az8 → <subdir>/<name>.b
-# Appends the .b path to HANDLER_B_FILES in parent scope.
-# NOTE: az8 has a 32-byte filename buffer (STR_MAX), so COMMAND arguments
-# use relative paths while OUTPUT/DEPENDS use absolute paths for CMake.
+# Compiles <subdir>/<name>.c → <subdir>/<name>.az8 → <subdir>/<name>.so
+# Appends the .so path to HANDLER_B_FILES in parent scope.
+# COMMAND arguments use relative paths while OUTPUT/DEPENDS use absolute paths.
 # Every kernel source may include any kernel header.
 file(GLOB KERNEL_HEADERS "${CMAKE_SOURCE_DIR}/h/*.h")
 
 function(pcc_compile_c subdir name)
     set(SRC "${CMAKE_SOURCE_DIR}/${subdir}/${name}.c")
     set(AZ8_REL "${subdir}/${name}.az8")
-    set(B_REL "${subdir}/${name}.b")
+    set(B_REL "${subdir}/${name}.so")
 
     add_custom_command(OUTPUT "${B}/${AZ8_REL}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${subdir}"
@@ -134,9 +131,9 @@ function(pcc_compile_c subdir name)
         COMMENT "PCC: ${subdir}/${name}.c → .az8"
     )
     add_custom_command(OUTPUT "${B}/${B_REL}"
-        COMMAND ${AZ8} -o "${B_REL}" "${AZ8_REL}"
-        DEPENDS "${B}/${AZ8_REL}" "${AZ8}"
-        COMMENT "PCC: ${subdir}/${name}.az8 → .b"
+        COMMAND ${ASZ8K} -zc -o "${B_REL}" "${AZ8_REL}"
+        DEPENDS "${B}/${AZ8_REL}" "${ASZ8K}"
+        COMMENT "PCC: ${subdir}/${name}.az8 → .so"
     )
 
     set(HANDLER_B_FILES ${HANDLER_B_FILES} "${B_REL}" PARENT_SCOPE)
@@ -155,10 +152,10 @@ foreach(source IN LISTS KERNEL_ASM)
         COMMAND ${CMAKE_COMMAND} -E make_directory machine
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/${source}" "${output}.az8"
         DEPENDS "${CMAKE_SOURCE_DIR}/${source}" "${CONFIG_STAMP}")
-    add_custom_command(OUTPUT "${B}/${output}.b"
-        COMMAND ${AZ8} -o "${output}.b" "${output}.az8"
-        DEPENDS "${B}/${output}.az8" "${AZ8}")
-    list(APPEND HANDLER_B_FILES "${output}.b")
+    add_custom_command(OUTPUT "${B}/${output}.so"
+        COMMAND ${ASZ8K} -zc -o "${output}.so" "${output}.az8"
+        DEPENDS "${B}/${output}.az8" "${ASZ8K}")
+    list(APPEND HANDLER_B_FILES "${output}.so")
 endforeach()
 
 # Shared V7 services. Machine configuration never changes this list.
@@ -184,33 +181,33 @@ add_custom_command(OUTPUT ${B}/arith.az8
     DEPENDS "${PCC_ROOT}/lib/arith.az8"
     COMMENT "PCC: copying arith.az8"
 )
-add_custom_command(OUTPUT ${B}/arith.b
-    COMMAND ${AZ8} -o arith.b arith.az8
-    DEPENDS ${B}/arith.az8 "${AZ8}"
-    COMMENT "PCC: arith.az8 → arith.b"
+add_custom_command(OUTPUT ${B}/arith.so
+    COMMAND ${ASZ8K} -zc -o arith.so arith.az8
+    DEPENDS ${B}/arith.az8 "${ASZ8K}"
+    COMMENT "PCC: arith.az8 → arith.so"
 )
-list(APPEND HANDLER_B_FILES arith.b)
-add_custom_command(OUTPUT ${B}/csv.b
+list(APPEND HANDLER_B_FILES arith.so)
+add_custom_command(OUTPUT ${B}/csv.so
     COMMAND ${CMAKE_COMMAND} -E copy ${PCC_ROOT}/lib/csv.az8 csv.az8
-    COMMAND ${AZ8} -o csv.b csv.az8
-    DEPENDS ${PCC_ROOT}/lib/csv.az8 ${AZ8})
-list(APPEND HANDLER_B_FILES csv.b)
+    COMMAND ${ASZ8K} -zc -o csv.so csv.az8
+    DEPENDS ${PCC_ROOT}/lib/csv.az8 ${ASZ8K})
+list(APPEND HANDLER_B_FILES csv.so)
 
-# Link all .b files → handler.bout → handler.bin
-# Convert relative .b paths to absolute for DEPENDS
+# Link all .so files → handler.sout → handler.bin
+# Convert relative .so paths to absolute for DEPENDS
 set(HANDLER_B_ABS "")
 foreach(f ${HANDLER_B_FILES})
     list(APPEND HANDLER_B_ABS "${B}/${f}")
 endforeach()
 
-add_custom_command(OUTPUT ${B}/handler.bout
-    COMMAND ${LDZ8} -i -x ${HANDLER_B_FILES} -o handler.bout
+add_custom_command(OUTPUT ${B}/handler.sout
+    COMMAND ${LDZ8} -z -i -x ${HANDLER_B_FILES} -o handler.sout
     DEPENDS ${HANDLER_B_ABS} "${LDZ8}" "${CONFIG_STAMP}"
-    COMMENT "Linking handler.bout"
+    COMMENT "Linking handler.sout"
 )
 add_custom_command(OUTPUT ${B}/handler.bin ${B}/handler-data.bin
-    COMMAND python3 "${TOOLS_DIR}/bout2bin.py" handler.bout handler.bin handler-data.bin
-    DEPENDS ${B}/handler.bout "${TOOLS_DIR}/bout2bin.py"
+    COMMAND python3 "${TOOLS_DIR}/sout2bin.py" handler.sout handler.bin handler-data.bin
+    DEPENDS ${B}/handler.sout "${TOOLS_DIR}/sout2bin.py"
     COMMENT "Building handler.bin"
 )
 

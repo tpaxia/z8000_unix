@@ -36,11 +36,11 @@ def main():
         run([LD, '-z', *options, '-e', 'entry', 'start.so', 'help.so', '-o', name], cwd=WORK)
     for name, options in [('segexec', []), ('segpart', ['-r']), ('segrev', ['-C','5','-D','3'])]:
         run([LD, '-z', *options, '-e', 'entry', 'seg.so', 'ext.so', '-o', name], cwd=WORK)
-    # Real old-format object and executable, not a host C structure dump.
-    shutil.copyfile(ROOT/'tools/libc/crt0.b', WORK/'legacy.b')
-    fs = Filesystem(ROOT/'tests/build/sout-cc/hd.img')
-    old = ROOT/'tests/build/sout-cc/seed/cc.out'
-    shutil.copyfile(old, WORK/'legacy')
+    # Historical reader fixture; no legacy assembler/linker participates.
+    (WORK/'legacy.b').write_bytes(struct.pack('>8H',0o407,2,0,0,12,0,0,0)+
+        bytes.fromhex('9e08')+struct.pack('>8sHH',b'entry',0o42,0))
+    fs = Filesystem(ROOT/'tests/build/native-cc-sout/hd.img')
+    shutil.copyfile(ROOT/'tests/build/sout-cc/seed/cc.out', WORK/'compiler')
     wide = bytearray((WORK/'combined').read_bytes())
     struct.pack_into('>H', wide, 12, struct.unpack_from('>H', wide, 12)[0]+14)
     wide += struct.pack('>IBB8s', 0xffffffff, 33, 0, b'wideabs')
@@ -68,18 +68,19 @@ def main():
     for name,data in corrupt.items(): (WORK/name).write_bytes(data)
 
     files = {}
-    for target in ('bin/cc','bin/asz8k','bin/ldz8','bin/runner','bin/sh',
+    for target in ('bin/cc','bin/asz8k','bin/ldz8','bin/sh',
                    'lib/crt0.b','lib/libc.a','lib/front','lib/back','lib/oz8'):
         path=WORK/'seed'/target; path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(fs.read('/'+target)); files[target]=path
+    files['bin/runner']=ROOT/'tests/build/native-cc-sout/runner'
     for name in ('ar','cp','cmp'):
-        files['bin/'+name]=ROOT/'tests/build/native-environment/native/bin'/name
+        files['bin/'+name]=ROOT/'tests/build/native-environment-sout/native/bin'/name
     files['usr/lib/asz8k.pd']=ROOT/'tools/asz8k/src/asz8k.pd'
     sources=list(SOURCE.glob('*.c'))+[SOURCE/'object.h']+[
         ROOT/'tools/asz8k/src/soutfmt.c',ROOT/'tools/asz8k/src/soutfmt.h']
     for path in sources: files['usr/src/utils/'+path.name]=path
     fixtures=['start.so','help.so','seg.so','ext.so','combined','split','partial',
-              'segexec','segpart','segrev','legacy.b','legacy','wideabs','mixed.a']
+              'segexec','segpart','segrev','legacy.b','compiler','wideabs','mixed.a']
     for name in fixtures+list(corrupt): files['usr/src/utils/'+name]=WORK/name
     build=[]
     for name in ('object','soutfmt','nlist','nm','size','strip'):
@@ -106,7 +107,7 @@ def main():
         dest='out%03d'%len(expected); expected[dest]=command([HOST/tool,*args])
         checks += ['0 '+dest+' ./'+tool+' '+' '.join(args)]
     strips=[]
-    for i,name in enumerate(['combined','split','partial','segexec','segpart','segrev','legacy','legacy.b','wideabs']):
+    for i,name in enumerate(['combined','split','partial','segexec','segpart','segrev','compiler','legacy.b','wideabs']):
         target='s%d'%i; shutil.copyfile(WORK/name,WORK/target)
         command([HOST/'strip',target]); first=(WORK/target).read_bytes()
         command([HOST/'strip',target]); assert (WORK/target).read_bytes()==first

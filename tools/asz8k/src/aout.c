@@ -1,7 +1,9 @@
-/* Native V7 a.out output.  Instruction selection remains in asz8k.c.
+/* Historical interoperability fixture; excluded from installed builds.
+ * Native V7 a.out output. Instruction selection remains in asz8k.c.
  * Unidot output is retained unless -a is selected.  Disk fields are written
  * explicitly, rather than using the compiler's structure layout.
  */
+#ifdef ASZ_LEGACY
 #include <stdio.h>
 #include "acom.h"
 #include "obj.h"
@@ -293,3 +295,6 @@ aocheck()
 {
     if (aflag && (curloc < 0 || curloc > 65535L)) fail("section size overflow");
 }
+#else
+int aflag;
+#endif

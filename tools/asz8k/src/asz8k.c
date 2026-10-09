@@ -180,6 +180,7 @@ struct	sytab	*syp;
 inops() {
 
 struct	operand	*opp;
+struct operand temp;
 
 	if(toktyp == TKSPC) iilex();
 	for(opp=optab ; opp<optab+OPMAX ; opp++) {
@@ -192,13 +193,21 @@ struct	operand	*opp;
 		}
 		if(curop.op_cls & (1L<<OCEXP))
 			curop.op_cls |= (1L<<OCX);
-		/* GNU-style machine sources prefix literal I/O ports with '#'. */
-		if (machineflg && (curop.op_cls&(1L<<OCIMM)) &&
-		    ((!strcmp(opcstr,"out") || !strcmp(opcstr,"outb")) && opp==optab ||
+		/* Machine and PCC sources prefix literal I/O ports with '#'. */
+		if (pccflg && (curop.op_cls&(1L<<OCIMM)) &&
+		    ((!strcmp(opcstr,"out") || !strcmp(opcstr,"outb")) &&
+		       opp==(machineflg ? optab : optab+1) ||
 		     (!strcmp(opcstr,"in") || !strcmp(opcstr,"inb")) && opp==optab+1))
 			curop.op_cls |= 1L<<OCEXP;
 		*opp = curop;
 		delim();
+	}
+	/* az8/PCC places the value before an indirect output port. */
+	if (pccflg && !machineflg &&
+	    (!strcmp(opcstr,"out") || !strcmp(opcstr,"outb")) &&
+	    (optab[0].op_cls & ((1L<<OCREG16)|(1L<<OCREG8))) &&
+	    (optab[1].op_cls & ((1L<<OCIRIO)|(1L<<OCEXP)))) {
+		temp = optab[0]; optab[0] = optab[1]; optab[1] = temp;
 	}
 }
 

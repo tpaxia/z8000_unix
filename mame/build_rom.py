@@ -49,21 +49,23 @@ for name,source,flags in [
     ('boot', ROOT/'mame/boot/boot.c', []), ('SYS',a.output/'SYS.c',[]),
     ('prf',a.output/'prf.c',[]),
     ('l3',ROOT/'v7z8000/usr/src/libc/gen/l3.c',['-Dinterdata'])]:
-    obj=a.output/(name+'.b')
-    helpers.compile_c(source,obj,['-I'+str(standalone),*flags])
+    obj=a.output/(name+'.so')
+    helpers.compile_c(source,obj,['-I'+str(standalone),*flags],sout=True)
     objects.append(obj)
 (a.output/'start.az8').write_bytes((ROOT/'mame/boot/start.az8').read_bytes())
-subprocess.run([str(PCC/'az8/az8'),'-o','start.b','start.az8'],cwd=a.output,check=True)
-subprocess.run([str(PCC/'ldz8'),'-x',str(a.output/'start.b'),*map(str,objects),str(ROOT/'tools/libv7.a'),'-o',str(a.output/'boot')],check=True)
-h=struct.unpack('>8H',(a.output/'boot').read_bytes()[:16])
-if h[0]!=0o407 or sum(h[1:4])>0xe000: raise SystemExit('standalone loader too large')
-kernel=bytearray((a.kernel_build/'handler.bout').read_bytes())
-hk=list(struct.unpack('>8H',kernel[:16]))
+subprocess.run([str(AS),'-zc','-o','start.so','start.az8'],cwd=a.output,check=True)
+subprocess.run([str(LD),'-z','-s',str(a.output/'start.so'),*map(str,objects),
+                str(ROOT/'tests/build/sout-cc/libc.a'),'-o',str(a.output/'boot')],check=True)
+boot=(a.output/'boot').read_bytes()
+h=struct.unpack_from('>3H',boot,28)
+if struct.unpack_from('>H',boot)[0]!=0xe707 or sum(h)>0xe000: raise SystemExit('standalone loader too large')
+kernel=bytearray((a.kernel_build/'handler.sout').read_bytes())
+hk=struct.unpack_from('>3H',kernel,28)
 vectors=(a.kernel_build/'kernel.bin').read_bytes()
-if hk[0]!=0o411 or len(vectors)>512: raise SystemExit('invalid kernel layout')
-hk[4]=0;hk[5]=0x1f0;hk[7]=1
-kernel[:16]=struct.pack('>8H',*hk)
-kernel[16:528]=vectors.ljust(512,b'\0')
-(a.output/'unix').write_bytes(kernel[:16+hk[1]+hk[2]])
+if struct.unpack_from('>H',kernel)[0]!=0xe711 or len(vectors)>512: raise SystemExit('invalid kernel layout')
+struct.pack_into('>H',kernel,12,0) # no symbol table in the installed kernel
+struct.pack_into('>I',kernel,14,0x1f0) # reset handoff entry convention
+kernel[40:552]=vectors.ljust(512,b'\0')
+(a.output/'unix').write_bytes(kernel[:40+hk[0]+hk[1]])
 (a.output/'fpe.image').write_bytes((a.kernel_build/'fpe.bin').read_bytes())
-print(f'ROM {len(rom)}/2048 bytes (no kernel payload); /boot text/data/bss {h[1:4]}')
+print(f'ROM {len(rom)}/2048 bytes (no kernel payload); s.out /boot text/data/bss {h}')

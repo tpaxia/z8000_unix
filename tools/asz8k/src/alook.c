@@ -22,6 +22,7 @@ oclook(s) char *s; {
 
 struct	octab	*p, *q, *r;
 uns	h;
+uns length, size;
 int	cmp;
 
 	h = hash(s)>>(16-OHSHLOG)&(1<<OHSHLOG)-1;
@@ -38,8 +39,11 @@ int	cmp;
 #ifndef ASZ_HOST
 	if((uns)phytop&01) phytop++;  /* force integer alignment */
 #endif
-	r = (struct octab *)palloc(sizeof(struct octab));
+	length = strlen(s); size = sizeof(struct octab);
+	if (pccflg && length >= sizeof(r->oc_str)) size += length+1-sizeof(r->oc_str);
+	r = (struct octab *)palloc(size);
 	symcpy(r->oc_str,s);
+	if (pccflg || length < sizeof(r->oc_str)) r->oc_str[length] = 0;
 	r->oc_typ = 0;
 	r->oc_lnk = q;
 	if(p) p->oc_lnk = r; else ochtab[h] = r;
@@ -72,6 +76,7 @@ struct	aside	*apt, **lpt;
 vmadr	p, q, r;
 struct	sytab	*qp, *rp;
 uns	h;
+uns length, size;
 int	cmp;
 
 #ifdef	STATS
@@ -122,8 +127,14 @@ int	cmp;
 #else
 	if((uns)virtop&01) virtop++;  /* force integer alignment */
 #endif
-	rp = (struct sytab *)wfetch(r=vmalloc(sizeof(struct sytab)));
+	/* Most compiler labels fit eight bytes. Only long local names need
+	 * extra virtual storage; do not double every symbol's footprint. */
+	length = strlen(s);
+	size = sizeof(struct sytab);
+	if (pccflg && length >= sizeof(rp->sy_str)) size += length+1-sizeof(rp->sy_str);
+	rp = (struct sytab *)wfetch(r=vmalloc(size));
 	symcpy(rp->sy_str,s);
+	if (pccflg || length < sizeof(rp->sy_str)) rp->sy_str[length] = 0;
 	rp->sy_typ = rp->sy_atr = rp->sy_xlk = rp->sy_val = 0;
 	rp->sy_lnk = q;
 	if(p) ((struct sytab *)wfetch(p))->sy_lnk = r; else syhtab[h] = r;

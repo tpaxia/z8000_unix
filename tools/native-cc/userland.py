@@ -13,18 +13,18 @@ from build import ROOT, PCC, compile_c, image, run
 from selfhost import Filesystem
 from object_format import sizes as object_sizes
 
-WORK = ROOT / 'tests/build/userland'
+WORK = ROOT / 'tests/build/userland-sout'
 CMD = ROOT / 'v7z8000/usr/src/cmd'
 ORIGINAL = ROOT / 'v7unix/usr/src/cmd'
 SYS = ROOT / 'v7z8000/usr/sys/build'
-NATIVE = ROOT / 'tests/build/native-environment/native'
+NATIVE = ROOT / 'tests/build/native-environment-sout/native'
 COMMANDS = 'cat echo ls pwd mkdir rmdir ln cp mv rm chmod chown chgrp wc grep tail sort uniq tee cmp date sleep sync kill test ed'.split()
 EXTRA_COMMANDS = 'basename comm tr rev split join dd du pr od sum touch nice time yes cal look tsort fgrep'.split()
 COMMANDS += EXTRA_COMMANDS
 SUPPORT = 'ar make yacc'.split()
 
 
-def audit(sout=False):
+def audit(sout=True):
     """Inventory source units, not a claim that each unit is one executable."""
     inventory = []
     for source in sorted(ORIGINAL.iterdir()):
@@ -53,14 +53,14 @@ def audit(sout=False):
     return report
 
 
-def setup(reuse=False,sout=False):
+def setup(reuse=False,sout=True):
     WORK.mkdir(parents=True, exist_ok=True)
     audit(sout)
     for name in SUPPORT:
         if not (NATIVE/'bin'/name).is_file():
             raise SystemExit('Build tools/native-cc/environment.py first: missing native ' + name)
     run(['cmake', '--build', SYS, '--target', 'kernel', 'test_driver'])
-    run(['make', '-C', ROOT/'tools', 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'v7mkfs'])
+    run(['make', '-C', ROOT/'tools', 'v7mkfs'])
     extra = {'bin/'+name: NATIVE/'bin'/name for name in SUPPORT}
     if sout:
         for path in NATIVE.rglob('*'):
@@ -89,9 +89,9 @@ def setup(reuse=False,sout=False):
             modes['usr/src/cmd/'+name] = 0o755
     extra['usr/lib/yaccpar'] = PCC/'yacc/yaccpar'
     for name in ['runner', 'check', 'normal']:
-        compile_c(ROOT/'tools/native-cc'/(name+'.c'), WORK/(name+'.b'))
-        run([PCC/'ldz8', '-x', ROOT/'tools/libc/crt0.b', WORK/(name+'.b'),
-             ROOT/'tools/libv7.a', '-o', WORK/name])
+        compile_c(ROOT/'tools/native-cc'/(name+'.c'), WORK/(name+'.b'),sout=sout)
+        run([ROOT/'tests/build/ldz8-host/ldz8', '-z', '-x', ROOT/'tests/build/sout-cc/crt0.b', WORK/(name+'.b'),
+             ROOT/'tests/build/sout-cc/libc.a', '-o', WORK/name])
         extra['bin/'+name] = WORK/name
     rules = ['CC=/bin/cc', 'CFLAGS=-O -Dunix=1 -i', 'all: '+' '.join(COMMANDS)+' ar']
     steps = []
@@ -211,7 +211,7 @@ echo USERLAND COMMANDS OK || exit 1
     (WORK/'results.json').write_text(json.dumps(records,indent=2)+'\n')
 
 
-def summarize(sout=False):
+def summarize(sout=True):
     fs = Filesystem(WORK/'hd.img')
     sizes = {}
     for name in COMMANDS:
@@ -270,7 +270,7 @@ def main():
                         help='recreate the test disk, keeping verified command binaries when sources/libc/startup match')
     parser.add_argument('--audit',action='store_true')
     parser.add_argument('--limit',type=int)
-    parser.add_argument('--sout',action='store_true',help='use the native s.out environment and separate output disk')
+    parser.add_argument('--sout',action='store_true',default=True,help=argparse.SUPPRESS)
     args = parser.parse_args()
     global WORK,NATIVE
     if args.sout:

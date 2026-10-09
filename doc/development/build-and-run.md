@@ -4,7 +4,7 @@ For a fresh checkout, complete [bootstrap](bootstrap.md) first. For an existing
 checkout with the cross-toolchain available, run from the repository root:
 
 ```sh
-make -C tools
+python3 tools/native-cc/build.py
 cmake -S v7z8000/usr/sys -B v7z8000/usr/sys/build -DCMAKE_BUILD_TYPE=Release -DKERNEL_CONFIG=emulated
 cmake --build v7z8000/usr/sys/build
 cmake --build v7z8000/usr/sys/build --target test
@@ -19,7 +19,7 @@ kernel build directory so its ROM/kernel/EPU artifacts are found:
 
 ```sh
 cd v7z8000/usr/sys/build
-./test_driver -d ../../../../tests/build/userland/hd.img -i 'echo hello | cat\nexit\n' -x hello
+./test_driver -d ../../../../tests/build/userland-sout/hd.img -i 'echo hello | cat\nexit\n' -x hello
 ```
 
 Build that disk using [native rebuild](native-rebuild.md) first. The driver is

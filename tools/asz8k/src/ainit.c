@@ -65,7 +65,12 @@ static char errbuf[BUFSIZ];
 		if(*ap == '-') {  /* switches */
 			while(*++ap) switch(*ap) {
 
-			case 'a': aflag = 1; break;
+			case 'a':
+#ifdef ASZ_LEGACY
+				aflag = 1; zflag = 0; break;
+#else
+				fprintf(ERROR,"Only s.out output is supported\n"); exit(1);
+#endif
 			case 'z': zflag = 1; break;
 			case 'c': pccflg = 1; break;
 			case 'g': machineflg = pccflg = 1; break;
