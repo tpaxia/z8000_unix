@@ -6,7 +6,8 @@ standalone emulator. No shared V7 kernel C or device drivers are changed for
 MAME. The bootstrap uses the shared host/native s.out assembler and linker.
 
 Both `z8001unix` and `z8002unix` are maintained on MAME's `unixv7_demo` branch.
-They share one worktree but currently have separate driver source files.
+They share one worktree and a common board implementation, with separate
+CPU-specific driver files.
 Build/test commands are recorded in the [MAME procedure](../development/mame.md).
 
 ## Machine
@@ -26,7 +27,7 @@ Build/test commands are recorded in the [MAME procedure](../development/mame.md)
 
 The authoritative MMU register definitions and semantics remain in
 [the memory reference](../kernel/memory-and-swapping.md) and
-[`mmu.h`](../../v7z8000/usr/sys/machine/mmu.h).
+[`mmu.h`](../../v7z8000/usr/sys/machine/mmu/paged/mmu.h).
 
 This deliberately retains the existing kernel-facing console and disk
 interfaces. It does not emulate a Z80-SIO/CTC board, or the Z8002-demo MMU.

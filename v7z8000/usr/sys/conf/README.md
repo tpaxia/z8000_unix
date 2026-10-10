@@ -11,9 +11,28 @@ support and drivers; there is no runtime driver or MMU plugin framework.
 | `sys/` | Shared kernel services, scheduler, filesystem and syscalls |
 | `dev/` | Device drivers, common TTY support and character tables |
 | `h/` | Kernel data structures and interfaces |
-| `machine/` | Z8000 CPU support and MMU implementations |
-| `conf/` | Source selection, device tables, boot devices and interrupt routing |
-| `fpe/` | Separate Zilog software EPU engine and Unix entry adapter |
+| `machine/` | CPU, MMU and board implementations, grouped separately |
+| `conf/` | Build-time selection of CPU, MMU, board and drivers |
+| `fpe/` | Shared historical Zilog software EPU engine |
+
+The machine hierarchy separates reusable CPU and MMU code from board wiring:
+
+```
+machine/
+  z8000/                 shared C support and runtime body
+    z8001/               krt.s, trap.s and Unix EPU adapter
+    z8002/               the corresponding nonsegmented CPU implementations
+  mmu/paged/             page allocation, mappings and MMU register contract
+    z8002/               privileged-window user access
+  boards/unixv7/         device tables, boot devices, interrupt routing and dumps
+    z8001/               direct-load reset fixture
+    z8002/               direct-load reset fixture
+```
+
+Add another board under `machine/boards/`, another MMU under `machine/mmu/`,
+and select them from `conf/<name>.cmake`. Disk-boot firmware and standalone
+startup for this board live under `mame/boot/unixv7/<cpu>/`; its portable
+standalone loader C is shared at `mame/boot/unixv7/boot.c`.
 
 ## Building
 
@@ -52,8 +71,8 @@ depend on the host harness.
 - `KERNEL_TEST_FILE`: optional board-specific host harness and image/test rules.
 
 The build records the source selection so switching configurations invalidates
-existing kernel outputs. Source basenames for assembly outputs must be unique;
-C and assembly sources must not produce the same object path.
+existing kernel outputs. Outputs retain their source directory paths, so different implementations may
+reuse basenames. C and assembly sources must not produce the same object path.
 
 CMake also exports the ordered selection as `native-sources.txt`. The
 [native kernel procedure](../../../../doc/development/native-rebuild.md#native-kernel-and-disk-bootstrap)
@@ -63,7 +82,7 @@ staged alongside shared headers and tracked as build dependencies.
 
 ## Current machine boundary
 
-`conf/emulated.c` owns `bdevsw`, `cdevsw`, root/pipe/swap device selection,
+`machine/boards/unixv7/devices.c` owns `bdevsw`, `cdevsw`, root/pipe/swap device selection,
 early console output, clock enabling and VI dispatch. `devintr(vector)` is
 called by the common CPU entry code; the emulated configuration services disk
 and console on shared vector zero. Drivers contain their own I/O registers.
@@ -71,16 +90,18 @@ and console on shared vector zero. Drivers contain their own I/O registers.
 or dispatching processes. CPU `panichalt()` halts with VI/NVI disabled.
 Machine `dumpinit()` discovers a reserved destination after root mount;
 `panicdump()` saves a crash image after panic flushing (no-op hooks are permitted).
-The emulated implementation is `machine/dump.c`, using MMU
+The emulated implementation is `machine/boards/unixv7/dump.c`, using MMU
 `dumpcopy(long physical_offset, char *sector)` (0/-1) and driver
 `hddump(dev, block, sector, writing)` (1 success, 0 error, -1 timeout).
 Both operate on 512-byte sectors without sleeping or enabling interrupts;
 see the [dump contract](../../../../doc/kernel/devices-and-io.md#kernel-written-crash-dumps).
 
-`machine/krt.s`, `trap.s` and `trap.c` implement the Z8000 trap and calling
-conventions, interrupt masking and user-memory access. `machine/cpu.c` holds
-bootstrap code, exec startup and signal-frame construction; `machine/fpe.c` handles
-the software EPU. `machine/emurom.s` supplies this board's reset sequence.
+`machine/z8000/z8001/` and `machine/z8000/z8002/` supply CPU-specific
+runtime/trap assembly and EPU adapters. Shared `machine/z8000/trap.c` and
+`krt-body.inc` implement the common Z8000 trap and calling
+conventions, interrupt masking and user-memory access. `machine/z8000/cpu.c` holds
+bootstrap code, exec startup and signal-frame construction; `machine/z8000/fpe.c` handles
+the software EPU. `machine/boards/unixv7/z8001/emurom.s` supplies this board's reset sequence.
 
 Shared exec calls CPU `execsize(nc, na, ne, data_bytes)` (click reservation,
 zero on collision), `execstk(bno, nc, na, ne)` (zero/-1), and `execregs()`
@@ -90,7 +111,7 @@ return; it must survive sleeping file cleanup. Shared signal policy calls
 complete frame copy. Filesystem policy, credential changes and signal defaults
 remain in shared code.
 
-The current MMU implementation is `machine/paged.c` plus `machine/pagert.s`:
+The current MMU implementation is `machine/mmu/paged/paged.c` plus `machine/mmu/paged/pagert.s`:
 
 | Interface | Contract |
 |---|---|
@@ -170,7 +191,7 @@ PAGESEL/PAGEFRAME (0xBC/0xBE). See the [memory contract](../../../../doc/kernel/
 Shared text ownership lives in `sys/text.c`. A replacement MMU must provide the
 physical allocation/copy and swap-transfer services it calls, together with
 process residency transitions used by the scheduler. The emulated implementation
-keeps those services in `machine/paged.c`; swap uses the configured block device.
+keeps those services in `machine/mmu/paged/paged.c`; swap uses the configured block device.
 The split kernel reserves a separate instruction bank and keeps PSA vectors in
 ROM data space. See the kernel reference before reusing its reset/trap layout.
 

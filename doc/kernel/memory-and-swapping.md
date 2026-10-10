@@ -162,7 +162,7 @@ interface has no residual count and does not promise rollback. Successful
 operations update the three fields exactly once. `passc()` also returns -1
 when the last requested byte succeeds; `u_error` distinguishes failure.
 
-`machine/krt.s` now rejects bulk ranges crossing the 64 KB boundary and odd
+`machine/z8000/z8001/krt.s` now rejects bulk ranges crossing the 64 KB boundary and odd
 word addresses (including a word at `0xffff`). Zero-length bulk copies do not
 access memory; a final byte at `0xffff` remains valid. `rdwr()` calls the selected
 MMU's `useracc()` before starting a read/write, preventing a long request from
@@ -227,7 +227,7 @@ installed RAM. Images and the emulator must be rebuilt together.
 
 ### Stack faults and protection
 
-`machine/mmu.h` defines the board contract. PAGEFRAME bits 15 and 14 mean
+`machine/mmu/paged/mmu.h` defines the board contract. PAGEFRAME bits 15 and 14 mean
 read-only and system-only; `ffff` remains unmapped. Read-only applies to system
 writes too. Kernel/EPU maps are system-only; shared split-I/D text is read-only.
 Normal processes remain NONSEG, so their ordinary accesses select their own

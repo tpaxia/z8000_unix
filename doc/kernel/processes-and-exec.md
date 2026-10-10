@@ -157,7 +157,7 @@ without swap therefore fails at init's exec. There is no memory-only fallback.
 SMAPSIZ covers process, cached-text and concurrent exec extents, including holes
 and the terminator: `2*NPROC+NTEXT+2`, or 74 entries in this configuration.
 
-`machine/cpu.c` supplies `execsize(nc, na, ne, data_bytes)` for stack reservation,
+`machine/z8000/cpu.c` supplies `execsize(nc, na, ne, data_bytes)` for stack reservation,
 `execstk(bno, nc, na, ne)` for argument layout and `execregs()` for register/EPU
 reset. Shared `setregs()` retains signal reset, close-on-exec and accounting.
 R0–R14 are cleared and the entry PC comes from the validated executable header.
@@ -211,7 +211,7 @@ The format retains V7's u-area/data/stack ordering, using this port's sizes:
 
 The unmapped gap and allocation padding are excluded. Shared e711 instruction
 text is omitted; e707 text already lies within its combined data image.
-`machine/paged.c:coredump()` writes the sections through their existing mappings.
+`machine/mmu/paged/paged.c:coredump()` writes the sections through their existing mappings.
 It does not call estabur, allocate replacement memory, or reproduce the PDP-11's
 temporary contiguous remapping. Normal scheduling/swap-in restores the mappings
 if file I/O sleeps. A different MMU implements this helper for its own layout.

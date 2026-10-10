@@ -91,7 +91,7 @@ int num;
 unsigned *regs;
 ```
 
-`trap()` in `machine/trap.c` is reached from the SYSCALL stub in `machine/trap.s` through the jump table at the start of `machine/krt.s` (see Entry Points below). It copies the arguments from the saved registers into `u.u_arg[0..4]`, sets `u.u_dirp` to the first one, and dispatches through the V7-style `sysent[]` table (64 entries). A number out of range or with no handler gives `ENOSYS`.
+`trap()` in `machine/z8000/trap.c` is reached from the SYSCALL stub in `machine/z8000/z8001/trap.s` through the jump table at the start of `machine/z8000/z8001/krt.s` (see Entry Points below). It copies the arguments from the saved registers into `u.u_arg[0..4]`, sets `u.u_dirp` to the first one, and dispatches through the V7-style `sysent[]` table (64 entries). A number out of range or with no handler gives `ENOSYS`.
 
 ### Syscall Calling Convention
 
@@ -106,7 +106,7 @@ R1 = return     — second result (u.u_r.r_val2), or errno on error
 
 ## Entry Points
 
-`machine/trap.s` (assembled with shared `asz8k -zgs`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `machine/krt.s`, which is linked at 0x0200:
+`machine/z8000/z8001/trap.s` (assembled with shared `asz8k -zgs`) holds the PSA and the stubs that the CPU enters in SEG+SYS mode. Each stub saves R0–R12, switches to NONSEG+SYS and calls a fixed address in the jump table at the start of `machine/z8000/z8001/krt.s`, which is linked at 0x0200:
 
 | Address | Label | Reached from | Calls |
 |---------|-------|--------------|-------|
@@ -117,7 +117,7 @@ R1 = return     — second result (u.u_r.r_val2), or errno on error
 | 0x0208 | `epu_dispatch` | segment 127 EPU entry (SEG call) | `_fptrap` |
 
 The emulated configuration shares VI vector 0. Its `devintr()` in
-`conf/emulated.c` calls `hdintr()` and `consrint()`; CPU entry code no longer
+`machine/boards/unixv7/devices.c` calls `hdintr()` and `consrint()`; CPU entry code no longer
 names individual device handlers.
 
 ## Software EPU Service
@@ -128,7 +128,7 @@ The arithmetic/decoder is the preserved `fpe/fpe.z8k` from CP/M-8000;
 `tools/fpe/translate.py` translates assembler syntax and replaces only the
 CP/M entry adapter. Host builds of the shared asz8k/ldz8 tools assemble and raw-link this service;
 GNU Z8000 binutils, a CP/M installation and prebuilt arithmetic objects are
-not required. `fpe/unix.s` provides Unix
+not required. `machine/z8000/z8001/unix.s` provides Unix
 entry/return and instruction/data memory access helpers.
 
 The machine loads `fpe.bin` at physical 0x7f0000. Segment 127 and its physical

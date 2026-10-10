@@ -17,7 +17,7 @@ headers+='#undef time\n#undef u\nextern struct user u;\nextern char buffers[NBUF
 def body(p): return '\n'.join(l for l in p.read_text().splitlines() if not l.startswith('#include'))+'\n'
 main=(kernel/'sys/main.c').read_text()
 binit=main[main.index('binit()\n{'):main.index('struct buf buf[NBUF];')]
-paged=(kernel/'machine/paged.c').read_text()
+paged=(kernel/'machine/mmu/paged/paged.c').read_text()
 mapping=paged[paged.index('/* Physical frames'):paged.index('struct memspace memory[NPROC];')+len('struct memspace memory[NPROC];')]
 mapping+=paged[paged.index('/* Validate every covered'):paged.index('/* Grow from the actual')]
 mapping+=paged[paged.index('/* Opaque B_PHYS descriptor:'):paged.index('/* V7 core layout:')]

@@ -1,11 +1,11 @@
-#include "../h/param.h"
-#include "../h/systm.h"
-#include "../h/mount.h"
-#include "../h/dir.h"
-#include "../h/user.h"
-#include "../h/proc.h"
-#include "../h/inode.h"
-#include "../h/buf.h"
+#include "../../h/param.h"
+#include "../../h/systm.h"
+#include "../../h/mount.h"
+#include "../../h/dir.h"
+#include "../../h/user.h"
+#include "../../h/proc.h"
+#include "../../h/inode.h"
+#include "../../h/buf.h"
 
 
 /*

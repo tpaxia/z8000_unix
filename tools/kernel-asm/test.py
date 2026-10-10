@@ -37,16 +37,16 @@ def main():
     linker = ROOT/'tests/build/ldz8-host/ldz8'
     shutil.copyfile(ROOT/'tools/asz8k/src/asz8k.pd', work/'asz8k.pd')
     sources = {
-        'rom.s': ROOT/'v7z8000/usr/sys/machine/emurom.s',
-        'trap.s': ROOT/'v7z8000/usr/sys/machine/trap.s',
-        'unix.s': ROOT/'v7z8000/usr/sys/fpe/unix.s',
-        'block.s': ROOT/'mame/boot/block.s',
+        'rom.s': ROOT/'v7z8000/usr/sys/machine/boards/unixv7/z8001/emurom.s',
+        'trap.s': ROOT/'v7z8000/usr/sys/machine/z8000/z8001/trap.s',
+        'unix.s': ROOT/'v7z8000/usr/sys/machine/z8000/z8001/unix.s',
+        'block.s': ROOT/'mame/boot/unixv7/z8001/block.s',
     }
     for name, source in sources.items():
         shutil.copyfile(source, work/name)
     run([sys.executable, ROOT/'tools/fpe/translate.py', ROOT/'v7z8000/usr/sys/fpe/fpe.z8k', work/'core.s'])
     handoff = sources['rom.s'].read_text().split('initboot:', 1)[1]
-    (work/'board.s').write_text((ROOT/'mame/boot/rom.s').read_text()+'\n.org 0x200\n'+handoff)
+    (work/'board.s').write_text((ROOT/'mame/boot/unixv7/z8001/rom.s').read_text()+'\n.org 0x200\n'+handoff)
     # Small independent probe covers mixed modes, cross-object relocation,
     # nonzero origin, contiguous data/BSS and canonical byte-shift encoding.
     (work/'mixed.s').write_text('.text\n.global entry,datum\nentry:\n.segm\n'

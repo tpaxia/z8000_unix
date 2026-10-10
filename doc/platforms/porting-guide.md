@@ -12,9 +12,11 @@ configuration. The supplied configurations are `emulated`/`z8001-mmu` and
 | `sys/` | Shared V7 scheduler, filesystem, process and syscall policy |
 | `dev/` | Device drivers and reusable TTY support |
 | `h/` | Kernel interfaces and data structures |
-| `machine/` | CPU trap/runtime support and MMU implementations |
-| `conf/` | Machine source selection, device tables and interrupt routing |
-| `fpe/` | Zilog software EPU engine and Unix adapter |
+| `machine/z8000/` | Shared CPU support and separate Z8001/Z8002 entry/runtime code |
+| `machine/mmu/` | MMU implementations and CPU-specific access mechanisms |
+| `machine/boards/` | Board reset, device tables, boot devices and interrupt routing |
+| `conf/` | Build-time CPU, MMU, board and driver selection |
+| `fpe/` | Historical Zilog arithmetic engine; CPU adapters live under `machine/z8000/` |
 
 Keep device registers and address translation out of shared V7 policy. Reuse
 existing CPU/MMU implementations when the board meets their contracts. Fix
@@ -22,7 +24,9 @@ compiler defects in the toolchain rather than rewriting original V7 C.
 
 ## Add a configuration
 
-Add `conf/<name>.cmake`, its configuration C file and the necessary drivers.
+Add `conf/<name>.cmake`, board glue under `machine/boards/<board>/` and
+the necessary drivers. Select CPU support from `machine/z8000/<cpu>/` and
+an MMU implementation from `machine/mmu/<mmu>/`.
 The [configuration reference](../../v7z8000/usr/sys/conf/README.md) lists the
 source-selection variables and machine helper signatures.
 
@@ -34,8 +38,9 @@ cmake --build tests/build/new-machine --target kernel
 Replace `<name>` with the new configuration. Use a separate build directory
 for each machine. A configuration selects
 reset/trap assembly, ordered runtime assembly, machine C, drivers and optional
-shared services. Runtime entry-table placement and unique object basenames must
-follow the configuration reference. Supply a board-specific test harness before
+shared services. Runtime entry-table placement must follow the configuration
+reference. Object paths preserve source directories, allowing separate
+implementations to reuse filenames. Supply a board-specific test harness before
 enabling its host tests.
 
 ## Boot and CPU support

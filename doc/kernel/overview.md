@@ -1,8 +1,8 @@
 # Kernel Overview
 
 The kernel keeps shared V7 services in `sys/`, reusable device/TTY code in
-`dev/`, interfaces in `h/`, Z8000 and MMU mechanisms in `machine/`, and machine
-selection/device tables in `conf/`. The separate software EPU is under `fpe/`.
+`dev/`, interfaces in `h/`, CPU mechanisms in `machine/z8000/`, MMUs in `machine/mmu/`, board wiring
+and reset support in `machine/boards/`, and build-time selection in `conf/`. The separate software EPU is under `fpe/`.
 The build selects and links implementations; there is no runtime driver loader.
 
 | Subject | Current reference |

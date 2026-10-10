@@ -8,6 +8,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -26,18 +27,20 @@ BUILD = SYS/'build'
 def recipes(selection):
     asm = selection['asm'].split(';')
     sources = selection['c'].split(';')
-    objects = ['machine/'+Path(s).stem+'.b' for s in asm]+[str(Path(s).with_suffix('.b')) for s in sources]+['arith.b','csv.b']
-    headers = sorted('h/'+s.name for s in (SYS/'h').glob('*.h'))
-    make = 'CC=/bin/cc\nAS=/bin/asz8k\nLD=/bin/ldz8\nCFLAGS=-O -Dz8000 -Dz8002 -I../h\n'
+    objects = [str(Path(s).with_suffix('.b')) for s in asm]+[str(Path(s).with_suffix('.b')) for s in sources]+['arith.b','csv.b']
+    headers = sorted(str(s.relative_to(SYS)) for s in
+                     [*(SYS/'h').glob('*.h'), *(SYS/'machine').rglob('*.h')])
+    make = 'CC=/bin/cc\nAS=/bin/asz8k\nLD=/bin/ldz8\nCFLAGS=-O -Dz8000 -Dz8002\n'
     make += 'all: handler.sout kernel.bin rom.bin fpe.bin unix\n'
     for s, obj in zip(asm, objects):
         az8 = str(Path(obj).with_suffix('.az8'))
-        make += f'{obj}: {s}\n\t/bin/cp {s} {az8}\n\t$(AS) -c -o {obj} {az8}\n'
+        make += f'{obj}: {s} machine/z8000/krt-body.inc\n\t/bin/cp {s} {az8}\n\t$(AS) -c -o {obj} {az8}\n'
     for s in sources:
         p = Path(s); obj = str(p.with_suffix('.b'))
         # Native cc writes the object in its working directory.
         local = sorted(str(h.relative_to(SYS)) for h in (SYS/p.parent).glob('*.h'))
-        make += f'{obj}: {s} '+' '.join(headers+local)+f'\n\tcd {p.parent}; $(CC) $(CFLAGS) -c {p.name}\n'
+        include = os.path.relpath('h', p.parent)
+        make += f'{obj}: {s} '+' '.join(headers+local)+f'\n\tcd {p.parent}; $(CC) $(CFLAGS) -I{include} -c {p.name}\n'
     for name in ('arith','csv'):
         make += f'{name}.b: {name}.az8\n\t$(AS) -c -o {name}.b {name}.az8\n'
     make += 'handler.sout: '+' '.join(objects)+'\n\t$(LD) -i -x '+' '.join(objects)+' -o handler.sout\n'
@@ -51,10 +54,10 @@ fpe/core.s: fpe/fpe.z8k fpe.sed pack
 	/bin/sed -f fpe.sed fpe/cut.s > fpe/core.s
 fpe/core.so: fpe/core.s
 	$(AS) -gs -o fpe/core.so fpe/core.s
-fpe/unix.so: fpe/unix.s
-	$(AS) -gs -o fpe/unix.so fpe/unix.s
-fpe.bin: fpe/core.so fpe/unix.so
-	$(LD) -b -C 127 -M 61440 fpe/unix.so fpe/core.so -o fpe.bin
+machine/z8000/z8001/unix.so: machine/z8000/z8001/unix.s
+	$(AS) -gs -o machine/z8000/z8001/unix.so machine/z8000/z8001/unix.s
+fpe.bin: fpe/core.so machine/z8000/z8001/unix.so
+	$(LD) -b -C 127 -M 61440 machine/z8000/z8001/unix.so fpe/core.so -o fpe.bin
 unix: handler.sout kernel.bin pack
 	./pack kernel handler.sout kernel.bin unix
 '''
@@ -77,8 +80,8 @@ start.b: start.az8
 	$(AS) -c -o start.b start.az8
 boot: start.b boot.b syswrap.b prf.b l3.b
 	$(LD) -s start.b boot.b syswrap.b prf.b l3.b /lib/libc.a -o boot
-rom.s: board.s ../sys/machine/emurom.s $(PACK)
-	$(PACK) handoff board.s ../sys/machine/emurom.s rom.s
+rom.s: board.s ../sys/machine/boards/unixv7/z8001/emurom.s $(PACK)
+	$(PACK) handoff board.s ../sys/machine/boards/unixv7/z8001/emurom.s rom.s
 rom.so: rom.s
 	$(AS) -gs -o rom.so rom.s
 rom.bin: rom.so
@@ -116,10 +119,10 @@ def setup():
         source.write_bytes(fs.read('/bin/'+name));files['bin/'+name]=source;modes['bin/'+name]=0o755
     for name in ('runner','check'):
         source = WORK/'seed'/name;source.write_bytes(fs.read('/bin/'+name));files['bin/'+name]=source;modes['bin/'+name]=0o755
-    required = set(selection['asm'].split(';')+selection['c'].split(';')+[selection['rom'],selection['traps'],'fpe/fpe.z8k','fpe/unix.s'])
-    required.add('machine/krt-body.inc')
+    required = set(selection['asm'].split(';')+selection['c'].split(';')+[selection['rom'],selection['traps'],'fpe/fpe.z8k','machine/z8000/z8001/unix.s'])
+    required.add('machine/z8000/krt-body.inc')
     for directory in ('h','sys','machine','dev','conf'):
-        required.update(str(p.relative_to(SYS)) for p in (SYS/directory).glob('*.h'))
+        required.update(str(p.relative_to(SYS)) for p in (SYS/directory).rglob('*.h'))
     for name in required: files['usr/src/sys/'+name]=SYS/name
     for name in ('arith','csv'):files['usr/src/sys/'+name+'.az8']=ROOT/'PCC-z8000/z8000/lib'/(name+'.az8')
     for source in (ROOT/'v7z8000/usr/src/cmd/cpp').iterdir():
@@ -127,8 +130,9 @@ def setup():
     files['usr/src/cpp/cppprobe.c']=ROOT/'tools/native-cc/cppprobe.c'
     files['usr/lib/yaccpar']=ROOT/'PCC-z8000/z8000/yacc/yaccpar'
     files['usr/src/sys/pack.c']=HERE/'pack.c';files['usr/src/sys/fpe.sed']=HERE/'fpe.sed'
-    for name in ('boot.c','start.az8','block.s'):files['usr/src/boot/'+name]=ROOT/'mame/boot'/name
-    files['usr/src/boot/board.s']=ROOT/'mame/boot/rom.s'
+    files['usr/src/boot/boot.c']=ROOT/'mame/boot/unixv7/boot.c'
+    for name in ('start.az8','block.s'):files['usr/src/boot/'+name]=ROOT/'mame/boot/unixv7/z8001'/name
+    files['usr/src/boot/board.s']=ROOT/'mame/boot/unixv7/z8001/rom.s'
     original=ROOT/'v7unix/usr/src/cmd/standalone'
     for src,dst in [('SYS.c','SYS.c'),('prf.c','fullprf.c'),('saio.h','saio.h')]:files['usr/src/boot/'+dst]=original/src
     files['usr/src/boot/l3.c']=ROOT/'v7z8000/usr/src/libc/gen/l3.c'

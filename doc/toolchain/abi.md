@@ -49,7 +49,7 @@ Full segmented user executables require further ABI and loader work.
 | Function prologue | `push @sp, r13; ld r13, sp; sub sp, #N` |
 | Function epilogue | `ld sp, r13; pop r13, @sp; ret` |
 
-Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. `save()` in `machine/krt.s` and `resume()` in `machine/pagert.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
+Assembly functions called from C are defined with the underscore (`_save`, `_resume`, `_spl0`, ...) and must return values in R0. `save()` in `machine/z8000/z8001/krt.s` and `resume()` in `machine/mmu/paged/pagert.s` preserve all callee-saved registers, the caller's R13 (FP), and the return address in `label_t`.
 
 Note: Steps 1-10 used ACK which has the same R13 frame pointer convention. PCC was changed from R14 to R13 for Z8001 segmented mode compatibility (RR14 is the system stack pointer in SEG mode).
 

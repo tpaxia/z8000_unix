@@ -1,5 +1,11 @@
 // Observe user instruction fetches and existing system calls; no guest changes.
-// Included after MMU in test_driver.cpp.
+// Machine adapters supply process-map identity and mapped data reads.
+class UserProfileMemory {
+public:
+    virtual ~UserProfileMemory() = default;
+    virtual uint32_t code_address(uint32_t address) const = 0;
+    virtual uint8_t read_byte(uint32_t address) = 0;
+};
 class UserProfile {
     struct Process {
         std::string path, pending_path;
@@ -7,8 +13,8 @@ class UserProfile {
         int pending = -1;
         unsigned requested = 0;
     } processes[128];
-    z8002_device &cpu;
-    MMU &mmu;
+    z8000_device &cpu;
+    UserProfileMemory &memory;
     FILE *file;
     void finish(unsigned seg) {
         auto &p = processes[seg];
@@ -20,14 +26,12 @@ class UserProfile {
         p = Process();
     }
 public:
-    UserProfile(z8002_device &c, MMU &m, FILE *f) : cpu(c), mmu(m), file(f) {
+    UserProfile(z8000_device &c, UserProfileMemory &m, FILE *f) : cpu(c), memory(m), file(f) {
         if (file) fprintf(file, "segment\tpath\tinitial_sp\tminimum_sp\tmaximum_break\n");
     }
     void sample(uint32_t address) {
         if (cpu.get_fcw() & 0x4000) return; // system/normal FCW bit
-#ifdef Z8002_MMU
-        address = mmu.code_address(address);
-#endif
+        address = memory.code_address(address);
         unsigned seg = (address >> 16) & 127;
         auto &p = processes[seg];
         if (p.pending == 11 || p.pending == 59) {
@@ -53,9 +57,7 @@ public:
     static bool trap(void *context, uint8_t number, uint32_t pc) {
         auto &self = *static_cast<UserProfile *>(context);
         if (self.cpu.get_fcw() & 0x4000) return true;
-#ifdef Z8002_MMU
-        pc = self.mmu.code_address(pc);
-#endif
+        pc = self.memory.code_address(pc);
         unsigned seg = (pc >> 16) & 127;
         auto &p = self.processes[seg];
         if (number == 1) self.finish(seg);
@@ -64,7 +66,7 @@ public:
             p.pending_path.clear();
             unsigned offset = self.cpu.get_reg(1);
             for (unsigned i = 0; i < 128; i++) {
-                char ch = self.mmu.read_byte((seg << 16) | ((offset+i) & 65535));
+                char ch = self.memory.read_byte((seg << 16) | ((offset+i) & 65535));
                 if (!ch) break;
                 p.pending_path += ch;
             }

@@ -4,8 +4,8 @@ Build the ordinary `emulated` kernel and a root filesystem using
 [bootstrap](bootstrap.md). The driver and bootstrap tools are in `mame/`.
 Both machines are on
 [tpaxia/mame's unixv7_demo branch](https://github.com/tpaxia/mame/tree/unixv7_demo),
-at tested commit `7bf9e0c4855`, based on revision `e1b99a60ff5`.
-`build.py` installs the selected driver from `mame/`. The base includes the Z8001
+with CPU baseline `7bf9e0c4855`, based on revision `e1b99a60ff5`.
+`build.py` installs the board sources from `mame/unixv7/`. The base includes the Z8001
 CPU fixes, first-word instruction-fetch interface and normal/system output used
 by these machines. Compatibility with arbitrary upstream releases is not claimed.
 See the [machine reference](../platforms/z8001-unix.md#boot) for the boot sequence,
@@ -14,8 +14,10 @@ historical V7 sources and current limits.
 ## Worktree and Z8001 build
 
 Use one `unixv7_demo` worktree for both machines. The drivers remain separate
-files, `z8001unix.cpp` and `z8002unix.cpp`; the build helper produces a focused
-executable for each. The old `z8001_unix` and `z8002_unix` branches have been
+files, `unixv7_z8001.cpp` and `unixv7_z8002.cpp`, sharing `unixv7.cpp`
+and `unixv7.h`. The default build produces one `unixv7_demo` executable
+containing both machines. `--machine z8001unix` or `--machine z8002unix`
+produces a focused executable instead. The old `z8001_unix` and `z8002_unix` branches have been
 replaced by `unixv7_demo`.
 
 From the Unix repository root, set:
@@ -36,9 +38,9 @@ git -C "$HOME/Projects/mame_latest/mame" worktree add -b unixv7_demo \
   "$MAME_UNIX" origin/unixv7_demo
 ```
 
-`build.py` copies the driver from the Unix repository into this MAME branch,
-adds its `mame.lst` entry and compiles there. It does not change CPU sources.
-Repeat it after changing the selected driver; a plain MAME build alone does not
+`build.py` copies the common board and CPU-specific drivers into
+`src/mame/homebrew/`, updates their `mame.lst` entries and compiles there. It does not change CPU sources.
+Repeat it after changing any board source; a plain MAME build alone does not
 synchronize the source copy.
 
 ```sh
@@ -75,7 +77,7 @@ python3 mame/check_disk.py tests/build/userland-native-sout/hd.img \
 Input images must be offline, unmounted V7 filesystems. Trailing unwritten
 sectors of sparse mkfs output are padded to the superblock's declared size.
 
-The focused binary is `$MAME_UNIX/z8001unix`. The 2 KiB firmware is
+The unified binary is `$MAME_UNIX/unixv7_demo`. The 2 KiB firmware is
 `tests/build/z8001unix/roms/z8001unix/unix.rom`; it contains no kernel/FPU payload.
 MAME reports `NO GOOD DUMP KNOWN` for this locally built firmware.
 `build_rom.py` also produces the standalone loader, disk boot block and disk
@@ -91,7 +93,7 @@ For the 120,000-sector complete native userland image (create the CHD once, then
 ```sh
 "$CHDMAN" createhd -i tests/build/z8001unix/full-userland.img \
   -o tests/build/z8001unix/full-userland.chd -chs 120000,1,1 -ss 512 -c none
-"$MAME_UNIX/z8001unix" z8001unix -window \
+"$MAME_UNIX/unixv7_demo" z8001unix -window \
   -rompath tests/build/z8001unix/roms \
   -hard tests/build/z8001unix/full-userland.chd
 ```
@@ -129,7 +131,7 @@ prepares media and launches MAME; the native compilation below runs inside Unix.
 Use expected output that does not occur merely in the echoed command line.
 
 ```sh
-python3 mame/test.py "$MAME_UNIX/z8001unix" --chdman "$CHDMAN" \
+python3 mame/test.py "$MAME_UNIX/unixv7_demo" --chdman "$CHDMAN" \
   --input 'cc -i /usr/src/hello.c -o /tmp/hello
 /tmp/hello
 ' --expect 'Hello from native C' --seconds 1200 \
@@ -179,18 +181,18 @@ Build the kernel with
 `-DKERNEL_CONFIG=z8002-mmu` in `tests/build/z8002-mmu`, then:
 
 ```sh
-python3 mame/build.py "$MAME_UNIX" --machine z8002unix
+python3 mame/build.py "$MAME_UNIX"
 python3 mame/build_rom.py --machine z8002unix
 python3 mame/install_boot.py tests/build/z8002-mmu/hd.img \
   tests/build/z8002unix/boot.img --build tests/build/z8002unix
-python3 mame/test.py "$MAME_UNIX/z8002unix" --machine z8002unix \
+python3 mame/test.py "$MAME_UNIX/unixv7_demo" --machine z8002unix \
   --chdman "$CHDMAN" --disk tests/build/z8002unix/boot.img \
   --input 'echo hello | cat
 ' --expect hello --output tests/build/z8002unix/smoke
 ```
 
 The installer requires a fresh output filename. Use `chdman createhd` as above
-for an interactive disk. Launch `z8002unix -window`, using
+for an interactive disk. Launch `"$MAME_UNIX/unixv7_demo" z8002unix -window`, using
 `tests/build/z8002unix/roms` and that CHD. The Z8002 builder selects its own ROM,
 primary loader and standalone startup and rejects a kernel build for the wrong
 CPU. Its ROM loads the system from disk. Kernel binaries and firmware differ

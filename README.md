@@ -88,9 +88,9 @@ split I/D. See [native development environment](doc/toolchain/native-development
 ### Kernel Configuration
 
 The V7 layout keeps shared services in `usr/sys/sys`, device support in
-`usr/sys/dev`, and headers in `usr/sys/h`. `usr/sys/machine` contains Z8000
-CPU and MMU implementations; `usr/sys/conf` selects the machine, drivers,
-device tables, boot devices and interrupt routing.
+`usr/sys/dev`, and headers in `usr/sys/h`. `usr/sys/machine/z8000` contains shared and CPU-specific support;
+`machine/mmu` contains MMU implementations; `machine/boards` contains board
+wiring and reset support. `usr/sys/conf` selects those components and drivers.
 
 The default configuration is `emulated`. Select it explicitly with
 `-DKERNEL_CONFIG=emulated`; use a separate build directory for each machine.
@@ -124,9 +124,9 @@ for verified scope and remaining work.
 
 | File | Purpose |
 |------|---------|
-| `v7z8000/usr/sys/machine/emurom.s` | Reset vector + init code (segment 0) |
-| `v7z8000/usr/sys/machine/trap.s` | PSA table + syscall entry/exit stubs |
-| `v7z8000/usr/sys/machine/krt.s` | CPU runtime: entry table, BSS zeroing, I/O, user access, idle, SPL and save |
+| `v7z8000/usr/sys/machine/boards/unixv7/z8001/emurom.s` | Reset vector + init code (segment 0) |
+| `v7z8000/usr/sys/machine/z8000/z8001/trap.s` | PSA table + syscall entry/exit stubs |
+| `v7z8000/usr/sys/machine/z8000/z8001/krt.s` | CPU runtime: entry table, BSS zeroing, I/O, user access, idle, SPL and save |
 | `v7z8000/usr/sys/h/` | V7 kernel headers adapted for Z8000 |
 | `v7z8000/usr/sys/sys/main.c` | Simplified V7 main: process 0, binit, iinit, open /dev/console |
 | `v7z8000/usr/sys/sys/bio.c` | V7 buffer cache |
@@ -137,7 +137,7 @@ for verified scope and remaining work.
 | `v7z8000/usr/sys/sys/subr.c` | bmap, bcopy, utilities |
 | `v7z8000/usr/sys/sys/fio.c` | File descriptor operations |
 | `v7z8000/usr/sys/sys/prf.c` | printf, panic |
-| `v7z8000/usr/sys/machine/paged.c` | Paged-MMU allocation, mapping and process-memory copying |
+| `v7z8000/usr/sys/machine/mmu/paged/paged.c` | Paged-MMU allocation, mapping and process-memory copying |
 | `v7z8000/usr/sys/sys/prim.c` | V7 clist character buffering (getc, putc, b_to_q, cinit) |
 | `v7z8000/usr/sys/sys/slp.c` | Scheduler: sleep/wakeup, run queues, setpri, swtch, newproc |
 | `v7z8000/usr/sys/sys/sys1.c` | Process syscalls: fork, exec, exit, wait, setregs |
@@ -145,7 +145,7 @@ for verified scope and remaining work.
 | `v7z8000/usr/sys/sys/sys3.c` | stat/fstat, dup, mount/umount |
 | `v7z8000/usr/sys/sys/sys4.c` | Misc syscalls: time, uid/gid, unlink, chdir, chmod, kill, alarm, pause |
 | `v7z8000/usr/sys/sys/sysent.c` | Syscall dispatch table (`sysent[]`) |
-| `v7z8000/usr/sys/machine/trap.c` | C trap handlers: syscall dispatch, segmentation trap |
+| `v7z8000/usr/sys/machine/z8000/trap.c` | C trap handlers: syscall dispatch, segmentation trap |
 | `v7z8000/usr/sys/sys/sig.c` | Signals: psignal, signal, issig, psig |
 | `v7z8000/usr/sys/sys/pipe.c` | Pipes: pipe syscall, readp/writep, plock/prele |
 | `v7z8000/usr/sys/sys/clock.c` | Clock interrupt handler and `timeout()` callouts |
@@ -155,7 +155,7 @@ for verified scope and remaining work.
 | `v7z8000/usr/sys/dev/cons.c` | Console driver with V7 TTY subsystem |
 | `v7z8000/usr/sys/dev/tty.c` | V7 TTY line discipline (echo, erase, kill, canon) |
 | `v7z8000/usr/sys/dev/partab.c` | Character type/parity table for TTY |
-| `v7z8000/usr/sys/conf/emulated.c` | Device switch tables (bdevsw, cdevsw) |
+| `v7z8000/usr/sys/machine/boards/unixv7/devices.c` | Device switch tables (bdevsw, cdevsw) |
 | `v7z8000/usr/sys/CMakeLists.txt` | CMake build rules for all components |
 | `emu/test_driver.cpp` | Emulated machine: MMU, IDE/ATA, console, RAM disk DMA, interrupt injection |
 | `tools/v7mkfs.c` | V7 filesystem image builder |

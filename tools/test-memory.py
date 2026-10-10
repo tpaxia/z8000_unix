@@ -18,11 +18,11 @@ def run(args, **kw):
 run(['make', '-C', tools, 'libv7.a', 'libc/crt0.b', 'sh', 'init', 'cat', 'echo', 'v7mkfs'])
 headers = '#define malloc rmalloc\n#define mfree rmfree\n#define time maptime\n'
 headers += ''.join(f'#include "{kernel}/h/{h}.h"\n' for h in ['param', 'systm', 'map', 'proc', 'dir', 'user', 'text', 'memmap'])
-headers += '#include "' + str(kernel / 'machine/mmu.h') + '"\n'
+headers += '#include "' + str(kernel / 'machine/mmu/paged/mmu.h') + '"\n'
 headers += '#undef u\nstruct user u;\n'
 allocator = (kernel / 'sys/malloc.c').read_text()
 allocator = allocator[allocator.index('/*'):]
-paged = (kernel / 'machine/paged.c').read_text()
+paged = (kernel / 'machine/mmu/paged/paged.c').read_text()
 helpers = paged[paged.index('/* Physical frames'):paged.index('/*\n * sureg()')]
 init = paged[paged.index('mmuinit()'):paged.index('/* Copy the saved continuation')]
 (work / 'maps.c').write_text(headers + allocator + helpers + init + (tools / 'maptest.c').read_text())

@@ -1,8 +1,8 @@
-#include "../h/param.h"
-#include "../h/systm.h"
-#include "../h/tty.h"
-#include "../h/buf.h"
-#include "../h/conf.h"
+#include "../../../h/param.h"
+#include "../../../h/systm.h"
+#include "../../../h/tty.h"
+#include "../../../h/buf.h"
+#include "../../../h/conf.h"
 
 /*
  * Device switch tables for Z8000 bring-up.

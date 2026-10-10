@@ -1,6 +1,6 @@
 ! Z8002 runtime. Hardware trap frames are normalized to the shared ABI.
 CPU2 .equ 1
- .input "machine/krt-body.inc"
+ .input "machine/z8000/krt-body.inc"
 
 cpu2_sc:
  push @sp,r12

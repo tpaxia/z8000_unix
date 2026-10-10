@@ -82,7 +82,7 @@ transfer-time columns are zero.
 
 ## Kernel-written crash dumps
 
-The emulated machine selects `machine/dump.c`. After mounting root, `dumpinit()`
+The emulated machine selects `machine/boards/unixv7/dump.c`. After mounting root, `dumpinit()`
 checks for a reserved tail beyond the superblock's filesystem size. The required
 sector count is `1 + physmem * 4 + swap-unit sectors`: a commit sector, installed
 physical RAM and the entire secondary swap unit. Root capacity comes from normal

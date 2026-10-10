@@ -26,7 +26,7 @@
 #include <getopt.h>
 #include <z8000/z8000.h>
 #include "memory.h"
-#include "../v7z8000/usr/sys/machine/mmu.h"
+#include "../v7z8000/usr/sys/machine/mmu/paged/mmu.h"
 
 // Observe the existing request latch without changing interrupt delivery.
 #ifdef Z8002_MMU
@@ -315,6 +315,13 @@ private:
 };
 
 #include "user_profile.h"
+#ifdef Z8002_MMU
+#include "machines/z8002-mmu/user_profile_memory.h"
+using BoardProfileMemory = Z8002ProfileMemory;
+#else
+#include "machines/z8001-unix/user_profile_memory.h"
+using BoardProfileMemory = Z8001ProfileMemory;
+#endif
 
 #ifdef Z8002_MMU
 class ModeDataBus : public z8000_memory_bus {
@@ -357,7 +364,7 @@ public:
 // Extended IOPorts with DMA controller for RAM disk
 class KernelIOPorts : public z8000_io_bus {
 public:
-    KernelIOPorts(MemoryRegion *mem, MMU *mmu, z8002_device *cpu)
+    KernelIOPorts(MemoryRegion *mem, MMU *mmu, z8000_device *cpu)
         : m_trace(false), m_memory(mem), m_mmu(mmu), m_cpu(cpu),
           m_dma_blk_hi(0), m_dma_blk_lo(0),
           m_dma_addr_hi(0), m_dma_addr_lo(0),
@@ -375,7 +382,7 @@ public:
 
     void queue_console_char(uint8_t c) {
         m_console_rx.push(c);
-        m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+        m_cpu->pulse_input_line(z8000_device::VI_LINE, 0);
     }
 
     bool load_disk(const char *filename) {
@@ -408,7 +415,7 @@ public:
         if (!(m_cpu->get_fcw() & 0x4000)) swap_user_samples++;
         if (m_cpu->get_cycles() >= m_swap_irq_due) {
             m_swap_irq_due = 0;
-            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+            m_cpu->pulse_input_line(z8000_device::VI_LINE, 0);
         }
     }
     void swap_size(unsigned kib) { m_swap.resize(kib * 1024); }
@@ -467,7 +474,7 @@ public:
                         // character per interrupt. Keep requesting while data
                         // remains, as a receiver with a FIFO does.
                         if (!m_console_rx.empty())
-                            m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+                            m_cpu->pulse_input_line(z8000_device::VI_LINE, 0);
                     } else {
                         val = 0x00;
                     }
@@ -726,7 +733,7 @@ private:
     void ata_interrupt() {
         if ((m_ata_dh & 0x10) && swap_delay)
             m_swap_irq_due = m_cpu->get_cycles() + swap_delay;
-        else m_cpu->pulse_input_line(z8002_device::VI_LINE, 0);
+        else m_cpu->pulse_input_line(z8000_device::VI_LINE, 0);
     }
     uint64_t m_swap_irq_due = 0;
     unsigned m_swap_read_cmds = 0, m_swap_write_cmds = 0;
@@ -734,7 +741,7 @@ private:
     bool m_trace;
     MemoryRegion *m_memory;
     MMU *m_mmu;
-    z8002_device *m_cpu;
+    z8000_device *m_cpu;
     std::vector<uint8_t> m_disk;
     std::vector<uint8_t> m_hd, m_swap;
     std::string m_console_buf;
@@ -1058,7 +1065,8 @@ int main(int argc, char* argv[]) {
     mmu.set_fault(&cpu, fault_kind, fault_offset);
     FILE *profile_output = profile_file ? fopen(profile_file, "w") : nullptr;
     if (profile_file && !profile_output) { perror(profile_file); return 1; }
-    UserProfile profile(cpu, mmu, profile_output);
+    BoardProfileMemory profile_memory(mmu);
+    UserProfile profile(cpu, profile_memory, profile_output);
     if (profile_output) {
         instructions.profile = &profile;
         first_words.profile = &profile;
@@ -1126,7 +1134,7 @@ int main(int argc, char* argv[]) {
         }
         // Always deliver NVI clock tick (wakes CPU from HALT)
         if (cpu.clock_pending()) merged_ticks++;
-        cpu.pulse_input_line(z8002_device::NVI_LINE);
+        cpu.pulse_input_line(z8000_device::NVI_LINE);
         tick_count++;
         // Select /unix at the standalone loader prompt in ROM-boot tests.
         if (boot_rom && !boot_input_sent && io.console_output().find(": ") != std::string::npos) {

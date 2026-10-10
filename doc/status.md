@@ -17,8 +17,9 @@ text, low-memory swapping and native C compilation. Both environments can boot
 the same ROM and bootable disk; their filesystem and user executable formats are unchanged.
 
 MAME's published `unixv7_demo` branch contains both `z8001unix` and
-`z8002unix`. Use one worktree to build either machine; their drivers remain
-separate files and each has its own kernel and boot firmware.
+`z8002unix`. One `unixv7_demo` executable includes both machines. Their
+CPU-specific drivers share a common board implementation; each has its own
+kernel and boot firmware.
 
 Kernel inspection uses root-only physical/kernel memory devices and native
 V7 ps, pstat, dmesg and iostat, with paged process-image adaptations. `ps k`

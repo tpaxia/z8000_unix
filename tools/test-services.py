@@ -27,8 +27,8 @@ run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'exec.b', 'exec.
 kernel = root / 'v7z8000/usr/sys'
 headers = ''.join('#include <sys/%s.h>\n' % h for h in ['param', 'dir', 'user', 'proc', 'text'])
 headers += '#include <stdio.h>\nextern int coremap[], nswap, runin, runout;\n'
-cpu = (kernel / 'machine/cpu.c').read_text().split('\naddupc(pc, p, ticks)\n',1)[1]
-mmu = (kernel / 'machine/paged.c').read_text().split('/* Extent growth must keep',1)[1].split('\nswapout(p)\n',1)[0]
+cpu = (kernel / 'machine/z8000/cpu.c').read_text().split('\naddupc(pc, p, ticks)\n',1)[1]
+mmu = (kernel / 'machine/mmu/paged/paged.c').read_text().split('/* Extent growth must keep',1)[1].split('\nswapout(p)\n',1)[0]
 mmu = '/* Extent growth must keep' + mmu
 victims = (kernel / 'sys/slp.c').read_text().split('struct proc *\nswapvict(skip)\n',1)[1].split('/*\n * Switch to the highest-priority',1)[0]
 (work / 'policy.c').write_text(headers + 'struct proc *\nswapvict(skip)\n' + victims + 'addupc(pc, p, ticks)\n' + cpu +
@@ -54,7 +54,7 @@ run([tools.parent / 'tests/build/asz8k-host/asz8k', '-c', '-o', 'proc.b', 'proc.
 run([tools.parent / 'tests/build/ldz8-host/ldz8', '-x', tools / 'libc/crt0.b', work / 'proc.b', tools / 'libv7.a', '-o', work / 'proc'])
 schedule = (kernel / 'sys/slp.c').read_text().split('\nsched()\n',1)[1].split('/*\n * V7 sched() victim policy',1)[0]
 head = ''.join('#include <sys/%s.h>\n' % h for h in ['param', 'dir', 'user', 'proc', 'text'])
-head += '#include <stdio.h>\n#include <setjmp.h>\n#define sleep schedsleep\nint runin, runout;\n'
+head += '#include <stdio.h>\n#include <setjmp.h>\n#define sleep schedsleep\nint runin, runout;\ntime_t time;\n'
 (work / 'sched.c').write_text(head + 'sched()\n' + schedule + (tools / 'schedpolicy.c').read_text())
 pre = run(['cpp', '-nostdinc', '-undef', '-Dz8000', '-Dz8002',
            '-I' + str(root / 'v7z8000/usr/include'), work / 'sched.c'])

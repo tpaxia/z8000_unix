@@ -1,9 +1,9 @@
-#include "../h/param.h"
-#include "../h/systm.h"
-#include "../h/dir.h"
-#include "../h/user.h"
-#include "../h/proc.h"
-#include "mmu.h"
+#include "../../h/param.h"
+#include "../../h/systm.h"
+#include "../../h/dir.h"
+#include "../../h/user.h"
+#include "../../h/proc.h"
+#include "../mmu/paged/mmu.h"
 
 extern int useg;
 
@@ -155,7 +155,7 @@ unsigned *extra;
 		fault[i] = inw(MM_FAULT+2*i);
 	outw(MM_ACK, 0);
 	if (regs[14] & 0x4000) {
-		#ifdef Z8002_MMU
+#ifdef Z8002_MMU
         if (regs[15] == 0x8100)
 #else
         if ((regs[14] & 0x8000) && regs[15] == 0x8100)

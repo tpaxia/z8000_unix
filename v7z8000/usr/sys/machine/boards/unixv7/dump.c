@@ -1,10 +1,10 @@
-#include "../h/param.h"
-#include "../h/systm.h"
-#include "../h/buf.h"
-#include "../h/filsys.h"
-#include "../h/mount.h"
-#include "mmu.h"
-#include "../h/crash.h"
+#include "../../../h/param.h"
+#include "../../../h/systm.h"
+#include "../../../h/buf.h"
+#include "../../../h/filsys.h"
+#include "../../../h/mount.h"
+#include "../../mmu/paged/mmu.h"
+#include "../../../h/crash.h"
 
 struct kcontext kcrash;
 unsigned ksave[2];       /* assembly panic veneer scratch, never the record */

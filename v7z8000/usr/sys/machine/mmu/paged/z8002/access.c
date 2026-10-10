@@ -2,8 +2,8 @@
  * Validate the selected descriptor before touching the window. Keep IRQs
  * masked only across each bounded copy and restore the previous selector.
  */
-#include "../h/param.h"
-#include "mmu.h"
+#include "../../../../h/param.h"
+#include "../mmu.h"
 extern int useg, iseg;
 static copy2(map, from, to, count, writing)
 unsigned map, from, count;

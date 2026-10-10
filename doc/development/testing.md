@@ -110,6 +110,10 @@ appears, or at the configured cycle limit.
 
 ## User memory profiling
 
+User-memory profiling shares accounting in `emu/user_profile.h`. Machine adapters
+under `emu/machines/<machine>/` supply process-map identification and mapped data
+reads: Z8001 uses the fetched segment, while Z8002 uses its external MMU context.
+
 `-P report.tsv` observes user stack minima and successful break requests,
 recording executable names at successful exec transitions. It recognizes both
 V7 exec (11) and environment-aware exec (59), preserves the current record on

@@ -42,29 +42,29 @@ def assemble(name, source, address=0):
     return (a.output/(name+'.bin')).read_bytes()
 
 if a.machine=='z8002unix':
-    rom=assemble('rom',(ROOT/'mame/boot/rom2.s').read_text())
+    rom=assemble('rom',(ROOT/'mame/boot/unixv7/z8002/rom.s').read_text())
 else:
-    handoff = (ROOT/'v7z8000/usr/sys/machine/emurom.s').read_text().split('initboot:',1)[1]
+    handoff = (ROOT/'v7z8000/usr/sys/machine/boards/unixv7/z8001/emurom.s').read_text().split('initboot:',1)[1]
     handoff = handoff.replace('ROM data', 'RAM').replace('ROM offset', 'RAM offset')
-    rom = assemble('rom',(ROOT/'mame/boot/rom.s').read_text()+'\n.org 0x200\n'+handoff)
+    rom = assemble('rom',(ROOT/'mame/boot/unixv7/z8001/rom.s').read_text()+'\n.org 0x200\n'+handoff)
 if len(rom)>2048: raise SystemExit('ROM exceeds 2 KiB')
 romdir=a.output/'roms'/a.machine
 romdir.mkdir(parents=True,exist_ok=True)
 (romdir/'unix.rom').write_bytes(rom.ljust(2048,b'\xff'))
-assemble('block',(ROOT/('mame/boot/block2.s' if a.machine=='z8002unix' else 'mame/boot/block.s')).read_text(),0xfe00 if a.machine=='z8002unix' else 0x3fe00)
+assemble('block',(ROOT/('mame/boot/unixv7/z8002/block.s' if a.machine=='z8002unix' else 'mame/boot/unixv7/z8001/block.s')).read_text(),0xfe00 if a.machine=='z8002unix' else 0x3fe00)
 standalone=ROOT/'v7unix/usr/src/cmd/standalone'
 # Device-independent standalone printf, unchanged; console tail is PDP-11 specific.
 (a.output/'prf.c').write_text((standalone/'prf.c').read_text().split('struct\tdevice')[0])
 (a.output/'SYS.c').write_text('#include <sys/param.h>\nstatic ino_t dlook();\n#include "'+str(standalone/'SYS.c')+'"\n')
 objects=[]
 for name,source,flags in [
-    ('boot', ROOT/'mame/boot/boot.c', ['-DZ8002_MMU'] if a.machine=='z8002unix' else []), ('SYS',a.output/'SYS.c',[]),
+    ('boot', ROOT/'mame/boot/unixv7/boot.c', ['-DZ8002_MMU'] if a.machine=='z8002unix' else []), ('SYS',a.output/'SYS.c',[]),
     ('prf',a.output/'prf.c',[]),
     ('l3',ROOT/'v7z8000/usr/src/libc/gen/l3.c',['-Dinterdata'])]:
     obj=a.output/(name+'.so')
     helpers.compile_c(source,obj,['-I'+str(standalone),*flags],sout=True,compact=True)
     objects.append(obj)
-(a.output/'start.az8').write_bytes((ROOT/('mame/boot/start2.az8' if a.machine=='z8002unix' else 'mame/boot/start.az8')).read_bytes())
+(a.output/'start.az8').write_bytes((ROOT/('mame/boot/unixv7/z8002/start.az8' if a.machine=='z8002unix' else 'mame/boot/unixv7/z8001/start.az8')).read_bytes())
 subprocess.run([str(AS),'-zc','-o','start.so','start.az8'],cwd=a.output,check=True)
 subprocess.run([str(LD),'-z','-s',str(a.output/'start.so'),*map(str,objects),
                 str(a.libc.resolve()),'-o',str(a.output/'boot')],check=True)

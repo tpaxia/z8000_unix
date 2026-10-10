@@ -55,7 +55,7 @@ include("${CONFIG_FILE}")
 if(NOT DEFINED KERNEL_VECTOR_FLAGS)
     set(KERNEL_VECTOR_FLAGS -zgs)
 endif()
-configure_file(machine/krt-body.inc machine/krt-body.inc COPYONLY)
+configure_file(machine/z8000/krt-body.inc machine/z8000/krt-body.inc COPYONLY)
 if(NOT DEFINED KERNEL_OPTIONAL_C)
     set(KERNEL_OPTIONAL_C sys/fakemx.c)
 endif()
@@ -121,10 +121,12 @@ add_custom_command(OUTPUT ${B}/kernel.bin
 # Appends the .so path to HANDLER_B_FILES in parent scope.
 # COMMAND arguments use relative paths while OUTPUT/DEPENDS use absolute paths.
 # Every kernel source may include any kernel header.
+file(GLOB_RECURSE MACHINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/machine/*.h")
 file(GLOB KERNEL_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/h/*.h" "${CMAKE_SOURCE_DIR}/machine/*.h"
+    "${CMAKE_SOURCE_DIR}/h/*.h"
     "${CMAKE_SOURCE_DIR}/sys/*.h" "${CMAKE_SOURCE_DIR}/dev/*.h"
     "${CMAKE_SOURCE_DIR}/conf/*.h")
+list(APPEND KERNEL_HEADERS ${MACHINE_HEADERS})
 
 function(pcc_compile_c subdir name)
     set(SRC "${CMAKE_SOURCE_DIR}/${subdir}/${name}.c")
@@ -155,11 +157,12 @@ endfunction()
 set(HANDLER_B_FILES "")
 foreach(source IN LISTS KERNEL_ASM)
     get_filename_component(name "${source}" NAME_WE)
-    set(output "machine/${name}")
+    get_filename_component(directory "${source}" DIRECTORY)
+    set(output "${directory}/${name}")
     add_custom_command(OUTPUT "${B}/${output}.az8"
-        COMMAND ${CMAKE_COMMAND} -E make_directory machine
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${directory}"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/${source}" "${output}.az8"
-        DEPENDS "${CMAKE_SOURCE_DIR}/${source}" "${CMAKE_SOURCE_DIR}/machine/krt-body.inc" "${CONFIG_STAMP}")
+        DEPENDS "${CMAKE_SOURCE_DIR}/${source}" "${CMAKE_SOURCE_DIR}/machine/z8000/krt-body.inc" "${CONFIG_STAMP}")
     add_custom_command(OUTPUT "${B}/${output}.so"
         COMMAND ${ASZ8K} -zc -o "${output}.so" "${output}.az8"
         DEPENDS "${B}/${output}.az8" "${ASZ8K}")
@@ -236,7 +239,7 @@ add_custom_target(check_headers
 add_dependencies(kernel check_headers)
 
 if(NOT DEFINED KERNEL_FPE_ADAPTER)
-    set(KERNEL_FPE_ADAPTER fpe/unix.s)
+    set(KERNEL_FPE_ADAPTER machine/z8000/z8001/unix.s)
     set(KERNEL_FPE_LINK_FLAGS -C 127 -M 61440)
 endif()
 add_custom_command(OUTPUT ${B}/fpe.bin
