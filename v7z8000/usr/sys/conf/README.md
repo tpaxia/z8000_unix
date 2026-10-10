@@ -25,7 +25,9 @@ cmake --build v7z8000/usr/sys/build --target kernel
 cmake --build v7z8000/usr/sys/build --target test
 ```
 
-`emulated` is the default and currently the only supplied configuration.
+`emulated` is the default Z8001 configuration; `z8001-mmu` is its alias.
+`z8002-mmu` selects the nonsegmented CPU and external mode-selected MMU.
+See [the Z8002 reference](../../../../doc/platforms/z8002-mmu.md).
 Unknown configurations fail at configure time. Use separate build directories
 for different machines. `-DKERNEL_HOST_TESTS=OFF` omits the host emulator and
 test targets; `kernel` itself produces only guest artifacts. Tests explicitly
@@ -38,6 +40,12 @@ depend on the host harness.
 - `KERNEL_ASM`: ordered PCC-assembler runtime sources. The first object must
   contain the entry table linked at `0x0200`.
 - `KERNEL_MACHINE_C`: CPU, MMU and configuration C sources.
+- `KERNEL_VECTOR_FLAGS`: assembler flags for ROM, traps and EPU; defaults to `-zgs`.
+- `KERNEL_CPPFLAGS`: additional machine C preprocessor flags.
+- `KERNEL_DATA_LIMIT`: maximum kernel data+BSS extent; defaults to `0xE000`.
+  The Z8002 uses `0x8000` to reserve its EPU data window.
+- `KERNEL_FPE_ADAPTER` and `KERNEL_FPE_LINK_FLAGS`: EPU adapter and raw-image
+  placement; default to the Z8001 service in segment 127.
 - `KERNEL_DRIVERS`: driver names from `dev/`, without the `.c` suffix.
 - `KERNEL_OPTIONAL_C`: optional shared services; defaults to `sys/fakemx.c`,
   the original V7 disabled-multiplexor stubs.

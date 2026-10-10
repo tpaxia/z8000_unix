@@ -170,3 +170,31 @@ compile/link/execute in MAME after installing the disk bootstrap. Logs are in
 command list; [userland coverage](../toolchain/userland.md) records functionality
 and platform-specific limitations. Installed commands are not all independently
 validated in MAME.
+
+## Z8002-MMU machine
+
+Use an isolated MAME branch based on the existing `z8001_unix` worktree;
+the CPU bus-status and N/S callbacks are needed by both boards. Set
+`MAME_Z8002` to that worktree's path. Build the kernel with
+`-DKERNEL_CONFIG=z8002-mmu` in `tests/build/z8002-mmu`, then:
+
+```sh
+python3 mame/build.py "$MAME_Z8002" --machine z8002unix
+python3 mame/build_rom.py --machine z8002unix
+python3 mame/install_boot.py tests/build/z8002-mmu/hd.img \
+  tests/build/z8002unix/boot.img --build tests/build/z8002unix
+python3 mame/test.py "$MAME_Z8002/z8002unix" --machine z8002unix \
+  --chdman "$CHDMAN" --disk tests/build/z8002unix/boot.img \
+  --input 'echo hello | cat
+' --expect hello --output tests/build/z8002unix/smoke
+```
+
+The installer requires a fresh output filename. Use `chdman createhd` as above
+for an interactive disk. Launch `z8002unix -window`, using
+`tests/build/z8002unix/roms` and that CHD. The Z8002 builder selects its own ROM,
+primary loader and standalone startup and rejects a kernel build for the wrong
+CPU. Its ROM loads the system from disk. Kernel binaries and firmware differ
+between machines; ordinary user executables and filesystem formats are shared.
+The board defaults to 1 MiB; `--ram 320k` exercises swapping.
+See [the Z8002 machine reference](../platforms/z8002-mmu.md) for memory mappings,
+validation and remaining acceptance work.

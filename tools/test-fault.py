@@ -49,12 +49,13 @@ $
 $
 ''')
 run([tools/'v7mkfs',work/'hd.img',work/'proto'])
+z8002=(build/'kernel-selection.txt').read_text().splitlines()[0]=='z8002-mmu'
 for name in ['faultn','faulti']:
     for mode, kind in [('bounds',None),('write','r'),('writebyte','r'),('read','w'),
                        ('readbyte','w'),('writepart','r'),('writebytepart','r'),
                        ('readpart','w'),('readbytepart','w'),('path','r'),('argv','r'),('epu','r'),
                        ('signal','w'),('exec','w'),('user','u')]:
-        args=[build/'test_driver','-c',('1500000000' if mode=='exec' else '400000000'),'-d',work/'hd.img',
+        args=[build/'test_driver','-c',('1800000000' if z8002 else ('1500000000' if mode=='exec' else '400000000')),'-d',work/'hd.img',
               '-i',name+' '+mode+'\\n','-x','fault: passed']
         if kind:
             args+=['-w','fault: ready','-I','go\\nexit\\n','-F',kind+(':'+('f000' if mode=='signal' else '9000'))]

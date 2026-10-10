@@ -117,6 +117,7 @@ def setup():
     for name in ('runner','check'):
         source = WORK/'seed'/name;source.write_bytes(fs.read('/bin/'+name));files['bin/'+name]=source;modes['bin/'+name]=0o755
     required = set(selection['asm'].split(';')+selection['c'].split(';')+[selection['rom'],selection['traps'],'fpe/fpe.z8k','fpe/unix.s'])
+    required.add('machine/krt-body.inc')
     for directory in ('h','sys','machine','dev','conf'):
         required.update(str(p.relative_to(SYS)) for p in (SYS/directory).glob('*.h'))
     for name in required: files['usr/src/sys/'+name]=SYS/name

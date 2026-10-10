@@ -69,7 +69,9 @@ $
 ''')
 run([tools / 'v7mkfs', work / 'hd.img', work / 'proto'])
 # Six KiB permits V7 exec staging but cannot hold these process/text images.
+max_ram = 1024 if (build/'kernel-selection.txt').read_text().splitlines()[0]=='z8002-mmu' else 8192
 def guest(label, ram, command, verdict, reject=False, swap=6, delay=0, error=None):
+    ram=min(ram,max_ram)
     r = subprocess.run([str(build / 'test_driver'), '-c', '3000000000' if not reject else '1000000',
         '-R', str(ram), '-S', str(swap), '-D', str(delay),
         *(['-E', error] if error else []), '-d', str(work / 'hd.img'), '-i', command + '\\n',

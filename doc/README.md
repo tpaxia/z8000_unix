@@ -38,6 +38,7 @@ an explicit working directory is given.
 - [Common porting guide](platforms/porting-guide.md)
 - [Implemented emulated machine](platforms/emulated.md)
 - [Z8001-unix in MAME](platforms/z8001-unix.md)
+- [Z8002 with a paged MMU](platforms/z8002-mmu.md)
 - [MMU design background and proposals](platforms/mmu-design.md)
 - [M40 feasibility notes](platforms/m40.md)
 

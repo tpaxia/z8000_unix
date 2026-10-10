@@ -16,6 +16,10 @@
 #define MM_ACK 0x00cc
 #define MM_STACKSEL 0x00d0
 #define MM_STACKBASE 0x00d2
+#define MM_USERMAP 0x00d4
+#define MM_USERWIN 0x00d6
+#define MM_SYSIMAP 0x00d8
+#define MM_SYSDMAP 0x00da
 #define MM_RO 0x8000
 #define MM_SYS 0x4000
 #define MF_VALID 1

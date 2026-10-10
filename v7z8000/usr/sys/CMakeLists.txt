@@ -52,6 +52,10 @@ if(NOT EXISTS "${CONFIG_FILE}")
     message(FATAL_ERROR "Unknown kernel configuration: ${KERNEL_CONFIG}")
 endif()
 include("${CONFIG_FILE}")
+if(NOT DEFINED KERNEL_VECTOR_FLAGS)
+    set(KERNEL_VECTOR_FLAGS -zgs)
+endif()
+configure_file(machine/krt-body.inc machine/krt-body.inc COPYONLY)
 if(NOT DEFINED KERNEL_OPTIONAL_C)
     set(KERNEL_OPTIONAL_C sys/fakemx.c)
 endif()
@@ -73,7 +77,7 @@ file(WRITE "${PCC_COMPILE_SH}" [=[#!/bin/sh
 # cz8 writes assembly to stdout and diagnostics to stderr. Diagnostics are
 # left on stderr so warnings are seen, and any preprocessor or compiler
 # failure fails the build instead of leaving truncated assembly behind.
-cpp -Dz8000 -Dz8002 -I"$1" "$2" > "$4.i" || { rm -f "$4.i" "$4"; exit 1; }
+cpp -Dz8000 -Dz8002 $6 -I"$1" "$2" > "$4.i" || { rm -f "$4.i" "$4"; exit 1; }
 "$3" < "$4.i" > "$4.raw"
 status=$?
 rm -f "$4.i"
@@ -90,7 +94,7 @@ rm -f "$4.raw"
 # ROM binary (segment 0) — Z8K segmented assembly
 # =============================================================================
 add_custom_command(OUTPUT ${B}/rom.so
-    COMMAND ${ASZ8K} -zgs -o rom.so ${CMAKE_SOURCE_DIR}/${KERNEL_ROM}
+    COMMAND ${ASZ8K} ${KERNEL_VECTOR_FLAGS} -o rom.so ${CMAKE_SOURCE_DIR}/${KERNEL_ROM}
     DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_ROM} "${CONFIG_STAMP}" "${ASZ8K}" ${B}/asz8k.pd
     COMMENT "Assembling reset ROM with shared assembler")
 add_custom_command(OUTPUT ${B}/rom.bin
@@ -100,7 +104,7 @@ add_custom_command(OUTPUT ${B}/rom.bin
 
 # SEG/NONSEG trap stubs occupy the first 512 kernel instruction bytes.
 add_custom_command(OUTPUT ${B}/trap.so
-    COMMAND ${ASZ8K} -zgs -o trap.so ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS}
+    COMMAND ${ASZ8K} ${KERNEL_VECTOR_FLAGS} -o trap.so ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS}
     DEPENDS ${CMAKE_SOURCE_DIR}/${KERNEL_TRAPS} "${CONFIG_STAMP}" "${ASZ8K}" ${B}/asz8k.pd
     COMMENT "Assembling trap stubs with shared assembler")
 add_custom_command(OUTPUT ${B}/kernel.bin
@@ -129,7 +133,7 @@ function(pcc_compile_c subdir name)
 
     add_custom_command(OUTPUT "${B}/${AZ8_REL}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${subdir}"
-        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}" "${OZ8}"
+        COMMAND sh "${PCC_COMPILE_SH}" "${CMAKE_SOURCE_DIR}/h" "${SRC}" "${CZ8}" "${AZ8_REL}" "${OZ8}" "${KERNEL_CPPFLAGS}"
         DEPENDS "${SRC}" "${CONFIG_STAMP}" ${KERNEL_HEADERS} "${CZ8}" "${PCC_COMPILE_SH}" "${OZ8}"
         COMMENT "PCC: ${subdir}/${name}.c → .az8"
     )
@@ -155,7 +159,7 @@ foreach(source IN LISTS KERNEL_ASM)
     add_custom_command(OUTPUT "${B}/${output}.az8"
         COMMAND ${CMAKE_COMMAND} -E make_directory machine
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/${source}" "${output}.az8"
-        DEPENDS "${CMAKE_SOURCE_DIR}/${source}" "${CONFIG_STAMP}")
+        DEPENDS "${CMAKE_SOURCE_DIR}/${source}" "${CMAKE_SOURCE_DIR}/machine/krt-body.inc" "${CONFIG_STAMP}")
     add_custom_command(OUTPUT "${B}/${output}.so"
         COMMAND ${ASZ8K} -zc -o "${output}.so" "${output}.az8"
         DEPENDS "${B}/${output}.az8" "${ASZ8K}")
@@ -214,8 +218,11 @@ add_custom_command(OUTPUT ${B}/handler.sout
     DEPENDS ${HANDLER_B_ABS} "${LDZ8}" "${CONFIG_STAMP}"
     COMMENT "Linking handler.sout"
 )
+if(NOT DEFINED KERNEL_DATA_LIMIT)
+    set(KERNEL_DATA_LIMIT 0xe000)
+endif()
 add_custom_command(OUTPUT ${B}/handler.bin ${B}/handler-data.bin
-    COMMAND python3 "${TOOLS_DIR}/sout2bin.py" handler.sout handler.bin handler-data.bin
+    COMMAND python3 "${TOOLS_DIR}/sout2bin.py" handler.sout handler.bin handler-data.bin ${KERNEL_DATA_LIMIT}
     DEPENDS ${B}/handler.sout "${TOOLS_DIR}/sout2bin.py"
     COMMENT "Building handler.bin"
 )
@@ -228,15 +235,19 @@ add_custom_target(check_headers
     COMMENT "Checking installed kernel ABI headers")
 add_dependencies(kernel check_headers)
 
+if(NOT DEFINED KERNEL_FPE_ADAPTER)
+    set(KERNEL_FPE_ADAPTER fpe/unix.s)
+    set(KERNEL_FPE_LINK_FLAGS -C 127 -M 61440)
+endif()
 add_custom_command(OUTPUT ${B}/fpe.bin
     COMMAND ${CMAKE_COMMAND} -E make_directory ${B}/fpe
     COMMAND ${CMAKE_COMMAND} -E copy ${B}/asz8k.pd ${B}/fpe/asz8k.pd
     COMMAND python3 ${TOOLS_DIR}/fpe/translate.py ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${B}/fpe/core.s
-    COMMAND ${ASZ8K} -zgs -o core.so core.s
-    COMMAND ${ASZ8K} -zgs -o unix.so ${CMAKE_SOURCE_DIR}/fpe/unix.s
-    COMMAND ${LDZ8} -z -b -C 127 -M 61440 unix.so core.so -o ${B}/fpe.bin
+    COMMAND ${ASZ8K} ${KERNEL_VECTOR_FLAGS} -o core.so core.s
+    COMMAND ${ASZ8K} ${KERNEL_VECTOR_FLAGS} -o unix.so ${CMAKE_SOURCE_DIR}/${KERNEL_FPE_ADAPTER}
+    COMMAND ${LDZ8} -z -b ${KERNEL_FPE_LINK_FLAGS} unix.so core.so -o ${B}/fpe.bin
     WORKING_DIRECTORY ${B}/fpe
-    DEPENDS ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${CMAKE_SOURCE_DIR}/fpe/unix.s
+    DEPENDS ${CMAKE_SOURCE_DIR}/fpe/fpe.z8k ${CMAKE_SOURCE_DIR}/${KERNEL_FPE_ADAPTER}
             ${TOOLS_DIR}/fpe/translate.py "${ASZ8K}" "${LDZ8}" ${B}/asz8k.pd
     COMMENT "Building separate Zilog software EPU service")
 file(MAKE_DIRECTORY ${B}/fpe)

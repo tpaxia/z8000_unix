@@ -38,7 +38,11 @@ int iseg;
 /* Physical frames are 2KB, not V7's 64-byte accounting clicks. */
 #define FIRSTFRAME 96
 #define BANKFRAMES 32
+#ifdef Z8002_MMU
+#define EPUFRAME (15*32)
+#else
 #define EPUFRAME (127*32)
+#endif
 #define UFRAMES (USIZE/32)
 #define PAGES(n) (((n)+31)/32)
 #define DATA 0
@@ -240,6 +244,9 @@ sureg()
 	useg = (segno << 8) | 0x8000;
 	iseg = ((segno + (u.u_sep ? NPROC : 0)) << 8) | 0x8000;
 	outw(0x00B8, (segno << 8) | ((iseg >> 8) & 0177));
+#ifdef Z8002_MMU
+	outw(MM_USERMAP, segno);
+#endif
 }
 
 /* Copy or clear individual physical pages, keeping remaps IRQ-bounded.

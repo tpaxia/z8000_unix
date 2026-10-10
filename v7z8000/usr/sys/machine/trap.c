@@ -155,12 +155,19 @@ unsigned *extra;
 		fault[i] = inw(MM_FAULT+2*i);
 	outw(MM_ACK, 0);
 	if (regs[14] & 0x4000) {
-		if ((regs[14] & 0x8000) && regs[15] == 0x8100)
+		#ifdef Z8002_MMU
+        if (regs[15] == 0x8100)
+#else
+        if ((regs[14] & 0x8000) && regs[15] == 0x8100)
+#endif
 			for (p = ufixups; p[0]; p += 2)
 				if (regs[16] == p[0]) {
 					regs[16] = p[1];
 					return;
 				}
+#ifdef Z8002_MMU
+        outw(MM_USERWIN, 65535);
+#endif
 		crashtrap(regs, extra, fault);
 		panic("kernel access fault");
 		return;

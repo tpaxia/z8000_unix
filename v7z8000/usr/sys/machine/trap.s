@@ -386,10 +386,16 @@ vi_entry:
 	push	@rr14, r0
 
 	! Switch to NONSEG+SYS mode
-	ld	r1, #0x4800	! FCW: NONSEG + SYS + NVIE (devices masked)
+	ld	r1, #0x4000	! Keep both interrupt classes masked during the mode switch
 	ldctl	fcw, r1
 
 	.unsegm
+	! Admit clock nesting only if the interrupted context had enabled it.
+	ld	r1, 28(r15)
+	and	r1, #0x0800
+	or	r1, #0x4000
+	ldctl	fcw, r1
+
 
 	! Stack layout (NONSEG mode):
 	!   R15+0:  saved R0

@@ -7,7 +7,7 @@ class UserProfile {
         int pending = -1;
         unsigned requested = 0;
     } processes[128];
-    z8001_device &cpu;
+    z8002_device &cpu;
     MMU &mmu;
     FILE *file;
     void finish(unsigned seg) {
@@ -20,11 +20,14 @@ class UserProfile {
         p = Process();
     }
 public:
-    UserProfile(z8001_device &c, MMU &m, FILE *f) : cpu(c), mmu(m), file(f) {
+    UserProfile(z8002_device &c, MMU &m, FILE *f) : cpu(c), mmu(m), file(f) {
         if (file) fprintf(file, "segment\tpath\tinitial_sp\tminimum_sp\tmaximum_break\n");
     }
     void sample(uint32_t address) {
         if (cpu.get_fcw() & 0x4000) return; // system/normal FCW bit
+#ifdef Z8002_MMU
+        address = mmu.code_address(address);
+#endif
         unsigned seg = (address >> 16) & 127;
         auto &p = processes[seg];
         if (p.pending == 11 || p.pending == 59) {
@@ -50,6 +53,9 @@ public:
     static bool trap(void *context, uint8_t number, uint32_t pc) {
         auto &self = *static_cast<UserProfile *>(context);
         if (self.cpu.get_fcw() & 0x4000) return true;
+#ifdef Z8002_MMU
+        pc = self.mmu.code_address(pc);
+#endif
         unsigned seg = (pc >> 16) & 127;
         auto &p = self.processes[seg];
         if (number == 1) self.finish(seg);

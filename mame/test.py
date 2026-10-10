@@ -8,9 +8,10 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('mame',type=Path)
+p.add_argument('--machine', choices=['z8001unix','z8002unix'], default='z8001unix')
 p.add_argument('--chdman',type=Path,required=True)
-p.add_argument('--disk',type=Path,default=ROOT/'tests/build/z8001unix/full-userland.img')
-p.add_argument('--rompath',type=Path,default=ROOT/'tests/build/z8001unix/roms')
+p.add_argument('--disk',type=Path)
+p.add_argument('--rompath',type=Path)
 p.add_argument('--input',default='cc -i /usr/src/hello.c -o /tmp/hello\n/tmp/hello\n')
 p.add_argument('--seven-bit',action='store_true',help='strip software parity in the captured terminal transcript')
 p.add_argument('--login',help='name to enter at the getty prompt after initial shell input')
@@ -18,10 +19,15 @@ p.add_argument('--boot',default='\n',help='input at the standalone loader prompt
 p.add_argument('--expect',default='Hello from native C')
 p.add_argument('--save-disk',type=Path,help='export the modified guest disk after success')
 p.add_argument('--settle',type=int,default=0,help='guest seconds to wait after expected output')
-p.add_argument('--ram',default='8M')
+p.add_argument('--ram')
 p.add_argument('--seconds',type=int,default=1200)
-p.add_argument('--output',type=Path,default=ROOT/'tests/build/z8001unix/smoke')
+p.add_argument('--output',type=Path)
 a=p.parse_args()
+base=ROOT/'tests/build'/a.machine
+if a.disk is None: a.disk=base/('boot.img' if a.machine=='z8002unix' else 'full-userland.img')
+if a.rompath is None: a.rompath=base/'roms'
+if a.output is None: a.output=base/'smoke'
+if a.ram is None: a.ram='1M' if a.machine=='z8002unix' else '8M'
 if a.save_disk and a.save_disk.exists(): raise SystemExit('refusing to overwrite saved disk')
 a.output.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='disk-',dir=a.output) as tmp:
@@ -36,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='disk-',dir=a.output) as tmp:
              Z8001UNIX_SETTLE=str(a.settle))
     if a.seven_bit: env['Z8001UNIX_SEVEN_BIT']='1'
     if a.login: env['Z8001UNIX_LOGIN']=a.login
-    command=[str(a.mame.resolve()),'z8001unix','-window','-rompath',str(a.rompath.resolve()),
+    command=[str(a.mame.resolve()),a.machine,'-window','-rompath',str(a.rompath.resolve()),
              '-hard',str(disk.resolve()),'-ram',a.ram.lower(),'-video','none','-sound','none','-nothrottle',
              '-skip_gameinfo','-seconds_to_run',str(a.seconds),'-autoboot_delay','0',
              '-autoboot_script',str(ROOT/'mame/smoke.lua'),'-inipath',str(Path(tmp).resolve()),

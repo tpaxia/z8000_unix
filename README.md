@@ -1,6 +1,8 @@
 # Z8000 Unix
 
-Porting Unix Seventh Edition to the Zilog Z8001 segmented microprocessor, with a custom paged MMU.
+Unix Seventh Edition for Zilog Z8001 and Z8002 machines with custom paged MMUs.
+The established Z8001 target and the new [Z8002 target](doc/platforms/z8002-mmu.md)
+share V7 kernel services and user executables; each has its own CPU entry and boot support.
 
 ## Background
 

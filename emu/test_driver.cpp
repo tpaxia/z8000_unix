@@ -29,17 +29,28 @@
 #include "../v7z8000/usr/sys/machine/mmu.h"
 
 // Observe the existing request latch without changing interrupt delivery.
-class ClockObservedCPU : public z8001_device {
+#ifdef Z8002_MMU
+using BoardCPU = z8002_device;
+#else
+using BoardCPU = z8001_device;
+#endif
+class ClockObservedCPU : public BoardCPU {
 public:
     bool clock_pending() const { return (m_irq_req & Z8000_NVI) != 0; }
     uint64_t clock_accepted = 0;
-    void access_fault() { m_irq_req |= Z8000_SEGTRAP; }
+    void access_fault() {
+#ifdef Z8002_MMU
+        m_irq_req |= Z8000_NMI;
+#else
+        m_irq_req |= Z8000_SEGTRAP;
+#endif
+    }
     void set_opcode_bus(z8000_memory_bus *bus) { m_opcache.bus = bus; }
 protected:
     uint16_t GET_FCW(uint32_t vec) override {
         // Count actual NVI dispatches, independently of the latch accounting.
         if (vec == PSA_ADDR() + m_vector_mult * 0x18) clock_accepted++;
-        return z8001_device::GET_FCW(vec);
+        return BoardCPU::GET_FCW(vec);
     }
 };
 
@@ -61,6 +72,29 @@ public:
         set_upage(62);
     }
 
+#ifdef Z8002_MMU
+    void user_map(uint16_t value) { m_user = value & 127; }
+    void user_window(uint16_t value) { m_window = value; }
+    uint16_t user_window() const { return m_window; }
+    void system_map(uint16_t value) { m_system = value & 127; }
+    void system_data(uint16_t value) { m_system_data = value & 127; }
+    uint32_t data_address(uint32_t a) const {
+        unsigned off = a & 65535;
+        if (m_cpu && !(m_cpu->get_fcw() & 0x4000)) return (m_user << 16) | off;
+        if (m_window != 65535 && off >= 0xe000 && off < 0xe800)
+            return ((m_window >> 5) << 16) | ((m_window & 31) << 11) | (off & 2047);
+        return (unsigned(m_system_data) << 16) | off;
+    }
+    uint32_t code_address(uint32_t a) const {
+        unsigned map = !m_cpu || (m_cpu->get_fcw() & 0x4000) ? m_system : m_user;
+        return (map << 16) | (a & 65535);
+    }
+    uint16_t page_register() const {
+        return m_pages[m_page_select >> 5][m_page_select & 31] |
+               m_attr[m_page_select >> 5][m_page_select & 31];
+    }
+#endif
+
     // Test-only denied bus access. The normal page attributes stay unchanged.
     void set_fault(ClockObservedCPU *cpu, char kind, unsigned offset) {
         m_cpu = cpu; m_fault_kind = kind; m_fault_offset = offset;
@@ -77,7 +111,12 @@ public:
 
     // First-word fetch is externally visible as bus status 1101 (manual 2.3.4).
     // These latches contain bus evidence, never a hidden CPU register snapshot.
-    void first_word(uint32_t address) { m_first_word = address; }
+    void first_word(uint32_t address) {
+#ifdef Z8002_MMU
+        address = (m_cpu && (m_cpu->get_fcw() & 0x4000) ? 1U : m_user) << 16 | (address & 65535);
+#endif
+        m_first_word = address;
+    }
     void latch(uint32_t address, unsigned size, unsigned reason) {
         uint16_t seg = (address >> 16) & 127, lo = address & 65535;
         uint16_t hi = lo + size - 1;
@@ -125,7 +164,11 @@ public:
             return true;
         }
         // The EPU engine has dedicated storage, independent of low RAM.
+#ifdef Z8002_MMU
+        if (!((physical >= 0xf0000 && physical + size <= 0x100000) ||
+#else
         if (!((physical >= 0x7f0000 && physical + size <= 0x800000) ||
+#endif
             physical + size <= m_ram_frames * 2048)) {
             absent_count++;
             latch(addr, size, reason | MF_PROT);
@@ -155,7 +198,11 @@ public:
         else if (m_fault_kind == 'u') {
             if (fcw & 0x4000) return false;
         } else {
+#ifdef Z8002_MMU
+            if (!(fcw & 0x4000) || m_window == 65535 || writing != (m_fault_kind == 'w'))
+#else
             if ((fcw & 0xc000) != 0xc000 || writing != (m_fault_kind == 'w'))
+#endif
                 return false;
         }
         fault_count++;
@@ -206,6 +253,9 @@ public:
     }
 
     uint32_t instruction_address(uint32_t addr) const {
+#ifdef Z8002_MMU
+        addr = code_address(addr);
+#endif
         return (uint32_t(m_iseg[(addr >> 16) & 0x7f]) << 16) | (addr & 0xffff);
     }
 
@@ -245,6 +295,9 @@ public:
         return (absent(addr, 2, false, true) || denied(addr, 2, false)) ? 0 : m_phys->read_word(translate(addr));
     }
 private:
+#ifdef Z8002_MMU
+    uint16_t m_user = 0, m_window = 65535, m_system = 0, m_system_data = 1;
+#endif
     uint16_t m_fault_status = 0, m_fault_seg = 0, m_fault_lo = 0, m_fault_hi = 0;
     uint32_t m_first_word = 0, m_fault_pc = 0;
     uint16_t m_stack_select = 0, m_stack_base[128];
@@ -262,6 +315,19 @@ private:
 };
 
 #include "user_profile.h"
+
+#ifdef Z8002_MMU
+class ModeDataBus : public z8000_memory_bus {
+    MMU &m;
+public:
+    explicit ModeDataBus(MMU &mmu) : m(mmu) {}
+    u8 read_byte(u32 a) override { return m.read_byte(m.data_address(a)); }
+    u16 read_word(u32 a) override { return m.read_word(m.data_address(a)); }
+    void write_byte(u32 a,u8 v) override { m.write_byte(m.data_address(a),v); }
+    void write_word(u32 a,u16 v) override { m.write_word(m.data_address(a),v); }
+    void write_word(u32 a,u16 v,u16 mask) override { m.write_word(m.data_address(a),v,mask); }
+};
+#endif
 
 // All instruction-space accesses, including operands and PC-relative loads.
 class InstructionBus : public z8000_memory_bus {
@@ -291,7 +357,7 @@ public:
 // Extended IOPorts with DMA controller for RAM disk
 class KernelIOPorts : public z8000_io_bus {
 public:
-    KernelIOPorts(MemoryRegion *mem, MMU *mmu, z8001_device *cpu)
+    KernelIOPorts(MemoryRegion *mem, MMU *mmu, z8002_device *cpu)
         : m_trace(false), m_memory(mem), m_mmu(mmu), m_cpu(cpu),
           m_dma_blk_hi(0), m_dma_blk_lo(0),
           m_dma_addr_hi(0), m_dma_addr_lo(0),
@@ -432,6 +498,10 @@ public:
     u16 read_word(u16 addr, int mode) override {
         addr &= 0xFFFE;
         u16 val = 0xDEAD;
+#ifdef Z8002_MMU
+        if (mode == 0 && addr == MM_USERWIN) return m_mmu->user_window();
+        if (mode == 0 && addr == MM_PAGEFRAME) return m_mmu->page_register();
+#endif
         if (mode == 0 && addr == MM_UPAGE) return m_mmu->upage();
         if (mode == 0 && addr >= MM_FAULT && addr <= MM_PC)
             return m_mmu->fault_register(addr);
@@ -515,6 +585,12 @@ public:
         if (mode != 0) return;
 
         switch (addr) {
+#ifdef Z8002_MMU
+            case MM_USERMAP: m_mmu->user_map(val); break;
+            case MM_USERWIN: m_mmu->user_window(val); break;
+            case MM_SYSIMAP: m_mmu->system_map(val); break;
+            case MM_SYSDMAP: m_mmu->system_data(val); break;
+#endif
             case MM_ACK: m_mmu->acknowledge(); break;
             case MM_STACKSEL: m_mmu->stack_select(val); break;
             case MM_STACKBASE: m_mmu->stack_base(val); break;
@@ -658,7 +734,7 @@ private:
     bool m_trace;
     MemoryRegion *m_memory;
     MMU *m_mmu;
-    z8001_device *m_cpu;
+    z8002_device *m_cpu;
     std::vector<uint8_t> m_disk;
     std::vector<uint8_t> m_hd, m_swap;
     std::string m_console_buf;
@@ -745,7 +821,13 @@ int main(int argc, char* argv[]) {
 
     char fault_kind = 0;
     unsigned fault_offset = 0;
-    unsigned ram_kib = 8192, swap_kib = 4096;
+#ifdef Z8002_MMU
+    constexpr unsigned MAX_RAM_KIB = 1024;
+    unsigned ram_kib = MAX_RAM_KIB, swap_kib = 4096;
+#else
+    constexpr unsigned MAX_RAM_KIB = 8192;
+    unsigned ram_kib = MAX_RAM_KIB, swap_kib = 4096;
+#endif
     uint64_t swap_delay = 0;
     char swap_fail_kind = 0;
     unsigned swap_fail_nth = 0;
@@ -787,8 +869,8 @@ int main(int argc, char* argv[]) {
             case 'R': {
                 char *end;
                 unsigned long value = strtoul(optarg, &end, 10);
-                if (*end || !*optarg || value < 128 || value > 8192 || value % 2) {
-                    fprintf(stderr, "-R requires even RAM KiB from 128 to 8192\n");
+                if (*end || !*optarg || value < 128 || value > MAX_RAM_KIB || value % 2) {
+                    fprintf(stderr, "-R requires even RAM KiB from 128 to %u\n", MAX_RAM_KIB);
                     return 1;
                 }
                 ram_kib = value;
@@ -887,11 +969,15 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "-F requires -w/-I to arm after guest setup\n"); return 1;
     }
 
+#ifdef Z8002_MMU
+    printf("Z8002 MMU Kernel Test Driver\n");
+#else
     printf("Z8001 Kernel Test Driver\n");
+#endif
     printf("========================\n");
 
     // Backing store for the bus address space; MMU rejects absent low RAM.
-    MemoryRegion memory(0x800000);
+    MemoryRegion memory(MAX_RAM_KIB * 1024);
     memory.set_name("MEM");
     memory.set_trace(mem_trace);
 
@@ -899,7 +985,7 @@ int main(int argc, char* argv[]) {
     MMU mmu(&memory, ram_kib / 2);
     printf("Installed low RAM: %u KiB; EPU bank reserved separately\n", ram_kib);
 
-    // Create Z8001 CPU (memory access goes through MMU)
+    // Create the selected CPU; all memory accesses go through the MMU.
     ClockObservedCPU cpu;
 
 
@@ -926,10 +1012,17 @@ int main(int argc, char* argv[]) {
 
     if (!load_file(memory, "kernel.bin", 0x001000)) return 1;
     if (!load_file(memory, "handler-data.bin", 0x010000)) return 1;
+#ifdef Z8002_MMU
+    if (!load_file(memory, "kernel.bin", 0x01d000)) return 1;
+#endif
     // Kernel text starts at logical 1:0200, backed by physical bank 2.
     if (!load_file(memory, "handler.bin", 0x020200))
         return 1;
+#ifdef Z8002_MMU
+    if (!load_file(memory, "fpe.bin", 0x0f8000))
+#else
     if (!load_file(memory, "fpe.bin", 0x7f0000))
+#endif
         return 1;
     }
 
@@ -944,7 +1037,12 @@ int main(int argc, char* argv[]) {
         return 1;
 
     InstructionBus instructions(mmu);
+#ifdef Z8002_MMU
+    ModeDataBus data(mmu);
+    cpu.set_memory(&data);
+#else
     cpu.set_memory(&mmu);
+#endif
     cpu.set_program_memory(&instructions);
     FirstWordBus first_words(mmu);
 

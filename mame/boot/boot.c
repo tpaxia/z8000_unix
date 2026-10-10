@@ -1,10 +1,19 @@
-/* Z8001 standalone adapter. Filesystem operations are original V7 SYS.c. */
+/* Z8000 standalone adapter. Filesystem operations are original V7 SYS.c. */
 #include <sys/param.h>
 #include <sys/inode.h>
 #include "saio.h"
 
 struct devsw devsw[] = { { "hd", 0, 0, 0 }, { 0, 0, 0, 0 } };
 static char buf[512];
+#ifdef Z8002_MMU
+#define FPUBASE 0x8000
+#define FPULIMIT 0xc000
+#define DATALIMIT 0x8000
+#else
+#define FPUBASE 0
+#define FPULIMIT 0xe000
+#define DATALIMIT 0xe000
+#endif
 
 putchar(c) { if (c == '\n') outb(0xf0, '\r'); outb(0xf0, c); }
 getchar() { while (!(inb(0xf2)&2)); return(inb(0xf0)&127); }
@@ -48,7 +57,11 @@ main()
  int fd, n;
  unsigned h[20], off;
  char kernel[80], fpu[20];
+#ifdef Z8002_MMU
+ printf("V7 Z8002 boot\n");
+#else
  printf("V7 Z8001 boot\n");
+#endif
  for (;;) {
   printf(": ");
   n=0;
@@ -68,7 +81,7 @@ main()
   if(fd<0) continue;
   if(read(fd,(char *)h,40)!=40 || h[0]!=0xe711 || h[5]!=16 ||
      h[9]!=1 || h[7] || h[8]!=0x1f0 || h[14]<512 ||
-     h[15]>0xe000 || h[16]>0xe000-h[15] || h[12] || h[13] ||
+     h[15]>DATALIMIT || h[16]>DATALIMIT-h[15] || h[12] || h[13] ||
      h[17]!=7 || h[18] || h[19] || h[3] || h[4]!=h[16] ||
      ((long)h[1]<<16)+h[2]!=(long)h[14]+h[15]) {
    printf("Bad kernel header\n"); close(fd); continue;
@@ -76,7 +89,11 @@ main()
   load(fd,0x8200,0,h[14]); load(fd,0x8100,0,h[15]);
   lseek(fd,40L,0);
   if(read(fd,buf,512)!=512) _stop("Missing vectors");
+#ifdef Z8002_MMU
+  copyseg(0x8100,0xd000,buf,512);
+#else
   copyseg(0x8000,0x1000,buf,512);
+#endif
   close(fd);
   for(n=0;n<512;n++) buf[n]=0;
   off=h[15];
@@ -85,12 +102,12 @@ main()
   }
   strcpy(fpu,"hd(0,0)/fpe"); fd=open(fpu,0);
   if(fd<0) _stop("Missing /fpe");
-  off=0;
+  off=FPUBASE;
   while((n=read(fd,buf,512))>0) {
-   if(off>0xe000-n) _stop("FPE too large");
+   if(off>FPULIMIT-n) _stop("FPE too large");
    copyseg(0xff00,off,buf,n); off+=n;
   }
-  if(!off) _stop("Empty /fpe");
+  if(off==FPUBASE) _stop("Empty /fpe");
   close(fd);
   printf("Starting Unix\n"); enter();
  }

@@ -7,6 +7,11 @@ interface. `test_driver -b ROM` boots its ROM loader instead of directly loading
 the kernel and FPU images. `-T 66667` selects approximately 60 Hz at 4 MHz;
 the default remains the accelerated 5,000-cycle test clock.
 
+The `z8002-mmu` configuration builds the same harness for a Z8002 with
+external mode-selected contexts and a 1 MiB physical range. Its additional
+registers, boot images and validation are described in
+[the Z8002 reference](z8002-mmu.md).
+
 ## Custom Front End
 
 Rather than using the emulator as a standalone tool, the project links it as a library and implements a custom front end (`emu/test_driver.cpp`). It lives outside `v7z8000/` because it is host C++ modelling the machine, not Unix source — keeping it separate means everything under `v7z8000/` stays a diff against the V7 baseline.

@@ -1,0 +1,90 @@
+.text
+.globl _main,_edata,_end,_inb,_outb,_inw,_copyseg,_enter,__rtt
+call init
+__rtt:
+halt
+jr __rtt
+init:
+lda r2,_edata
+lda r3,_end
+ldk r0,#0
+clear:
+cp r2,r3
+jr uge,ready
+ldb @r2,rl0
+inc r2,#1
+jr clear
+ready:
+call _main
+ret
+_inb:
+ld r1,2(sp)
+inb rl0,@r1
+and r0,#255
+ret
+_inw:
+ld r1,2(sp)
+in r0,@r1
+ret
+_outb:
+ld r1,2(sp)
+ld r0,4(sp)
+outb rl0,@r1
+ret
+! Physical context/page copy through the supervisor-only data aperture.
+_copyseg:
+push @sp,r4
+push @sp,r5
+push @sp,r6
+push @sp,r7
+ld r4,10(sp)
+srl r4,#8
+and r4,#127
+sll r4,#5
+ld r5,12(sp)
+ld r3,14(sp)
+ld r6,16(sp)
+test r6
+jr z,copyend
+copybyte:
+ld r0,r5
+srl r0,#11
+or r0,r4
+out r0,#0xd6
+ld r7,r5
+and r7,#2047
+add r7,#0xe000
+ldb rl1,@r3
+ldb @r7,rl1
+inc r3,#1
+inc r5,#1
+djnz r6,copybyte
+copyend:
+ld r0,#0xffff
+out r0,#0xd6
+pop r7,@sp
+pop r6,@sp
+pop r5,@sp
+pop r4,@sp
+ret
+_enter:
+! Mirror a ROM handoff into both I maps before switching live CPU context.
+ld r2,#0xe200
+ld r3,#0xe5f0
+ld r5,#32
+handoff:
+clr r0
+out r0,#0xd6
+ld r4,@r2
+ld r0,#127
+out r0,#0xd6
+ld @r3,r4
+ld r0,#95
+out r0,#0xd6
+ld @r3,r4
+inc r2,#2
+inc r3,#2
+djnz r5,handoff
+ld r0,#0xffff
+out r0,#0xd6
+jp 0xfdf0

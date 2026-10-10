@@ -2,8 +2,8 @@
 
 The port retains original V7 upper-layer policy wherever possible. A new machine
 supplies CPU/MMU mechanisms, boot support and drivers through compile-time
-configuration. Only `emulated` is currently implemented; [M40 notes](m40.md)
-are a feasibility study, not a working configuration.
+configuration. The supplied configurations are `emulated`/`z8001-mmu` and
+[z8002-mmu](z8002-mmu.md). [M40 notes](m40.md) are a feasibility study.
 
 ## Source hierarchy
 
@@ -49,9 +49,9 @@ a real loader and hardware-specific placement.
 Preserve the saved-context, syscall, signal and exec contracts in
 [traps and interrupts](../kernel/traps-and-interrupts.md),
 [processes and exec](../kernel/processes-and-exec.md) and the
-[ABI reference](../toolchain/abi.md). The software EPU currently requires segment
-127 and aliases of the current kernel stack. Account for those mappings when
-choosing memory layout.
+[ABI reference](../toolchain/abi.md). The Z8001 EPU uses segment 127 and aliases of the current kernel stack;
+the Z8002 adapter switches instruction contexts while retaining kernel data
+and stack mappings. Account for the selected service when choosing memory layout.
 
 Supply non-sleeping `panicpoll()` for device completion with interrupts masked,
 a CPU `panichalt()` that keeps them disabled, and machine `dumpinit()`/`panicdump()`

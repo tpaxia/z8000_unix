@@ -54,6 +54,12 @@ accounting. The combined load trial passes at 512 KiB and 8 MiB: four private
 logout/relogin and persistence after reboot. Build fixtures retain console init. See
 [multiuser startup](development/multiuser.md).
 
+A [Z8002 paged-MMU configuration](platforms/z8002-mmu.md)
+and MAME `z8002unix` are also implemented. It runs unchanged user executables with a machine-specific
+kernel, ROM and disk bootstrap. Standalone memory/fault/signal/swap tests and
+MAME disk-loaded floating point and native C compilation pass. Broader machine
+acceptance and native kernel/firmware rebuilding remain to be checked.
+
 ## Limitations
 
 - PDP-11 assembly bas/roff, parts of chess and the Fortran backend

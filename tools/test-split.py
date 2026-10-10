@@ -34,12 +34,13 @@ with tempfile.TemporaryDirectory(prefix='split-link-', dir=build) as directory:
         assert result.returncode != 0, name
         assert any(message in result.stdout + result.stderr for message in (b'16-bit', b'address space', b'user window')), name
     print('split linker: rejects combined, data-space, and instruction-space overflow', flush=True)
+cycles = '1800000000' if (build/'kernel-selection.txt').read_text().splitlines()[0]=='z8002-mmu' else '600000000'
 for command, expected in [('splittest', 'split: all checks passed'),
                           ('libctest', 'libc: 39 passed, 0 failed'),
                           ('signaltest', 'signal: all checks passed')]:
     marker = 'signal: complete' if command == 'signaltest' else expected
     result = subprocess.run(
-        [str(build / 'test_driver'), '-c', '600000000', '-d', 'hd-split.img',
+        [str(build / 'test_driver'), '-c', cycles, '-d', 'hd-split.img',
          '-i', command + '\\n', '-w', marker, '-I', 'exit\\n', '-x', expected],
         cwd=build, capture_output=True, timeout=60)
     (build / (command + '-split.log')).write_bytes(result.stdout + result.stderr)
