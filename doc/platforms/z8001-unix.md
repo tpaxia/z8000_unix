@@ -3,10 +3,11 @@
 The `z8001unix` MAME machine implements the current Unix board interface. It
 runs the same `emulated` kernel configuration and NONSEG user binaries as the
 standalone emulator. No shared V7 kernel C or device drivers are changed for
-MAME. The assembler/s.out migration is independent and remains on its branch.
+MAME. The bootstrap uses the shared host/native s.out assembler and linker.
 
-The dedicated MAME branch is `z8001_unix`; its permanent local worktree and
-build/test commands are recorded in the [MAME procedure](../development/mame.md).
+Both `z8001unix` and `z8002unix` are maintained on MAME's `unixv7_demo` branch.
+They share one worktree but currently have separate driver source files.
+Build/test commands are recorded in the [MAME procedure](../development/mame.md).
 
 ## Machine
 

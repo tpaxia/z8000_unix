@@ -1,44 +1,44 @@
-# Build and run Z8001-unix in MAME
+# Build and run Unix V7 in MAME
 
 Build the ordinary `emulated` kernel and a root filesystem using
 [bootstrap](bootstrap.md). The driver and bootstrap tools are in `mame/`.
-The tested MAME CPU/worktree baseline is commit `9119a0e7ad6` on
-[tpaxia/mame's z8001_unix branch](https://github.com/tpaxia/mame/tree/z8001_unix),
-based on revision `e1b99a60ff5`; `build.py` installs the current driver from
-`mame/z8001unix.cpp`. The base includes the Z8001
+Both machines are on
+[tpaxia/mame's unixv7_demo branch](https://github.com/tpaxia/mame/tree/unixv7_demo),
+at tested commit `7bf9e0c4855`, based on revision `e1b99a60ff5`.
+`build.py` installs the selected driver from `mame/`. The base includes the Z8001
 CPU fixes, first-word instruction-fetch interface and normal/system output used
-by this machine. Compatibility with arbitrary upstream releases is not claimed.
+by these machines. Compatibility with arbitrary upstream releases is not claimed.
 See the [machine reference](../platforms/z8001-unix.md#boot) for the boot sequence,
 historical V7 sources and current limits.
 
-## Build and install
+## Worktree and Z8001 build
 
-The local MAME branch is `z8001_unix` in the permanent worktree
-`~/Projects/mame_latest/mame-z8001-unix`. Its executable is
-`~/Projects/mame_latest/mame-z8001-unix/z8001unix`. This worktree belongs to the
-`tpaxia/mame` repository; the original checkout remains on `m40_z8010_sup_test`.
+Use one `unixv7_demo` worktree for both machines. The drivers remain separate
+files, `z8001unix.cpp` and `z8002unix.cpp`; the build helper produces a focused
+executable for each. The old `z8001_unix` and `z8002_unix` branches have been
+replaced by `unixv7_demo`.
 
 From the Unix repository root, set:
 
 ```sh
-MAME_UNIX="$HOME/Projects/mame_latest/mame-z8001-unix"
+MAME_UNIX="$HOME/Projects/mame_latest/mame-unixv7-demo"
 CHDMAN="$HOME/Projects/mame_latest/mame/chdman"
 git -C "$MAME_UNIX" branch --show-current
 ```
 
-That should report `z8001_unix`. On a different machine, create an equivalent
-worktree once from the published branch (skip this for the existing local worktree;
-these commands assume `origin` points to `tpaxia/mame`):
+That should report `unixv7_demo`. Set `MAME_UNIX` to your existing unified
+worktree, or create one once from the published branch
+(these commands assume `origin` points to `tpaxia/mame`):
 
 ```sh
-git -C "$HOME/Projects/mame_latest/mame" fetch origin z8001_unix
-git -C "$HOME/Projects/mame_latest/mame" worktree add -b z8001_unix \
-  "$MAME_UNIX" origin/z8001_unix
+git -C "$HOME/Projects/mame_latest/mame" fetch origin unixv7_demo
+git -C "$HOME/Projects/mame_latest/mame" worktree add -b unixv7_demo \
+  "$MAME_UNIX" origin/unixv7_demo
 ```
 
 `build.py` copies the driver from the Unix repository into this MAME branch,
 adds its `mame.lst` entry and compiles there. It does not change CPU sources.
-Repeat it after changing `mame/z8001unix.cpp`; a plain MAME build alone does not
+Repeat it after changing the selected driver; a plain MAME build alone does not
 synchronize the source copy.
 
 ```sh
@@ -136,7 +136,7 @@ python3 mame/test.py "$MAME_UNIX/z8001unix" --chdman "$CHDMAN" \
   --output tests/build/z8001unix/branch-native
 ```
 
-The executable rebuilt in the permanent `z8001_unix` worktree passed this
+The rebuilt Z8001 executable passed this
 check: the disk-loaded guest compiled, linked and ran `/tmp/hello`, printing
 `Hello from native C`. Logs are in `tests/build/z8001unix/branch-native/`.
 
@@ -173,17 +173,17 @@ validated in MAME.
 
 ## Z8002-MMU machine
 
-Use an isolated MAME branch based on the existing `z8001_unix` worktree;
-the CPU bus-status and N/S callbacks are needed by both boards. Set
-`MAME_Z8002` to that worktree's path. Build the kernel with
+Use the same `unixv7_demo` worktree and `MAME_UNIX` variable as above;
+the branch includes the CPU bus-status and N/S callbacks needed by both boards.
+Build the kernel with
 `-DKERNEL_CONFIG=z8002-mmu` in `tests/build/z8002-mmu`, then:
 
 ```sh
-python3 mame/build.py "$MAME_Z8002" --machine z8002unix
+python3 mame/build.py "$MAME_UNIX" --machine z8002unix
 python3 mame/build_rom.py --machine z8002unix
 python3 mame/install_boot.py tests/build/z8002-mmu/hd.img \
   tests/build/z8002unix/boot.img --build tests/build/z8002unix
-python3 mame/test.py "$MAME_Z8002/z8002unix" --machine z8002unix \
+python3 mame/test.py "$MAME_UNIX/z8002unix" --machine z8002unix \
   --chdman "$CHDMAN" --disk tests/build/z8002unix/boot.img \
   --input 'echo hello | cat
 ' --expect hello --output tests/build/z8002unix/smoke

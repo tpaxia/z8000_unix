@@ -96,10 +96,12 @@ The default configuration is `emulated`. Select it explicitly with
 `-DKERNEL_CONFIG=emulated`; use a separate build directory for each machine.
 `-DKERNEL_HOST_TESTS=OFF` builds kernel artifacts without the emulator harness.
 See [kernel configuration and adding a machine](v7z8000/usr/sys/conf/README.md).
-Only the current emulated machine is implemented; the M20 is not yet a kernel
-configuration.
+The implemented configurations are `emulated`/`z8001-mmu` and `z8002-mmu`;
+the M20 is not yet a kernel configuration.
 
-The same configuration also runs in the [Z8001-unix MAME machine](doc/platforms/z8001-unix.md),
+Both MAME machines are maintained on the
+[`unixv7_demo` branch](https://github.com/tpaxia/mame/tree/unixv7_demo).
+The same Z8001 configuration also runs in the [Z8001-unix MAME machine](doc/platforms/z8001-unix.md),
 using the same kernel and FPU code loaded from disk by a V7 standalone bootstrap. See the
 [MAME build and run procedure](doc/development/mame.md).
 

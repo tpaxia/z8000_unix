@@ -39,7 +39,7 @@ This direct s.out host build prepares the native compiler passes, optimizer, pre
 assembler, linker, cc driver, headers and runtime library. The bootable seed is
 `tests/build/native-cc-sout/hd.img`. Passing these tests establishes that the seeded
 compiler runs inside Unix; self-hosting is checked in the next stage.
-For disk boot in the dedicated MAME branch, follow [the MAME procedure](mame.md)
+For disk boot on MAME's unified `unixv7_demo` branch, follow [the MAME procedure](mame.md)
 to install `/boot`, `/unix` and `/fpe` into a copy of this seed.
 
 ## Native compiler and development environment
